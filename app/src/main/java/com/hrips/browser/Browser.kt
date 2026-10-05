@@ -45,6 +45,22 @@ object SearchEngines {
     var current by mutableStateOf(all[0])
 }
 
+/** Если [url] - страница результатов известного поисковика, возвращает движок и текст запроса. */
+fun parseSearch(url: String): Pair<SearchEngine, String>? {
+    val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+    val host = uri.host ?: return null
+    if (uri.scheme != "http" && uri.scheme != "https") return null
+    for (e in SearchEngines.all) {
+        val base = Uri.parse(e.template).host.orEmpty().split('.').takeLast(2).joinToString(".")
+        if (host != base && !host.endsWith(".$base")) continue
+        val q = listOf("text", "q", "query", "search").firstNotNullOfOrNull { p ->
+            uri.getQueryParameter(p)?.takeIf { it.isNotBlank() }
+        } ?: continue
+        return e to q
+    }
+    return null
+}
+
 /** true, если ввод надо искать, а не открывать как адрес. */
 fun isSearch(input: String): Boolean {
     val t = input.trim()
@@ -290,6 +306,14 @@ class Browser(
     fun newTab(url: String = "") {
         tabs.add(create(url))
         currentIndex = tabs.lastIndex
+    }
+
+    /** Переставляет вкладку (перетаскивание в полосе вкладок), выбранная остаётся выбранной. */
+    fun moveTab(from: Int, to: Int) {
+        if (from == to || from !in tabs.indices || to !in tabs.indices) return
+        val cur = tabs[currentIndex]
+        tabs.add(to, tabs.removeAt(from))
+        currentIndex = tabs.indexOf(cur)
     }
 
     fun closeTab(index: Int) {

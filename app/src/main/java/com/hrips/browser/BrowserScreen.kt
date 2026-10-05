@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -39,7 +40,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import android.text.format.Formatter
@@ -69,6 +75,14 @@ fun BrowserScreen(browser: Browser) {
     var showSettings by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    // Разовый выбор движка с главной страницы: сбрасывается после поиска
+    var oneOff by remember { mutableStateOf<SearchEngine?>(null) }
+    // Если открыта выдача поисковика, в строке показываем запрос и логотип движка, а не ссылку
+    val parsed = remember(tab.url, tab.home) { if (tab.home) null else parseSearch(tab.url) }
+    val shownEngine = parsed?.first ?: oneOff ?: SearchEngines.current
+    val pickEngine: (SearchEngine) -> Unit = { e ->
+        if (parsed != null) tab.load(parsed.second, e) else oneOff = e
+    }
 
     val canReturnToPage = tab.home && tab.url.isNotBlank()
     BackHandler(enabled = canReturnToPage || tab.canGoBack) {
@@ -123,6 +137,9 @@ fun BrowserScreen(browser: Browser) {
                         tab = tab,
                         store = store,
                         onSearch = { showSearch = true },
+                        engine = shownEngine,
+                        query = parsed?.second,
+                        onPickEngine = pickEngine,
                         onMenu = { showLibrary = true },
                         showMenu = !wide,
                         downloads = browser.downloads,
@@ -199,10 +216,12 @@ fun BrowserScreen(browser: Browser) {
     ) {
         SearchPanel(
             store = store,
-            initial = if (tab.home) "" else tab.url,
+            initial = if (tab.home) "" else parsed?.second ?: tab.url,
+            initialEngine = shownEngine,
             onSubmit = { text, engine ->
                 if (isSearch(text)) store.addSearch(text)
                 tab.load(text, engine)
+                oneOff = null
                 showSearch = false
             },
             onDismiss = { showSearch = false },
@@ -411,32 +430,44 @@ private fun AddressBar(
     tab: Tab,
     store: Store,
     onSearch: () -> Unit,
+    engine: SearchEngine,
+    query: String?,
+    onPickEngine: (SearchEngine) -> Unit,
     onMenu: () -> Unit,
     showMenu: Boolean,
     downloads: Downloads,
     modifier: Modifier = Modifier,
 ) {
-    val shown = if (tab.home) "" else tab.url.removePrefix("https://")
+    // Логотип движка с выбором: на главной и на странице выдачи. На обычных сайтах - замок и адрес.
+    val withPicker = tab.home || query != null
+    val shown = when {
+        tab.home -> ""
+        query != null -> query
+        else -> tab.url.removePrefix("https://")
+    }
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Нажатие на строку открывает поисковую панель (там и ввод, и выбор движка)
+            if (withPicker) Box(Modifier.padding(start = 6.dp)) { EnginePicker(engine, onPickEngine) }
+            // Нажатие на текст открывает поисковую панель (ввод, подсказки, история)
             Row(
                 Modifier.weight(1f).clickable(onClick = onSearch).padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    if (tab.home) HripsIcons.Search else if (tab.url.startsWith("https://")) HripsIcons.Lock else HripsIcons.Info,
-                    null,
-                    Modifier.padding(start = 16.dp).size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!withPicker) {
+                    Icon(
+                        if (tab.url.startsWith("https://")) HripsIcons.Lock else HripsIcons.Info,
+                        null,
+                        Modifier.padding(start = 16.dp).size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     shown.ifEmpty { "Искать или задать вопрос" },
-                    modifier = Modifier.padding(start = 12.dp),
+                    modifier = Modifier.padding(start = if (withPicker) 8.dp else 12.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyLarge,
@@ -459,15 +490,48 @@ private fun AddressBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TabStrip(browser: Browser) {
+    val listState = rememberLazyListState()
+    // Перетаскивание вкладки: долгое нажатие, затем движение влево/вправо
+    var draggingId by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(Modifier.weight(1f, fill = false), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            itemsIndexed(browser.tabs) { i, t ->
+        LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(browser.tabs, key = { _, t -> System.identityHashCode(t) }) { i, t ->
+                val id = System.identityHashCode(t)
+                val dragging = draggingId == id
                 val selected = i == browser.currentIndex
                 Surface(
                     onClick = { browser.currentIndex = i },
                     shape = CircleShape,
                     color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
-                    modifier = Modifier.widthIn(min = 120.dp, max = 220.dp),
+                    shadowElevation = if (dragging) 8.dp else 0.dp,
+                    modifier = Modifier
+                        .widthIn(min = 120.dp, max = 220.dp)
+                        .then(if (dragging) Modifier.zIndex(1f) else Modifier.animateItem())
+                        .graphicsLayer { translationX = if (dragging) dragOffset else 0f }
+                        .pointerInput(id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { draggingId = id; dragOffset = 0f },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount.x
+                                    val infos = listState.layoutInfo.visibleItemsInfo
+                                    val me = infos.firstOrNull { it.key == id } ?: return@detectDragGesturesAfterLongPress
+                                    val from = browser.tabs.indexOfFirst { System.identityHashCode(it) == id }
+                                    // Раскладка ещё не обновилась после прошлой перестановки: ждём
+                                    if (from < 0 || me.index != from) return@detectDragGesturesAfterLongPress
+                                    val center = me.offset + me.size / 2f + dragOffset
+                                    val target = infos.firstOrNull { it.key != id && center >= it.offset && center <= it.offset + it.size }
+                                    if (target != null) {
+                                        browser.moveTab(from, target.index)
+                                        val newOffset = if (target.index > from) target.offset + target.size - me.size else target.offset
+                                        dragOffset += me.offset - newOffset
+                                    }
+                                },
+                                onDragEnd = { draggingId = null; dragOffset = 0f },
+                                onDragCancel = { draggingId = null; dragOffset = 0f },
+                            )
+                        },
                 ) {
                     Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (t.home) {

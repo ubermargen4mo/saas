@@ -10,6 +10,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +65,8 @@ object Suggestions {
     }
 }
 
+private class Chip(val text: String, val icon: ImageVector?)
+
 private class PanelRow(val text: String, val sub: String?, val icon: ImageVector, val tap: String, val fill: String?)
 
 private fun readClipUrl(ctx: Context, initial: String): String? = runCatching {
@@ -88,12 +92,13 @@ private fun segShape(i: Int, n: Int): RoundedCornerShape {
 fun SearchPanel(
     store: Store,
     initial: String,
+    initialEngine: SearchEngine,
     onSubmit: (text: String, engine: SearchEngine) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
-    var engine by remember { mutableStateOf(SearchEngines.current) }
+    var engine by remember { mutableStateOf(initialEngine) }
     var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
     var remote by remember { mutableStateOf<List<String>>(emptyList()) }
     var clip by remember { mutableStateOf<String?>(null) }
@@ -123,13 +128,15 @@ fun SearchPanel(
         if (text.isNotBlank()) onSubmit(text.trim(), engine)
     }
 
-    val sections: List<List<PanelRow>> = if (typing) {
-        val first = if (isSearch(q)) PanelRow(q, null, HripsIcons.Search, q, null) else PanelRow(q, "Открыть адрес", HripsIcons.Open, q, null)
+    // При наборе подсказки идут чипами в одну строку: тап только вставляет текст в запрос, не ищет.
+    // Ищут по тапу только недавние запросы ниже, когда поле пустое.
+    val chips: List<Chip> = if (typing) {
         val local = store.searches.filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(3)
         val net = remote.filter { r -> !r.equals(q, ignoreCase = true) && local.none { it.equals(r, ignoreCase = true) } }
-        val rest = local.map { PanelRow(it, null, HripsIcons.History, it, it) } +
-            net.map { PanelRow(it, null, HripsIcons.Search, it, it) }
-        listOf(listOf(first) + rest.take(7))
+        (local.map { Chip(it, HripsIcons.History) } + net.map { Chip(it, null) }).take(10)
+    } else emptyList()
+    val sections: List<List<PanelRow>> = if (typing) {
+        emptyList()
     } else {
         listOfNotNull(
             clip?.let { listOf(PanelRow("Скопированная ссылка", it, HripsIcons.Link, it, null)) },
@@ -177,6 +184,23 @@ fun SearchPanel(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
             ) {
+                if (chips.isNotEmpty()) {
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(chips) { c ->
+                                Surface(onClick = { value = TextFieldValue(c.text, TextRange(c.text.length)) }, shape = RoundedCornerShape(16.dp), color = cs.surfaceContainerHigh) {
+                                    Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        if (c.icon != null) {
+                                            Icon(c.icon, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 sections.forEach { rows ->
                     itemsIndexed(rows) { i, r ->
                         Surface(
@@ -215,7 +239,7 @@ fun SearchPanel(
 
 /** Логотип + стрелка вниз; по нажатию меню выбора движка (только на этот запрос). */
 @Composable
-private fun EnginePicker(current: SearchEngine, onPick: (SearchEngine) -> Unit) {
+fun EnginePicker(current: SearchEngine, onPick: (SearchEngine) -> Unit) {
     val cs = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }
     val rotation by animateFloatAsState(
@@ -273,7 +297,8 @@ fun EngineLogo(e: SearchEngine, size: Dp) {
         Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center,
     ) {
-        Favicon("https://${e.host}", size * 0.72f) {
+        // Иконка на весь кружок, без тёмной каймы вокруг
+        Favicon("https://${e.host}", size, fill = true) {
             Box(Modifier.size(size).background(Color(e.color)), contentAlignment = Alignment.Center) {
                 Text(e.name.first().uppercase(), color = Color.White, fontSize = (size.value * 0.5f).sp, fontWeight = FontWeight.Bold)
             }
