@@ -1,0 +1,47 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # AGP 9.4 требует Gradle 9.6.0 и выше
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.6.0
+
+      # compileSdk 37.1 (нужен GeckoView 157). Если пакета нет на раннере, AGP скачает его сам
+      - name: Android SDK platform 37.1
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-37.1" "build-tools;36.0.0" || true
+
+      - name: Fetch uBlock Origin
+        env:
+          UBO_VERSION: 1.75.0
+        run: |
+          curl -fsSL -o ubo.xpi "https://github.com/gorhill/uBlock/releases/download/${UBO_VERSION}/uBlock0_${UBO_VERSION}.firefox.signed.xpi"
+          mkdir -p app/src/main/assets/ublock
+          unzip -q -o ubo.xpi -d app/src/main/assets/ublock
+          rm -rf app/src/main/assets/ublock/META-INF
+
+      - name: Build release APK
+        run: gradle assembleRelease --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hrips-apk
+          path: app/build/outputs/apk/release/*.apk
