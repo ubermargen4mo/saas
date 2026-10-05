@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Скопированные в буфер картинки: временные файлы в кэше -->
+    <cache-path name="copied" path="copied/" />
+</paths>

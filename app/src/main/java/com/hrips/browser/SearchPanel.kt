@@ -76,7 +76,7 @@ private fun readClipUrl(ctx: Context, initial: String): String? = runCatching {
 }.getOrNull()
 
 /** Группа строк со скруглением только по краям группы: общий приём M3 Expressive для списков. */
-private fun segShape(i: Int, n: Int): RoundedCornerShape {
+internal fun segShape(i: Int, n: Int): RoundedCornerShape {
     val big = 24.dp
     val small = 6.dp
     val top = if (i == 0) big else small

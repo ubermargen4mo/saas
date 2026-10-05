@@ -11,6 +11,8 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.GeckoWebExecutor
+import org.mozilla.geckoview.WebRequest
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebResponse
 
@@ -87,6 +89,7 @@ class Tab(
     private val permissionDelegate: GeckoSession.PermissionDelegate,
     private val promptDelegate: GeckoSession.PromptDelegate,
     private val onNewWindow: (String) -> GeckoSession,
+    private val onMenu: (ContextInfo) -> Unit,
     openNow: Boolean = true,
 ) {
     private val startUrl = if (rawStartUrl == "about:blank") "" else rawStartUrl
@@ -178,6 +181,18 @@ class Tab(
             override fun onFullScreen(sess: GeckoSession, fullScreen: Boolean) {
                 if (sess === session) fullscreen = fullScreen
             }
+            // Долгое нажатие или правая кнопка мыши на ссылке / картинке / видео / аудио
+            override fun onContextMenu(
+                sess: GeckoSession,
+                screenX: Int,
+                screenY: Int,
+                element: GeckoSession.ContentDelegate.ContextElement,
+            ) {
+                if (sess !== session) return
+                val hasMedia = element.srcUri != null && element.type != GeckoSession.ContentDelegate.ContextElement.TYPE_NONE
+                if (element.linkUri == null && !hasMedia) return
+                onMenu(ContextInfo(element.linkUri, element.srcUri, element.type, element.title, element.altText, element.baseUri))
+            }
             // Ответ, который нельзя показать как страницу (файл для скачивания)
             override fun onExternalResponse(sess: GeckoSession, response: WebResponse) {
                 onDownload(this@Tab, response)
@@ -237,8 +252,29 @@ class Browser(
     val adBlock: AdBlock,
 ) {
     val tabs = mutableStateListOf<Tab>()
+    /** Открытое контекстное меню (null = нет). Рисуется в BrowserScreen. */
+    var contextMenu by mutableStateOf<ContextInfo?>(null)
+    private val executor by lazy { GeckoWebExecutor(runtime) }
     var currentIndex by mutableIntStateOf(0)
     val current: Tab get() = tabs[currentIndex]
+
+    /** Скачивание по адресу (из контекстного меню): запрос идёт через движок, дальше обычная плашка "Скачать файл?". */
+    fun saveUrl(uri: String, referrer: String?) {
+        fetch(uri, referrer) { r ->
+            if (r != null && r.statusCode in 200..299) downloads.request(r) else downloads.toast("Не удалось скачать файл")
+        }
+    }
+
+    /** Запрос через движок (с cookies и referer страницы). Поток ответа читать не в главном потоке. */
+    fun fetch(uri: String, referrer: String?, onDone: (WebResponse?) -> Unit) {
+        val req = WebRequest.Builder(uri).apply { if (!referrer.isNullOrBlank()) referrer(referrer) }.build()
+        val result = try { executor.fetch(req) } catch (e: Throwable) { null }
+        if (result == null) {
+            onDone(null)
+            return
+        }
+        result.accept({ onDone(it) }, { onDone(null) })
+    }
 
     /** Очистка данных сайтов. История браузера чистится отдельно, в Store. */
     fun clearData(cookies: Boolean, cache: Boolean, onDone: () -> Unit) {
@@ -264,6 +300,7 @@ class Browser(
         permissionDelegate = permissions.delegate,
         promptDelegate = prompts.delegate,
         onNewWindow = { openPopup(it) },
+        onMenu = { contextMenu = it },
         openNow = openNow,
     )
 

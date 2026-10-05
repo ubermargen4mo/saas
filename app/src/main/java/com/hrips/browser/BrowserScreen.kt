@@ -410,6 +410,9 @@ fun BrowserScreen(browser: Browser) {
         }
     }
 
+    // Контекстное меню страницы (долгое нажатие / правая кнопка)
+    browser.contextMenu?.let { info -> ContextMenuSheet(info, browser) { browser.contextMenu = null } }
+
     // Диалоги страниц: alert/confirm/prompt, выпадающие списки, повторная отправка формы
     PromptHost(browser.prompts)
 

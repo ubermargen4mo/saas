@@ -56,6 +56,18 @@ object HripsIcons {
         }
     }
 
+    val Copy by lazy {
+        icon("Copy") {
+            roundRect(9f, 9f, 11f, 11f, 2.5f)
+            moveTo(15f, 9f); verticalLineTo(6f)
+            arcToRelative(2f, 2f, 0f, false, false, -2f, -2f)
+            horizontalLineTo(6f)
+            arcToRelative(2f, 2f, 0f, false, false, -2f, 2f)
+            verticalLineTo(13f)
+            arcToRelative(2f, 2f, 0f, false, false, 2f, 2f)
+            horizontalLineTo(9f)
+        }
+    }
     val ChevronDown by lazy { icon("ChevronDown") { moveTo(6f, 9f); lineTo(12f, 15f); lineTo(18f, 9f) } }
     val InsertQuery by lazy { icon("InsertQuery") { moveTo(17f, 17f); lineTo(7f, 7f); moveTo(7f, 16f); verticalLineTo(7f); horizontalLineTo(16f) } }
     val Link by lazy {

@@ -81,7 +81,7 @@ class Downloads(private val context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun toast(msg: String) = main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+    fun toast(msg: String) = main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
 
     /** Шаг 1: страница отдала файл. Ничего не качаем, только спрашиваем (имя, размер). */
     fun request(response: WebResponse, onDone: (() -> Unit)? = null) {
