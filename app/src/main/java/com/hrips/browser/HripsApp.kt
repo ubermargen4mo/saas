@@ -1,0 +1,23 @@
+package com.hrips.browser
+
+import android.app.Application
+import org.mozilla.geckoview.GeckoRuntime
+
+class HripsApp : Application() {
+    // Один движок на всё приложение. Создаётся при первом обращении (главный поток).
+    val runtime: GeckoRuntime by lazy {
+        GeckoRuntime.create(this).also { applyTrackingProtection(it, store.trackingProtection) }
+    }
+    val store: Store by lazy { Store(this) }
+    val downloads: Downloads by lazy { Downloads(this) }
+    val permissions: Permissions by lazy { Permissions(this) }
+    val prompts: Prompts by lazy { Prompts(this) }
+    val adBlock: AdBlock by lazy { AdBlock(runtime) }
+    val wallpaper: Wallpaper by lazy { Wallpaper(this) }
+
+    // Планшет (наименьшая сторона >= 600dp) -> сайты открываются в десктопном режиме
+    val browser: Browser by lazy {
+        adBlock.install() // расширение ставим до открытия первых вкладок
+        Browser(runtime, store, resources.configuration.smallestScreenWidthDp >= 600, downloads, permissions, prompts, adBlock)
+    }
+}
