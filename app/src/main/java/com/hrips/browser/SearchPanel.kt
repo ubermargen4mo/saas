@@ -251,7 +251,7 @@ fun EnginePicker(current: SearchEngine, onPick: (SearchEngine) -> Unit) {
     )
     Box {
         Surface(onClick = { open = true }, shape = CircleShape, color = cs.surfaceContainerHighest) {
-            Row(Modifier.padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 EngineLogo(current, 28.dp)
                 Spacer(Modifier.width(4.dp))
                 Icon(HripsIcons.ChevronDown, "Поисковая система", Modifier.size(20.dp).rotate(rotation))

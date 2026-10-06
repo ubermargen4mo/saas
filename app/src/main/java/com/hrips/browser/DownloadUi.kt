@@ -192,6 +192,7 @@ fun DownloadsButton(
     modifier: Modifier = Modifier,
     icon: ImageVector = HripsIcons.Download,
     description: String = "Загрузки",
+    size: Dp = 48.dp,
 ) {
     val fx = downloads.fx
     val busy = downloads.items.any { it.status == DlStatus.RUNNING }
@@ -230,7 +231,7 @@ fun DownloadsButton(
 
     Box(
         modifier
-            .size(48.dp)
+            .size(size)
             .onGloballyPositioned {
                 val c = it.boundsInRoot().center
                 if (fx.target != c) fx.target = c
@@ -242,11 +243,11 @@ fun DownloadsButton(
             DownloadRing(
                 progress = progress,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(size - 6.dp)
                     .graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = ringAlpha },
             )
         }
-        IconButton(onClick = onClick) { Icon(icon, description) }
+        IconButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description) }
     }
 }
 

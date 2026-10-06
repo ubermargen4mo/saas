@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.mozilla.geckoview.GeckoView
 
-private fun Tab.label() = when {
+internal fun Tab.label() = when {
     home && isPrivate -> "Приватная вкладка"
     home -> "Начальная страница"
     else -> title.ifBlank { url }
@@ -136,26 +136,30 @@ fun BrowserScreen(browser: Browser) {
         c.isAppearanceLightNavigationBars = !priv && !systemDark
     }
 
+    // Ссылка на GeckoView нужна, чтобы снять превью страницы перед открытием переключателя вкладок
+    val viewRef = remember { arrayOfNulls<GeckoView>(1) }
+    val requestTabs: () -> Unit = { captureThumbnail(activity, viewRef[0], tab) { showTabs = true } }
+
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().imePadding()) {
         if (!fs) {
         Column(Modifier.fillMaxWidth().statusBarsPadding()) {
             if (wide) TabStrip(browser)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = if (wide) 8.dp else 12.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = if (wide) 8.dp else 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (wide) {
-                    IconButton(onClick = { tab.session.goBack() }, enabled = tab.canGoBack && !tab.home) {
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.session.goBack() }, enabled = tab.canGoBack && !tab.home) {
                         Icon(HripsIcons.Back, "Назад")
                     }
-                    IconButton(onClick = { tab.session.goForward() }, enabled = tab.canGoForward && !tab.home) {
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.session.goForward() }, enabled = tab.canGoForward && !tab.home) {
                         Icon(HripsIcons.Forward, "Вперёд")
                     }
-                    IconButton(onClick = { if (tab.loading) tab.session.stop() else tab.session.reload() }, enabled = !tab.home) {
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { if (tab.loading) tab.session.stop() else tab.session.reload() }, enabled = !tab.home) {
                         Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
                     }
-                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
                 }
                 // На широком экране адресная строка по центру и не растягивается на всю ширину
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -173,10 +177,11 @@ fun BrowserScreen(browser: Browser) {
                     )
                 }
                 if (wide) {
-                    DownloadsButton(browser.downloads, onClick = { showDownloads = true })
-                    TabCounterButton(browser.tabs.size) { showTabs = true }
-                    IconButton(onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
-                    Spacer(Modifier.width(48.dp)) // балансирует левые кнопки (4 шт.), чтобы строка была по центру
+                    // Сначала счётчик вкладок, затем загрузки, затем меню
+                    TabCounterButton(browser.tabs.size, Modifier.size(40.dp)) { requestTabs() }
+                    DownloadsButton(browser.downloads, onClick = { showDownloads = true }, size = 40.dp)
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
+                    Spacer(Modifier.width(40.dp)) // балансирует левые кнопки (4 шт.), чтобы строка была по центру
                 }
             }
         }
@@ -206,7 +211,7 @@ fun BrowserScreen(browser: Browser) {
             } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { HripsGeckoView(it) },
+                    factory = { ctx -> HripsGeckoView(ctx).also { viewRef[0] = it } },
                     update = {
                         it.incognito = tab.isPrivate
                         // Системное автозаполнение Android (Google, Bitwarden, 1Password...).
@@ -235,7 +240,7 @@ fun BrowserScreen(browser: Browser) {
                         Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
                     }
                     IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
-                    TabCounterButton(browser.tabs.size) { showTabs = true }
+                    TabCounterButton(browser.tabs.size) { requestTabs() }
                 }
             }
         } else if (wide && !fs) {
@@ -263,6 +268,18 @@ fun BrowserScreen(browser: Browser) {
             onBack = { showSettings = false },
             onSitePermissions = { showSitePerms = true },
             onOpenDownloads = { showSettings = false; showDownloads = true },
+        )
+    }
+    // Переключатель вкладок: "Вкладки / Приватный", карусель карточек с превью
+    AnimatedVisibility(
+        visible = showTabs,
+        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
+        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
+    ) {
+        TabSwitcher(
+            browser = browser,
+            onClose = { showTabs = false },
+            onHistory = { showTabs = false; libPage = 1; showLibrary = true },
         )
     }
     // Поисковая панель: разовый выбор движка, история запросов, подсказки
@@ -309,41 +326,6 @@ fun BrowserScreen(browser: Browser) {
             onSettings = { showSettings = true },
         )
     }
-    }
-
-    if (showTabs) {
-        ModalBottomSheet(onDismissRequest = { showTabs = false }) {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 180.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.heightIn(max = 520.dp),
-            ) {
-                gridItemsIndexed(browser.tabs) { i, t ->
-                    val selected = i == browser.currentIndex
-                    ElevatedCard(
-                        onClick = { browser.currentIndex = i; showTabs = false },
-                        colors = CardDefaults.elevatedCardColors(
-                            containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest
-                            else MaterialTheme.colorScheme.surfaceContainerLow,
-                        ),
-                    ) {
-                        Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (t.isPrivate) {
-                                Icon(HripsIcons.Mask, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                            }
-                            Column(Modifier.weight(1f)) {
-                                Text(t.label(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                                Text(if (t.home) "" else t.url, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                            }
-                            IconButton(onClick = { browser.closeTab(i) }) { Icon(HripsIcons.Close, "Закрыть") }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if (showLibrary) {
@@ -458,13 +440,13 @@ private fun AddressBar(
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 40.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (withPicker) Box(Modifier.padding(start = 6.dp)) { EnginePicker(engine, onPickEngine) }
+            if (withPicker) Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
             // Нажатие на текст открывает поисковую панель (ввод, подсказки, история)
             Row(
-                Modifier.weight(1f).clickable(onClick = onSearch).padding(vertical = 14.dp),
+                Modifier.weight(1f).clickable(onClick = onSearch).padding(vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!withPicker) {
@@ -486,7 +468,7 @@ private fun AddressBar(
                     color = if (shown.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                 )
             }
-            IconButton(onClick = { store.toggleBookmark(tab.url, tab.title) }, enabled = !tab.home) {
+            IconButton(modifier = Modifier.size(40.dp), onClick = { store.toggleBookmark(tab.url, tab.title) }, enabled = !tab.home) {
                 val saved = store.isBookmarked(tab.url)
                 Icon(
                     if (saved) HripsIcons.StarFilled else HripsIcons.Star, "Закладка",
@@ -495,7 +477,7 @@ private fun AddressBar(
             }
             if (showSecurity) SecurityDialog(tab) { showSecurity = false }
             // На телефоне отдельной кнопки загрузок нет: иконка летит к меню, кольцо рисуется вокруг него
-            if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты")
+            if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты", size = 40.dp)
         }
     }
 }
@@ -507,7 +489,7 @@ private fun TabStrip(browser: Browser) {
     // Перетаскивание вкладки: долгое нажатие, затем движение влево/вправо
     var draggingId by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(browser.tabs, key = { _, t -> System.identityHashCode(t) }) { i, t ->
                 val id = System.identityHashCode(t)
@@ -519,7 +501,7 @@ private fun TabStrip(browser: Browser) {
                     color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
                     shadowElevation = if (dragging) 8.dp else 0.dp,
                     modifier = Modifier
-                        .widthIn(min = 120.dp, max = 220.dp)
+                        .height(36.dp).widthIn(min = 120.dp, max = 220.dp)
                         .then(if (dragging) Modifier.zIndex(1f) else Modifier.animateItem())
                         .graphicsLayer { translationX = if (dragging) dragOffset else 0f }
                         .pointerInput(id) {
@@ -574,21 +556,21 @@ private fun TabStrip(browser: Browser) {
                             color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(onClick = { browser.closeTab(i) }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { browser.closeTab(i) }, modifier = Modifier.size(30.dp)) {
                             Icon(HripsIcons.Close, "Закрыть", Modifier.size(16.dp))
                         }
                     }
                 }
             }
         }
-        IconButton(onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
+        IconButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
     }
 }
 
 /** Счётчик вкладок: скруглённый квадрат-контур с числом внутри. Нажатие открывает список вкладок. */
 @Composable
-private fun TabCounterButton(count: Int, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = modifier) {
         val color = LocalContentColor.current
         Box(
             Modifier.size(24.dp).border(2.dp, color, RoundedCornerShape(7.dp)),

@@ -117,6 +117,14 @@ object HripsIcons {
         }
     }
 
+    val Rows by lazy { icon("Rows") { roundRect(3f, 4f, 18f, 7f, 2.5f); roundRect(3f, 13f, 18f, 7f, 2.5f) } }
+    val Grid by lazy {
+        icon("Grid") {
+            roundRect(3f, 3f, 7.5f, 7.5f, 2.2f); roundRect(13.5f, 3f, 7.5f, 7.5f, 2.2f)
+            roundRect(3f, 13.5f, 7.5f, 7.5f, 2.2f); roundRect(13.5f, 13.5f, 7.5f, 7.5f, 2.2f)
+        }
+    }
+
     val Star by lazy { icon("Star") { star() } }
     val StarFilled by lazy { icon("StarFilled", filled = true) { star() } }
 

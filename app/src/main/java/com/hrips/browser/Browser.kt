@@ -120,6 +120,8 @@ class Tab(
     var parent: Tab? = null
 
     var desktopMode by mutableStateOf(desktop)
+    /** Снимок страницы для карточки в переключателе вкладок (только в памяти) */
+    var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     /** true = показываем нативную стартовую страницу вместо веб-страницы */
     var home by mutableStateOf(!popup && startUrl.isBlank())
     var url by mutableStateOf(startUrl)
