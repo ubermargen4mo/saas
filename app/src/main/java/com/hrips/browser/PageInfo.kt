@@ -21,7 +21,8 @@ fun SecurityDialog(tab: Tab, onDismiss: () -> Unit) {
             "Соединение не защищено" to "Сайт $host открыт без шифрования. Не вводите здесь пароли и данные карт."
         else -> "Нет данных о защите" to "Для этой страницы информации о безопасности нет."
     }
-    AlertDialog(
+    HripsDialog(
+        icon = if (tab.trust == Trust.SECURE) HripsIcons.Lock else HripsIcons.Alert,
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(body) },

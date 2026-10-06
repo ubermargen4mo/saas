@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,16 @@ import org.json.JSONObject
 
 data class Entry(val url: String, val title: String, val time: Long)
 
+/**
+ * Ключ сайта для настроек "на сайт": хост в нижнем регистре без "www.".
+ * Для не-http адресов (about:, data:, стартовая страница) возвращает null.
+ */
+fun siteKey(url: String?): String? {
+    val u = url?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return null
+    return runCatching { Uri.parse(u).host }.getOrNull()
+        ?.lowercase()?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+}
+
 /** Закладки, история и список вкладок. Пока в SharedPreferences (JSON), позже можно заменить на Room. */
 /** Что хранится о вкладке между запусками: адрес, заголовок и состояние сессии движка (история, прокрутка). */
 class TabSnap(val url: String, val title: String, val state: String?)
@@ -17,6 +28,29 @@ class TabSnap(val url: String, val title: String, val state: String?)
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("hrips", Context.MODE_PRIVATE)
     private val tabsFile = java.io.File(context.filesDir, "tabs.json")
+
+    /**
+     * Сайты, где включена версия для ПК. Везде остальное - мобильная версия (по умолчанию выключено).
+     * Хранится навсегда, пока пользователь сам не выключит. В приватных вкладках сюда ничего не пишется.
+     */
+    val desktopSites = mutableStateListOf<String>().apply {
+        runCatching {
+            val arr = JSONArray(prefs.getString("desktopSites", "[]"))
+            for (i in 0 until arr.length()) add(arr.getString(i))
+        }
+    }
+
+    fun isDesktopSite(host: String?) = host != null && host in desktopSites
+
+    fun setDesktopSite(host: String, on: Boolean) {
+        if (on) { if (host !in desktopSites) desktopSites.add(0, host) } else desktopSites.remove(host)
+        prefs.edit().putString("desktopSites", JSONArray(desktopSites.toList()).toString()).apply()
+    }
+
+    fun clearDesktopSites() {
+        desktopSites.clear()
+        prefs.edit().remove("desktopSites").apply()
+    }
 
     val bookmarks = mutableStateListOf<Entry>()
     val history = mutableStateListOf<Entry>()

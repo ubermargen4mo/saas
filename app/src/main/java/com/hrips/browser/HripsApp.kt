@@ -22,9 +22,9 @@ class HripsApp : Application() {
     val media: MediaHub by lazy { MediaHub(this) }
     val siteNotifications: SiteNotifications by lazy { SiteNotifications(this) }
 
-    // Планшет (наименьшая сторона >= 600dp) -> сайты открываются в десктопном режиме
+    // Версия для ПК включается только вручную и только для конкретного сайта (см. Store.desktopSites)
     val browser: Browser by lazy {
         adBlock.install() // расширение ставим до открытия первых вкладок
-        Browser(runtime, store, resources.configuration.smallestScreenWidthDp >= 600, downloads, permissions, prompts, adBlock, external, media)
+        Browser(runtime, store, downloads, permissions, prompts, adBlock, external, media)
     }
 }

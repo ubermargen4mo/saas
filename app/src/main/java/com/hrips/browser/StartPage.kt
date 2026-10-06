@@ -143,13 +143,14 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     if (showAdd) {
         var name by remember { mutableStateOf("") }
         var address by remember { mutableStateOf("") }
-        AlertDialog(
+        HripsDialog(
+            icon = HripsIcons.Add,
             onDismissRequest = { showAdd = false },
             title = { Text("Новая плитка") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
-                    OutlinedTextField(address, { address = it }, label = { Text("Адрес") }, singleLine = true)
+                    HripsField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                    HripsField(address, { address = it }, label = { Text("Адрес") }, singleLine = true)
                 }
             },
             confirmButton = {
@@ -168,7 +169,8 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     }
 
     toDelete?.let { e ->
-        AlertDialog(
+        HripsDialog(
+            icon = HripsIcons.Trash,
             onDismissRequest = { toDelete = null },
             title = { Text("Удалить плитку?") },
             text = { Text(e.title) },

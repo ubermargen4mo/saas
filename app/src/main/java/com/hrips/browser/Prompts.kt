@@ -350,7 +350,7 @@ fun PromptHost(prompts: Prompts) {
         when (req) {
             is PromptRequest.Alert -> {
                 val title: (@Composable () -> Unit)? = if (req.title.isBlank()) null else ({ Text(req.title) })
-                AlertDialog(
+                HripsDialog(
                     onDismissRequest = { prompts.resolve(req) { req.onClose() } },
                     title = title,
                     text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(req.message) } },
@@ -360,7 +360,7 @@ fun PromptHost(prompts: Prompts) {
 
             is PromptRequest.Confirm -> {
                 val title: (@Composable () -> Unit)? = if (req.title.isBlank()) null else ({ Text(req.title) })
-                AlertDialog(
+                HripsDialog(
                     onDismissRequest = { prompts.resolve(req) { req.onAnswer(false) } },
                     title = title,
                     text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(req.message) } },
@@ -372,7 +372,7 @@ fun PromptHost(prompts: Prompts) {
             is PromptRequest.Input -> {
                 var text by remember(req) { mutableStateOf(req.initial) }
                 val title: (@Composable () -> Unit)? = if (req.title.isBlank()) null else ({ Text(req.title) })
-                AlertDialog(
+                HripsDialog(
                     onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
                     title = title,
                     text = {
@@ -380,7 +380,7 @@ fun PromptHost(prompts: Prompts) {
                             if (req.message.isNotBlank()) {
                                 Text(req.message, Modifier.padding(bottom = 12.dp))
                             }
-                            OutlinedTextField(value = text, onValueChange = { text = it }, singleLine = true)
+                            HripsField(value = text, onValueChange = { text = it }, singleLine = true)
                         }
                     },
                     confirmButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(text) } }) { Text("OK") } },
@@ -393,7 +393,7 @@ fun PromptHost(prompts: Prompts) {
                     mutableStateListOf<String>().apply { addAll(req.items.filter { it.selected }.map { it.id }) }
                 }
                 val title: (@Composable () -> Unit)? = if (req.title.isBlank()) null else ({ Text(req.title) })
-                AlertDialog(
+                HripsDialog(
                     onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
                     title = title,
                     text = {
@@ -453,7 +453,8 @@ fun PromptHost(prompts: Prompts) {
 private fun AuthDialog(req: PromptRequest.Auth, prompts: Prompts) {
     var user by remember(req) { mutableStateOf(req.user) }
     var pass by remember(req) { mutableStateOf("") }
-    AlertDialog(
+    HripsDialog(
+        icon = HripsIcons.Key,
         onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
         title = { Text(req.title) },
         text = {
@@ -461,9 +462,9 @@ private fun AuthDialog(req: PromptRequest.Auth, prompts: Prompts) {
                 val msg = req.message.ifBlank { req.host }
                 if (msg.isNotBlank()) Text(msg)
                 if (!req.onlyPassword) {
-                    OutlinedTextField(user, { user = it }, label = { Text("Логин") }, singleLine = true)
+                    HripsField(user, { user = it }, label = { Text("Логин") }, singleLine = true)
                 }
-                OutlinedTextField(
+                HripsField(
                     pass, { pass = it },
                     label = { Text("Пароль") },
                     singleLine = true,
@@ -487,7 +488,7 @@ private fun ColorDialog(req: PromptRequest.ColorPick, prompts: Prompts) {
     var hex by remember(req) { mutableStateOf(req.initial) }
     val parsed = remember(hex) { runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
     val presets = req.presets.ifEmpty { defaultColors }
-    AlertDialog(
+    HripsDialog(
         onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
         title = { Text("Выберите цвет") },
         text = {
@@ -522,7 +523,7 @@ private fun ColorDialog(req: PromptRequest.ColorPick, prompts: Prompts) {
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                     )
                     Spacer(Modifier.width(12.dp))
-                    OutlinedTextField(hex, { hex = it }, label = { Text("Код цвета") }, singleLine = true)
+                    HripsField(hex, { hex = it }, label = { Text("Код цвета") }, singleLine = true)
                 }
             }
         },
@@ -604,7 +605,7 @@ private fun DateTimeDialog(req: PromptRequest.DateTime, prompts: Prompts) {
         ) { DatePicker(state = state) }
     } else {
         val time = rememberTimePickerState(initialHour = initTime.hour, initialMinute = initTime.minute, is24Hour = true)
-        AlertDialog(
+        HripsDialog(
             onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
             title = { Text("Время") },
             text = { TimePicker(state = time) },

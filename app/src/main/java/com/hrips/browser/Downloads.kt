@@ -133,6 +133,26 @@ class Downloads(private val context: Context) {
         }
     }
 
+    /**
+     * Сохраняет то, что браузер сделал сам (PDF страницы, снимок экрана), как обычную загрузку:
+     * та же запись в списке, тот же файл в «Загрузках». [open] вызывается уже в фоновом потоке.
+     */
+    fun saveStream(name: String, mime: String, isPrivate: Boolean = false, open: () -> InputStream) {
+        val item = DownloadItem(nextId.getAndIncrement(), name, mime)
+        item.isPrivate = isPrivate
+        items.add(0, item)
+        startService()
+        Thread {
+            try {
+                copy(item, open())
+            } catch (e: Throwable) {
+                item.error = e.message ?: e.javaClass.simpleName
+                item.status = DlStatus.FAILED
+                item.finishedAt = System.currentTimeMillis()
+            }
+        }.start()
+    }
+
     /** Шаг 2б: "Отмена". Поток закрываем, сервер перестаёт слать данные. */
     fun decline(p: PendingDownload) {
         pending.remove(p)

@@ -73,4 +73,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
+    // QR-код страницы (только кодирование, без камеры)
+    implementation("com.google.zxing:core:3.5.3")
 }

@@ -8,7 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -88,10 +89,11 @@ fun SitePermissionsSheet(runtime: GeckoRuntime, sites: SitePermissions, onClose:
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
             } else {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(rows, key = { (it.gecko?.let { g -> "g${g.permission}" } ?: "o${it.kind}") + it.host }) { row ->
+                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    itemsIndexed(rows, key = { _, r -> (r.gecko?.let { g -> "g${g.permission}" } ?: "o${r.kind}") + r.host }) { index, row ->
+                      Surface(shape = segShape(index, rows.size), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -120,6 +122,7 @@ fun SitePermissionsSheet(runtime: GeckoRuntime, sites: SitePermissions, onClose:
                                 }
                             }) { Icon(HripsIcons.Trash, "Сбросить") }
                         }
+                      }
                     }
                 }
                 TextButton(

@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -106,7 +107,10 @@ fun BrowserScreen(browser: Browser) {
     }
 
     // Полноэкранное видео: прячем интерфейс браузера и системные панели
-    val fs = tab.fullscreen
+    // Полноэкранный режим из меню: прячет интерфейс браузера, как видео на весь экран
+    var immersive by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) { immersive = false }
+    val fs = tab.fullscreen || immersive
     val activity = LocalContext.current as? Activity
     LaunchedEffect(fs) {
         val w = activity?.window ?: return@LaunchedEffect
@@ -118,7 +122,7 @@ fun BrowserScreen(browser: Browser) {
             c.show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    BackHandler(enabled = fs) { tab.session.exitFullScreen() }
+    BackHandler(enabled = fs) { if (tab.fullscreen) tab.session.exitFullScreen() else immersive = false }
 
     // Приватная вкладка: окно закрыто от скриншотов и миниатюры в списке приложений
     val priv = tab.isPrivate
@@ -324,44 +328,29 @@ fun BrowserScreen(browser: Browser) {
             onLibrary = { page -> libPage = page; showLibrary = true },
             onDownloads = { showDownloads = true },
             onSettings = { showSettings = true },
+            onScreenshot = { PageActions.screenshot(activity, viewRef[0], tab, browser.downloads) },
+            onFullscreen = { immersive = true },
         )
+    }
+
+    // Выход из полноэкранного режима (кроме жеста «назад»)
+    if (immersive && !tab.fullscreen) {
+        FilledTonalIconButton(
+            onClick = { immersive = false },
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp).size(40.dp).alpha(0.7f),
+        ) { Icon(HripsIcons.Close, "Выйти из полноэкранного режима") }
     }
     }
 
     if (showLibrary) {
-        val downloads = browser.downloads
-        val context = LocalContext.current
-        ModalBottomSheet(onDismissRequest = { showLibrary = false }) {
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(selected = libPage == 0, onClick = { libPage = 0 }, label = { Text("Закладки") })
-                FilterChip(selected = libPage == 1, onClick = { libPage = 1 }, label = { Text("История") })
-                FilterChip(selected = false, onClick = { showLibrary = false; showDownloads = true }, label = { Text("Загрузки") })
-                Spacer(Modifier.weight(1f))
-                if (libPage == 1) TextButton(onClick = { store.clearHistory() }) { Text("Очистить") }
-            }
-            val list = if (libPage == 0) store.bookmarks else store.history
-            if (list.isEmpty()) {
-                Text(
-                    if (libPage == 0) "Закладок пока нет. Нажмите на звёздочку в адресной строке." else "История пуста.",
-                    modifier = Modifier.padding(24.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            LazyColumn(Modifier.heightIn(max = 520.dp)) {
-                items(list.toList()) { e ->
-                    ListItem(
-                        headlineContent = { Text(e.title.ifBlank { e.url }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(e.url, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        trailingContent = {
-                            IconButton(onClick = { if (libPage == 0) store.removeBookmark(e) else store.removeHistory(e) }) {
-                                Icon(HripsIcons.Close, "Удалить")
-                            }
-                        },
-                        modifier = Modifier.clickable { tab.load(e.url); showLibrary = false },
-                    )
-                }
-            }
-        }
+        LibrarySheet(
+            store = store,
+            page = libPage,
+            onPage = { libPage = it },
+            onOpen = { tab.load(it); showLibrary = false },
+            onDownloads = { showLibrary = false; showDownloads = true },
+            onClose = { showLibrary = false },
+        )
     }
 
     // Контекстное меню страницы (долгое нажатие / правая кнопка)
@@ -372,7 +361,8 @@ fun BrowserScreen(browser: Browser) {
 
     // Ссылка для другого приложения (intent:, market:, схемы приложений)
     browser.external.pending?.let { r ->
-        AlertDialog(
+        HripsDialog(
+            icon = HripsIcons.Open,
             onDismissRequest = { browser.external.dismiss() },
             title = { Text("Открыть в другом приложении?") },
             text = { Text(r.uri.take(200)) },
@@ -385,7 +375,8 @@ fun BrowserScreen(browser: Browser) {
 
     // Запрос разрешения сайта (камера, микрофон, местоположение)
     browser.permissions.queue.firstOrNull()?.let { req ->
-        AlertDialog(
+        HripsDialog(
+            icon = HripsIcons.Shield,
             onDismissRequest = { browser.permissions.answer(req, false) },
             title = { Text(req.origin) },
             text = {

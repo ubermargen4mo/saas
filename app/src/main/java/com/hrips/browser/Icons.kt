@@ -287,6 +287,63 @@ object HripsIcons {
         }
     }
 
+    /** Перевод: «A» и иероглиф. */
+    val Translate by lazy {
+        icon("Translate") {
+            moveTo(3f, 6f); horizontalLineTo(13f)
+            moveTo(8f, 3.5f); verticalLineTo(6f)
+            moveTo(5f, 10.5f); curveTo(6.5f, 9f, 9f, 7.5f, 11f, 6f)
+            moveTo(5.5f, 6f); curveTo(6.5f, 9.5f, 9f, 12f, 12f, 13.2f)
+            moveTo(12f, 20.5f); lineTo(16.5f, 10f); lineTo(21f, 20.5f)
+            moveTo(13.8f, 17f); horizontalLineTo(19.2f)
+        }
+    }
+
+    val PlusCircle by lazy { icon("PlusCircle") { circle(12f, 12f, 9.5f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    val ChevronRight by lazy { icon("ChevronRight") { moveTo(9f, 6f); lineTo(15f, 12f); lineTo(9f, 18f) } }
+
+    /** Рамка по углам: полноэкранный режим. */
+    val Fullscreen by lazy {
+        icon("Fullscreen") {
+            moveTo(4f, 9f); verticalLineTo(5f); arcToRelative(1f, 1f, 0f, false, true, 1f, -1f); horizontalLineTo(9f)
+            moveTo(15f, 4f); horizontalLineTo(19f); arcToRelative(1f, 1f, 0f, false, true, 1f, 1f); verticalLineTo(9f)
+            moveTo(20f, 15f); verticalLineTo(19f); arcToRelative(1f, 1f, 0f, false, true, -1f, 1f); horizontalLineTo(15f)
+            moveTo(9f, 20f); horizontalLineTo(5f); arcToRelative(1f, 1f, 0f, false, true, -1f, -1f); verticalLineTo(15f)
+        }
+    }
+
+    /** Те же углы, но с точкой в центре: снимок области. */
+    val Capture by lazy {
+        icon("Capture") {
+            moveTo(4f, 9f); verticalLineTo(5f); arcToRelative(1f, 1f, 0f, false, true, 1f, -1f); horizontalLineTo(9f)
+            moveTo(15f, 4f); horizontalLineTo(19f); arcToRelative(1f, 1f, 0f, false, true, 1f, 1f); verticalLineTo(9f)
+            moveTo(20f, 15f); verticalLineTo(19f); arcToRelative(1f, 1f, 0f, false, true, -1f, 1f); horizontalLineTo(15f)
+            moveTo(9f, 20f); horizontalLineTo(5f); arcToRelative(1f, 1f, 0f, false, true, -1f, -1f); verticalLineTo(15f)
+            circle(12f, 12f, 2.5f)
+        }
+    }
+
+    val Qr by lazy {
+        icon("Qr") {
+            roundRect(3f, 3f, 7f, 7f, 1.5f)
+            roundRect(14f, 3f, 7f, 7f, 1.5f)
+            roundRect(3f, 14f, 7f, 7f, 1.5f)
+            moveTo(14f, 17.5f); horizontalLineTo(17.5f); verticalLineTo(14f)
+            moveTo(21f, 14f); verticalLineToRelative(0.01f)
+            moveTo(14f, 21f); horizontalLineToRelative(0.01f)
+            moveTo(17.5f, 21f); horizontalLineTo(21f)
+        }
+    }
+
+    /** Монитор: версия для ПК. */
+    val Desktop by lazy {
+        icon("Desktop") {
+            roundRect(3f, 4f, 18f, 12f, 2.5f)
+            moveTo(8f, 20f); horizontalLineTo(16f)
+            moveTo(12f, 16f); verticalLineTo(20f)
+        }
+    }
+
     val Shield by lazy {
         icon("Shield") {
             moveTo(12f, 3f); lineToRelative(7f, 3f); verticalLineToRelative(5.5f)

@@ -96,7 +96,10 @@ enum class Trust { NONE, SECURE, WARNING }
 class Tab(
     private val runtime: GeckoRuntime,
     rawStartUrl: String,
-    desktop: Boolean,
+    /** Нужна ли версия для ПК этому сайту (ключ - siteKey). Решает Store, не вкладка. */
+    private val desktopFor: (host: String?) -> Boolean,
+    /** Пользователь переключил режим на сайте: запомнить (в обычной вкладке). */
+    private val onDesktopSaved: (host: String, on: Boolean) -> Unit,
     private val onVisited: (url: String, title: String) -> Unit,
     private val onDownload: (Tab, WebResponse) -> Unit,
     private val permissionDelegate: GeckoSession.PermissionDelegate,
@@ -119,7 +122,13 @@ class Tab(
     /** Вкладка-родитель: на неё возвращаемся, если эта оказалась пустой (например, только ради скачивания). */
     var parent: Tab? = null
 
-    var desktopMode by mutableStateOf(desktop)
+    /** Режим текущего сайта. Не глобальный: при переходе на другой сайт выбирается заново (см. onLocationChange). */
+    var desktopMode by mutableStateOf(desktopFor(siteKey(rawStartUrl)))
+        private set
+    /** Сайт, для которого сейчас выставлен режим. Нужен, чтобы менять режим только при смене сайта. */
+    private var modeHost: String? = siteKey(rawStartUrl)
+    /** Приватные вкладки ничего не запоминают: ручной выбор живёт только в этой вкладке. */
+    private val localDesktop = HashMap<String, Boolean>()
     /** Снимок страницы для карточки в переключателе вкладок (только в памяти) */
     var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     /** true = показываем нативную стартовую страницу вместо веб-страницы */
@@ -239,6 +248,13 @@ class Tab(
                     errorPage = false
                     errorTarget = null
                     url = newUrl
+                    // Другой сайт: берём его собственный режим (мобильный, если не включали версию для ПК)
+                    val host = siteKey(newUrl)
+                    if (host != null && host != modeHost) {
+                        modeHost = host
+                        val want = if (isPrivate) localDesktop[host] ?: desktopFor(host) else desktopFor(host)
+                        if (want != desktopMode) applyDesktop(want, reload = true)
+                    }
                 }
             }
             // Движок не смог загрузить страницу: показываем свою страницу ошибки вместо пустой вкладки
@@ -345,10 +361,22 @@ class Tab(
         home = true
     }
 
-    fun setDesktop(value: Boolean) {
+    /** Сайт текущей страницы (null на стартовой и служебных страницах). */
+    fun siteHost(): String? = if (home) null else siteKey(url)
+
+    /** Меняет режим сессии. Перезагрузка не нужна, если страницы ещё нет или вкладка не загружена. */
+    fun applyDesktop(value: Boolean, reload: Boolean) {
         desktopMode = value
         session.settings.setUserAgentMode(uaMode(value))
-        if (!home) session.reload()
+        if (reload && !home && lazyState == null && session.isOpen) session.reload()
+    }
+
+    /** Выбор пользователя: действует только на этот сайт и запоминается навсегда (кроме приватной вкладки). */
+    fun setDesktop(value: Boolean) {
+        val host = siteHost() ?: return
+        modeHost = host
+        applyDesktop(value, reload = true)
+        if (isPrivate) localDesktop[host] = value else onDesktopSaved(host, value)
     }
 
     fun close() {
@@ -360,7 +388,6 @@ class Tab(
 class Browser(
     val runtime: GeckoRuntime,
     val store: Store,
-    private val desktopByDefault: Boolean,
     val downloads: Downloads,
     val permissions: Permissions,
     val prompts: Prompts,
@@ -418,7 +445,9 @@ class Browser(
         savedState: String? = null,
         savedTitle: String = "",
     ) = Tab(
-        runtime, url, desktopByDefault,
+        runtime, url,
+        desktopFor = { store.isDesktopSite(it) },
+        onDesktopSaved = { host, on -> setSiteDesktop(host, on) },
         // В приватной вкладке история не пишется
         onVisited = { u, t -> if (!isPrivate) store.addHistory(u, t) },
         onDownload = { tab, response -> handleDownload(tab, response) },
@@ -465,6 +494,19 @@ class Browser(
         tabs.add(tab)
         currentIndex = tabs.lastIndex
         return tab.session
+    }
+
+    /** Включает или выключает версию для ПК для сайта: запоминает и применяет во всех открытых вкладках этого сайта. */
+    fun setSiteDesktop(host: String, on: Boolean) {
+        store.setDesktopSite(host, on)
+        tabs.forEach { if (!it.isPrivate && it.siteHost() == host && it.desktopMode != on) it.applyDesktop(on, reload = true) }
+    }
+
+    /** Сброс версии для ПК на всех сайтах. */
+    fun resetDesktopSites() {
+        val hosts = store.desktopSites.toList()
+        store.clearDesktopSites()
+        hosts.forEach { h -> tabs.forEach { if (!it.isPrivate && it.siteHost() == h && it.desktopMode) it.applyDesktop(false, reload = true) } }
     }
 
     fun setTracking(on: Boolean) {

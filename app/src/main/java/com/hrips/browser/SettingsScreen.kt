@@ -50,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -77,6 +78,7 @@ enum class SettingsPage(val title: String, val subtitle: String) {
     PRIVACY("Конфиденциальность", "Трекеры, очистка данных, приватный режим"),
     PASSWORDS("Пароли и автозаполнение", "Системные менеджеры паролей"),
     PERMISSIONS("Разрешения", "Камера, микрофон, местоположение, уведомления"),
+    DESKTOP("Версия для ПК", "Сайты, где она включена"),
     MEDIA("Медиа", "Управление из шторки, картинка в картинке"),
     DOWNLOADS("Загрузки", "Подтверждение, список файлов"),
     ABOUT("О программе", "Версия, движок"),
@@ -88,6 +90,7 @@ private fun SettingsPage.icon(): ImageVector = when (this) {
     SettingsPage.PRIVACY -> HripsIcons.Mask
     SettingsPage.PASSWORDS -> HripsIcons.Key
     SettingsPage.PERMISSIONS -> HripsIcons.Shield
+    SettingsPage.DESKTOP -> HripsIcons.Desktop
     SettingsPage.MEDIA -> HripsIcons.Video
     SettingsPage.DOWNLOADS -> HripsIcons.Download
     SettingsPage.ABOUT -> HripsIcons.Info
@@ -105,6 +108,7 @@ private val index = listOf(
     SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
     SettingEntry("Разрешения сайтов", "камера микрофон геолокация местоположение уведомления сброс", SettingsPage.PERMISSIONS),
     SettingEntry("Разрешения приложения", "android системные права", SettingsPage.PERMISSIONS),
+    SettingEntry("Версия для ПК", "десктопный режим компьютер сайт", SettingsPage.DESKTOP),
     SettingEntry("Картинка в картинке", "pip видео окно", SettingsPage.MEDIA),
     SettingEntry("Управление в уведомлении", "фоновое воспроизведение музыка шторка", SettingsPage.MEDIA),
     SettingEntry("Спрашивать перед загрузкой", "подтверждение скачивание", SettingsPage.DOWNLOADS),
@@ -151,6 +155,7 @@ fun SettingsScreen(
                 SettingsPage.PRIVACY -> PrivacyPage(browser, back)
                 SettingsPage.PASSWORDS -> PasswordsPage(back)
                 SettingsPage.PERMISSIONS -> PermissionsPage(onSitePermissions, back)
+                SettingsPage.DESKTOP -> DesktopPage(browser, back)
                 SettingsPage.MEDIA -> MediaPage(browser.store, back)
                 SettingsPage.DOWNLOADS -> DownloadsPage(browser, back, onOpenDownloads)
                 SettingsPage.ABOUT -> AboutPage(app, back)
@@ -420,6 +425,39 @@ private fun PermissionsPage(onSitePermissions: () -> Unit, onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
         )
+    }
+}
+
+@Composable
+private fun DesktopPage(browser: Browser, onBack: () -> Unit) {
+    val sites = browser.store.desktopSites.toList()
+    PageScaffold("Версия для ПК", onBack) {
+        Text(
+            "По умолчанию на всех сайтах открывается мобильная версия. Включить версию для ПК можно в меню страницы (⋮): она запомнится только для этого сайта.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+        SectionTitle("Сайты")
+        if (sites.isEmpty()) {
+            Text(
+                "Пока нет ни одного сайта",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp),
+            )
+        } else {
+            GroupOf(sites) { host, s ->
+                SettingsRow(
+                    HripsIcons.Desktop, host, "Версия для ПК включена", s,
+                    trailing = {
+                        IconButton(onClick = { browser.setSiteDesktop(host, false) }) { Icon(HripsIcons.Trash, "Выключить") }
+                    },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = { browser.resetDesktopSites() }) { Text("Выключить на всех сайтах") }
+        }
     }
 }
 
