@@ -20,7 +20,7 @@ android {
         targetSdk = 36
         // Номер сборки GitHub Actions: каждая новая сборка ставится поверх старой
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) + 100
-        versionName = "0.6.0"
+        versionName = "0.6.2"
         // Только 64-бит ARM (все современные телефоны и планшеты). Для 32-бит добавь "armeabi-v7a"
         ndk { abiFilters.add("arm64-v8a") }
     }

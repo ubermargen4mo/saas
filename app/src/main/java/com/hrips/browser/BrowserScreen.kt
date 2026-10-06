@@ -100,6 +100,7 @@ fun BrowserScreen(browser: Browser) {
 
     DisposableEffect(tab.session) {
         val s = tab.session
+        tab.ensureLoaded() // вкладка с прошлого запуска грузится, когда её открыли
         browser.setTabActive(s, true)
         onDispose { browser.setTabActive(s, false) }
     }
@@ -448,6 +449,7 @@ private fun AddressBar(
 ) {
     // Логотип движка с выбором: на главной и на странице выдачи. На обычных сайтах - замок и адрес.
     val withPicker = tab.home || query != null
+    var showSecurity by remember { mutableStateOf(false) }
     val shown = when {
         tab.home -> ""
         query != null -> query
@@ -466,11 +468,13 @@ private fun AddressBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!withPicker) {
+                    // Иконка берётся из проверки сертификата движком, а не из того, с чего начинается адрес
+                    val secureNow = tab.trust == Trust.SECURE
                     Icon(
-                        if (tab.url.startsWith("https://")) HripsIcons.Lock else HripsIcons.Info,
-                        null,
-                        Modifier.padding(start = 16.dp).size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (secureNow) HripsIcons.Lock else HripsIcons.Info,
+                        "Безопасность соединения",
+                        Modifier.padding(start = 16.dp).size(18.dp).clickable { showSecurity = true },
+                        tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(
@@ -489,6 +493,7 @@ private fun AddressBar(
                     tint = if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (showSecurity) SecurityDialog(tab) { showSecurity = false }
             // На телефоне отдельной кнопки загрузок нет: иконка летит к меню, кольцо рисуется вокруг него
             if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты")
         }

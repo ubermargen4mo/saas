@@ -11,8 +11,12 @@ import org.json.JSONObject
 data class Entry(val url: String, val title: String, val time: Long)
 
 /** Закладки, история и список вкладок. Пока в SharedPreferences (JSON), позже можно заменить на Room. */
+/** Что хранится о вкладке между запусками: адрес, заголовок и состояние сессии движка (история, прокрутка). */
+class TabSnap(val url: String, val title: String, val state: String?)
+
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("hrips", Context.MODE_PRIVATE)
+    private val tabsFile = java.io.File(context.filesDir, "tabs.json")
 
     val bookmarks = mutableStateListOf<Entry>()
     val history = mutableStateListOf<Entry>()
@@ -181,6 +185,37 @@ class Store(context: Context) {
     fun removeDial(e: Entry) {
         speedDial.remove(e)
         save("dial", speedDial)
+    }
+
+    /** Состояние вкладок может быть большим, поэтому пишем его в файл, а не в SharedPreferences. */
+    fun saveTabSnaps(list: List<TabSnap>, index: Int) {
+        runCatching {
+            val arr = JSONArray()
+            list.forEach { t ->
+                arr.put(JSONObject().put("u", t.url).put("t", t.title).apply { if (t.state != null) put("s", t.state) })
+            }
+            val root = JSONObject().put("index", index).put("tabs", arr)
+            val tmp = java.io.File(tabsFile.parentFile, "tabs.json.tmp")
+            tmp.writeText(root.toString())
+            if (!tmp.renameTo(tabsFile)) { tabsFile.delete(); tmp.renameTo(tabsFile) }
+        }
+    }
+
+    /** Вкладки с прошлого запуска. Старый формат (только адреса) тоже читается. */
+    fun loadTabSnaps(): Pair<List<TabSnap>, Int> {
+        runCatching {
+            if (tabsFile.exists()) {
+                val root = JSONObject(tabsFile.readText())
+                val arr = root.getJSONArray("tabs")
+                val list = (0 until arr.length()).map {
+                    val o = arr.getJSONObject(it)
+                    TabSnap(o.optString("u"), o.optString("t"), if (o.has("s")) o.getString("s") else null)
+                }
+                return list to root.optInt("index", 0)
+            }
+        }
+        val (urls, index) = loadTabs()
+        return urls.map { TabSnap(it, "", null) } to index
     }
 
     fun saveTabs(urls: List<String>, index: Int) {

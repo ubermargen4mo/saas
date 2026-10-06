@@ -14,6 +14,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoWebExecutor
 import org.mozilla.geckoview.WebRequest
+import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebResponse
 
@@ -88,6 +89,9 @@ fun toUrl(input: String, engine: SearchEngine = SearchEngines.current): String {
     }
 }
 
+/** Как показывать защиту страницы в адресной строке. */
+enum class Trust { NONE, SECURE, WARNING }
+
 /** Одна вкладка = одна GeckoSession + наблюдаемое состояние для Compose. */
 class Tab(
     private val runtime: GeckoRuntime,
@@ -101,6 +105,9 @@ class Tab(
     private val onMenu: (ContextInfo) -> Unit,
     private val onExternal: (uri: String, hasUserGesture: Boolean) -> Boolean,
     private val media: MediaHub,
+    /** Состояние сессии с прошлого запуска (история вкладки, прокрутка). Загружается, когда вкладку откроют. */
+    savedState: String? = null,
+    savedTitle: String = "",
     /** Приватная вкладка: отдельная сессия движка, всё хранится только в памяти */
     val isPrivate: Boolean = false,
     openNow: Boolean = true,
@@ -116,7 +123,31 @@ class Tab(
     /** true = показываем нативную стартовую страницу вместо веб-страницы */
     var home by mutableStateOf(!popup && startUrl.isBlank())
     var url by mutableStateOf(startUrl)
-    var title by mutableStateOf("")
+    var title by mutableStateOf(savedTitle)
+    /** Показана страница ошибки (нет сети, плохой сертификат и т.п.), а url - адрес, который не открылся */
+    var errorPage by mutableStateOf(false)
+        private set
+    private var errorTarget: String? = null
+    var secure by mutableStateOf(false)
+        private set
+    var secureException by mutableStateOf(false)
+        private set
+    var certIssuer by mutableStateOf<String?>(null)
+        private set
+    val trust: Trust
+        get() = when {
+            home -> Trust.NONE
+            errorPage -> Trust.WARNING
+            secure && !secureException -> Trust.SECURE
+            else -> Trust.WARNING
+        }
+
+    /** Последнее состояние сессии от движка. Нужно, чтобы сохранить вкладку целиком и поднять её после сбоя. */
+    private var sessionState: GeckoSession.SessionState? = null
+    /** Восстановленное состояние ждёт, пока вкладку не откроют (фоновые вкладки не грузятся при запуске). */
+    private var lazyState: GeckoSession.SessionState? = GeckoSession.SessionState.fromString(savedState)
+    private var lastRecover = 0L
+    private var recoverStreak = 0
     var progress by mutableIntStateOf(0)
     var loading by mutableStateOf(false)
     var canGoBack by mutableStateOf(false)
@@ -132,9 +163,23 @@ class Tab(
         // openNow = false: вкладка создана страницей (target=_blank, window.open), её откроет сам движок
         if (openNow) {
             session.open(runtime)
-            if (startUrl.isNotBlank()) session.loadUri(startUrl)
+            if (lazyState == null && startUrl.isNotBlank()) session.loadUri(startUrl)
         }
     }
+
+    /** Загружает отложенное состояние (когда вкладка стала видимой). */
+    fun ensureLoaded() {
+        val st = lazyState ?: return
+        lazyState = null
+        session.restoreState(st)
+    }
+
+    /** Что сохранить о вкладке на диск. */
+    fun snapshot(): TabSnap = TabSnap(
+        if (home) "" else url,
+        title,
+        if (home) null else (sessionState ?: lazyState)?.toString(),
+    )
 
     private fun uaMode(desktop: Boolean) =
         if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
@@ -157,11 +202,21 @@ class Tab(
             override fun onPageStop(sess: GeckoSession, success: Boolean) {
                 if (sess !== session) return
                 loading = false
-                if (success) onVisited(url, title)
+                if (success && !errorPage) onVisited(url, title)
             }
             override fun onProgressChange(sess: GeckoSession, value: Int) {
                 if (sess !== session) return
                 progress = value
+            }
+            override fun onSecurityChange(sess: GeckoSession, info: GeckoSession.ProgressDelegate.SecurityInformation) {
+                if (sess !== session) return
+                secure = info.isSecure
+                secureException = info.isException
+                certIssuer = info.certificate?.issuerX500Principal?.name
+                    ?.let { Regex("(?:^|,)CN=([^,]+)").find(it)?.groupValues?.get(1) }
+            }
+            override fun onSessionStateChange(sess: GeckoSession, state: GeckoSession.SessionState) {
+                if (sess === session && !isPrivate) sessionState = state
             }
         }
         s.navigationDelegate = object : GeckoSession.NavigationDelegate {
@@ -173,7 +228,26 @@ class Tab(
             ) {
                 if (sess !== session) return
                 // about:blank появляется у пустой вкладки, это не страница пользователя
-                if (newUrl != null && newUrl != "about:blank") url = newUrl
+                if (newUrl == null || newUrl == "about:blank") return
+                if (newUrl.startsWith("data:text/html") && errorTarget != null) {
+                    // Наша страница ошибки: в адресной строке остаётся адрес, который не открылся
+                    errorPage = true
+                    errorTarget?.let { if (it.isNotBlank()) url = it }
+                } else {
+                    errorPage = false
+                    errorTarget = null
+                    url = newUrl
+                }
+            }
+            // Движок не смог загрузить страницу: показываем свою страницу ошибки вместо пустой вкладки
+            override fun onLoadError(
+                sess: GeckoSession,
+                uri: String?,
+                error: WebRequestError,
+            ): GeckoResult<String>? {
+                if (sess !== session) return null
+                errorTarget = uri
+                return GeckoResult.fromValue(ErrorPages.dataUri(uri, error))
             }
             override fun onCanGoBack(sess: GeckoSession, value: Boolean) {
                 if (sess === session) canGoBack = value
@@ -235,6 +309,12 @@ class Tab(
     fun recover() {
         val old = session
         val target = url
+        // Если вкладка падает снова и снова (страница убивает движок), не зацикливаемся: открываем стартовую
+        val now = System.currentTimeMillis()
+        recoverStreak = if (now - lastRecover < 8000) recoverStreak + 1 else 0
+        lastRecover = now
+        val state = if (recoverStreak < 2) (sessionState ?: lazyState) else null
+        lazyState = null
         val fresh = newSession()
         session = fresh
         fresh.open(runtime)
@@ -243,7 +323,13 @@ class Tab(
         progress = 0
         canGoBack = false
         canGoForward = false
-        if (!home && target.isNotBlank()) fresh.loadUri(target)
+        if (recoverStreak >= 3) {
+            home = true
+        } else if (!home && state != null) {
+            fresh.restoreState(state)
+        } else if (!home && target.isNotBlank()) {
+            fresh.loadUri(target)
+        }
         media.forget(old)
         runCatching { old.close() }
     }
@@ -323,7 +409,13 @@ class Browser(
         runtime.webExtensionController.setTabActive(session, active)
     }
 
-    private fun create(url: String, openNow: Boolean = true, isPrivate: Boolean = false) = Tab(
+    private fun create(
+        url: String,
+        openNow: Boolean = true,
+        isPrivate: Boolean = false,
+        savedState: String? = null,
+        savedTitle: String = "",
+    ) = Tab(
         runtime, url, desktopByDefault,
         // В приватной вкладке история не пишется
         onVisited = { u, t -> if (!isPrivate) store.addHistory(u, t) },
@@ -334,6 +426,8 @@ class Browser(
         onMenu = { contextMenu = it },
         onExternal = { u, g -> external.handle(u, g) },
         media = media,
+        savedState = savedState,
+        savedTitle = savedTitle,
         isPrivate = isPrivate,
         openNow = openNow,
     )
@@ -433,9 +527,9 @@ class Browser(
 
     /** Восстанавливает вкладки с прошлого запуска. Возвращает true, если было что восстанавливать. */
     fun restore(): Boolean {
-        val (urls, index) = store.loadTabs()
-        if (urls.isEmpty()) return false
-        urls.forEach { tabs.add(create(it)) }
+        val (snaps, index) = store.loadTabSnaps()
+        if (snaps.isEmpty()) return false
+        snaps.forEach { tabs.add(create(it.url, savedState = it.state, savedTitle = it.title)) }
         currentIndex = index.coerceIn(0, tabs.lastIndex)
         return true
     }
@@ -446,6 +540,6 @@ class Browser(
         val regular = tabs.filter { !it.isPrivate }
         val cur = tabs.getOrNull(currentIndex)
         val idx = regular.indexOf(cur).takeIf { it >= 0 } ?: regular.lastIndex.coerceAtLeast(0)
-        store.saveTabs(regular.map { if (it.home) "" else it.url }, idx)
+        store.saveTabSnaps(regular.map { it.snapshot() }, idx)
     }
 }
