@@ -100,6 +100,9 @@ class Prompts(private val context: Context) {
      */
     var pickFiles: ((multiple: Boolean, mimeTypes: Array<String>, onResult: (List<Uri>) -> Unit) -> Unit)? = null
 
+    /** Выбор папки целиком (<input webkitdirectory>). Результат: один Uri копии папки или пустой список. */
+    var pickFolder: ((onResult: (List<Uri>) -> Unit) -> Unit)? = null
+
     private fun show(req: PromptRequest) {
         queue.add(req)
     }
@@ -211,21 +214,16 @@ class Prompts(private val context: Context) {
             return result
         }
 
-        // <input type="file">: загрузка файлов на сайты
+        // <input type="file">: загрузка файлов и папок (webkitdirectory) на сайты
         override fun onFilePrompt(
             session: GeckoSession,
             prompt: PromptDelegate.FilePrompt,
         ): GeckoResult<PromptDelegate.PromptResponse>? {
-            val pick = pickFiles
-            // Выбор папки движок пока не поддерживает, и без активности выбирать негде
-            if (pick == null || prompt.type == PromptDelegate.FilePrompt.Type.FOLDER) {
-                return GeckoResult.fromValue(prompt.dismiss())
-            }
-            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            val folder = prompt.type == PromptDelegate.FilePrompt.Type.FOLDER
             val multiple = prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE
-            pick(multiple, accept(prompt.mimeTypes)) { uris ->
-                // confirm(context, uri) копирует выбранные файлы в кэш движка. Для больших файлов (видео)
-                // это долго, поэтому не на главном потоке, иначе приложение зависнет.
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            // Выбранное отдаём движку не на главном потоке: confirm() может читать файлы
+            val finish: (List<Uri>) -> Unit = { uris ->
                 Thread {
                     complete(result) {
                         try {
@@ -244,6 +242,13 @@ class Prompts(private val context: Context) {
                         }
                     }
                 }.start()
+            }
+            if (folder) {
+                val pickDir = pickFolder ?: return GeckoResult.fromValue(prompt.dismiss())
+                pickDir(finish)
+            } else {
+                val pick = pickFiles ?: return GeckoResult.fromValue(prompt.dismiss())
+                pick(multiple, accept(prompt.mimeTypes), finish)
             }
             return result
         }

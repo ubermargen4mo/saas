@@ -48,13 +48,47 @@ class MainActivity : ComponentActivity() {
         cb?.invoke(uris)
     }
 
+    /**
+     * Файлы из проводника копируем в кэш приложения и отдаём движку обычными файлами: так не зависим от того,
+     * какой провайдер документов (у каждой прошивки свой проводник) вернул ссылку. Копирование в фоне.
+     */
+    private fun deliverCopied(uris: List<Uri>) {
+        if (uris.isEmpty()) { deliverFiles(emptyList()); return }
+        Thread {
+            val copied = UploadFiles.copyFiles(applicationContext, uris)
+            runOnUiThread {
+                if (copied.isEmpty()) {
+                    android.widget.Toast.makeText(this, "Не удалось прочитать выбранные файлы", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                deliverFiles(copied)
+            }
+        }.start()
+    }
+
     private val pickOneFile = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri -> deliverFiles(listOfNotNull(uri)) }
+    ) { uri -> deliverCopied(listOfNotNull(uri)) }
 
     private val pickManyFiles = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris -> deliverFiles(uris) }
+    ) { uris -> deliverCopied(uris) }
+
+    // Папка целиком: копируется вместе с вложенными, структура сохраняется
+    private val pickFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { tree ->
+        if (tree == null) { deliverFiles(emptyList()); return@registerForActivityResult }
+        android.widget.Toast.makeText(this, "Подготавливаю папку…", android.widget.Toast.LENGTH_SHORT).show()
+        Thread {
+            val dir = UploadFiles.copyTree(applicationContext, tree)
+            runOnUiThread {
+                if (dir == null) {
+                    android.widget.Toast.makeText(this, "Не удалось прочитать папку", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                deliverFiles(listOfNotNull(dir))
+            }
+        }.start()
+    }
 
     // Если сайт просит только фото/видео: системный подборщик медиа (Google Фото и аналоги)
     private val pickOneMedia = registerForActivityResult(
@@ -89,6 +123,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         hrips.wallpaper.pick = {
             pickWallpaper.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+        hrips.prompts.pickFolder = { onResult ->
+            deliverFiles(emptyList())
+            filesCallback = onResult
+            try {
+                pickFolderLauncher.launch(null)
+            } catch (e: Exception) {
+                deliverFiles(emptyList())
+                android.widget.Toast.makeText(this, "Не удалось открыть выбор папки", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
         browser.permissions.requestAndroid = { perms -> permissionLauncher.launch(perms) }
         browser.permissions.requestFirstRun = { perms -> firstRunLauncher.launch(perms) }
