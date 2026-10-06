@@ -224,13 +224,26 @@ class Prompts(private val context: Context) {
             val result = GeckoResult<PromptDelegate.PromptResponse>()
             val multiple = prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE
             pick(multiple, accept(prompt.mimeTypes)) { uris ->
-                complete(result) {
-                    when {
-                        uris.isEmpty() -> prompt.dismiss()
-                        multiple -> prompt.confirm(context, uris.toTypedArray())
-                        else -> prompt.confirm(context, uris[0])
+                // confirm(context, uri) копирует выбранные файлы в кэш движка. Для больших файлов (видео)
+                // это долго, поэтому не на главном потоке, иначе приложение зависнет.
+                Thread {
+                    complete(result) {
+                        try {
+                            when {
+                                uris.isEmpty() -> prompt.dismiss()
+                                multiple -> prompt.confirm(context, uris.toTypedArray())
+                                else -> prompt.confirm(context, uris[0])
+                            }
+                        } catch (e: Exception) {
+                            // Раньше такая ошибка терялась, и поле выбора файла на странице молча зависало
+                            android.util.Log.w("Prompts", "Не удалось передать файл сайту", e)
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                android.widget.Toast.makeText(context, "Не удалось прикрепить файл", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            prompt.dismiss()
+                        }
                     }
-                }
+                }.start()
             }
             return result
         }

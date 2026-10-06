@@ -56,6 +56,34 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> deliverFiles(uris) }
 
+    // Если сайт просит только фото/видео: системный подборщик медиа (Google Фото и аналоги)
+    private val pickOneMedia = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> deliverFiles(listOfNotNull(uri)) }
+
+    private val pickManyMedia = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris -> deliverFiles(uris) }
+
+    /** Запрос к подборщику медиа или null, если нужны любые файлы (тогда открывается проводник). */
+    private fun mediaRequest(types: Array<String>): PickVisualMediaRequest? {
+        if (types.isEmpty() || types.any { it == "*/*" }) return null
+        val images = types.all { it.startsWith("image/") }
+        val videos = types.all { it.startsWith("video/") }
+        val media = types.all { it.startsWith("image/") || it.startsWith("video/") }
+        return PickVisualMediaRequest(
+            when {
+                // Один конкретный тип (например, только image/png): подборщик отфильтрует сам
+                (images || videos) && types.size == 1 && !types[0].endsWith("/*") ->
+                    ActivityResultContracts.PickVisualMedia.SingleMimeType(types[0])
+                images -> ActivityResultContracts.PickVisualMedia.ImageOnly
+                videos -> ActivityResultContracts.PickVisualMedia.VideoOnly
+                media -> ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                else -> return null
+            }
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -70,7 +98,19 @@ class MainActivity : ComponentActivity() {
         hrips.prompts.pickFiles = { multiple, mimeTypes, onResult ->
             deliverFiles(emptyList()) // предыдущий незавершённый выбор считаем отменённым
             filesCallback = onResult
-            if (multiple) pickManyFiles.launch(mimeTypes) else pickOneFile.launch(mimeTypes)
+            try {
+                val media = mediaRequest(mimeTypes)
+                when {
+                    media != null && multiple -> pickManyMedia.launch(media)
+                    media != null -> pickOneMedia.launch(media)
+                    multiple -> pickManyFiles.launch(mimeTypes)
+                    else -> pickOneFile.launch(mimeTypes)
+                }
+            } catch (e: Exception) {
+                // Нет приложения для выбора файлов: страница не должна зависнуть в ожидании
+                deliverFiles(emptyList())
+                android.widget.Toast.makeText(this, "Не удалось открыть выбор файлов", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
         if (browser.tabs.isEmpty()) browser.restore()
         if (savedInstanceState == null) handleIntent(intent)
