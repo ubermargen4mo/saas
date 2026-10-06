@@ -95,6 +95,7 @@ fun SearchPanel(
     initialEngine: SearchEngine,
     onSubmit: (text: String, engine: SearchEngine) -> Unit,
     onDismiss: () -> Unit,
+    incognito: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
@@ -115,8 +116,9 @@ fun SearchPanel(
         delay(150) // буфер обмена читается только когда окно уже в фокусе
         clip = readClipUrl(ctx, initial)
     }
-    LaunchedEffect(q, engine, store.suggestionsOn) {
-        if (!typing || !store.suggestionsOn) {
+    // В приватном режиме недописанный запрос не уходит поисковику ради подсказок
+    LaunchedEffect(q, engine, store.suggestionsOn, incognito) {
+        if (!typing || !store.suggestionsOn || incognito) {
             remote = emptyList()
             return@LaunchedEffect
         }
@@ -131,7 +133,7 @@ fun SearchPanel(
     // При наборе подсказки идут чипами в одну строку: тап только вставляет текст в запрос, не ищет.
     // Ищут по тапу только недавние запросы ниже, когда поле пустое.
     val chips: List<Chip> = if (typing) {
-        val local = store.searches.filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(3)
+        val local = (if (incognito) emptyList() else store.searches.toList()).filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(3)
         val net = remote.filter { r -> !r.equals(q, ignoreCase = true) && local.none { it.equals(r, ignoreCase = true) } }
         (local.map { Chip(it, HripsIcons.History) } + net.map { Chip(it, null) }).take(10)
     } else emptyList()
@@ -140,7 +142,7 @@ fun SearchPanel(
     } else {
         listOfNotNull(
             clip?.let { listOf(PanelRow("Скопированная ссылка", it, HripsIcons.Link, it, null)) },
-            store.searches.take(8).map { PanelRow(it, null, HripsIcons.History, it, it) }.takeIf { it.isNotEmpty() },
+            (if (incognito) emptyList() else store.searches.toList()).take(8).map { PanelRow(it, null, HripsIcons.History, it, it) }.takeIf { it.isNotEmpty() },
         )
     }
 

@@ -18,16 +18,30 @@ android {
         // GeckoView и Firefox требуют Android 8.0+, Android 12 (API 31) полностью в диапазоне
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        // Номер сборки GitHub Actions: каждая новая сборка ставится поверх старой
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) + 100
+        versionName = "0.6.0"
         // Только 64-бит ARM (все современные телефоны и планшеты). Для 32-бит добавь "armeabi-v7a"
         ndk { abiFilters.add("arm64-v8a") }
+    }
+
+    // Постоянный ключ подписи берётся из секретов GitHub (см. build.yml). Без него - временный debug-ключ.
+    val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystorePath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
     compileOptions {

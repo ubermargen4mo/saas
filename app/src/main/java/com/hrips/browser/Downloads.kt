@@ -45,6 +45,8 @@ class DownloadItem(val id: Int, val name: String, val mime: String) {
     val startedAt = System.currentTimeMillis()
     var finishedAt by mutableLongStateOf(0L)
     @Volatile var cancelled = false
+    /** Загрузка из приватной вкладки: пропадает из списка, когда закрыта последняя приватная вкладка */
+    var isPrivate = false
 }
 
 /** Ответ сервера, который ждёт решения пользователя ("Загрузить" / "Отмена"). Поток данных пока не читается. */
@@ -55,6 +57,7 @@ class PendingDownload(
     val total: Long,
     val host: String?,
     val onDone: (() -> Unit)?,
+    val isPrivate: Boolean = false,
 )
 
 /**
@@ -84,7 +87,7 @@ class Downloads(private val context: Context) {
     fun toast(msg: String) = main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
 
     /** Шаг 1: страница отдала файл. Ничего не качаем, только спрашиваем (имя, размер). */
-    fun request(response: WebResponse, onDone: (() -> Unit)? = null) {
+    fun request(response: WebResponse, isPrivate: Boolean = false, onDone: (() -> Unit)? = null) {
         try {
             val body = response.body
             if (body == null) {
@@ -101,7 +104,10 @@ class Downloads(private val context: Context) {
             } else headerMime
             val total = headers["content-length"]?.toLongOrNull() ?: -1L
             val host = Uri.parse(response.uri).host?.removePrefix("www.")
-            pending.add(PendingDownload(body, name, mime, total, host, onDone))
+            val p = PendingDownload(body, name, mime, total, host, onDone, isPrivate)
+            pending.add(p)
+            // Подтверждение выключено в настройках: качаем сразу
+            if ((context.applicationContext as? HripsApp)?.store?.askBeforeDownload == false) accept(p, name)
         } catch (e: Throwable) {
             // Любая ошибка здесь раньше молча терялась ("ничего не происходит"). Теперь видно причину.
             toast("Загрузка не началась: ${e.message ?: e.javaClass.simpleName}")
@@ -115,6 +121,7 @@ class Downloads(private val context: Context) {
         try {
             val item = DownloadItem(nextId.getAndIncrement(), name, p.mime)
             item.total = p.total
+            item.isPrivate = p.isPrivate
             items.add(0, item)
             askNotificationPermissionOnce()
             startService()
@@ -143,7 +150,8 @@ class Downloads(private val context: Context) {
         return (done.toFloat() / total).coerceIn(0f, 1f)
     }
 
-    private fun askNotificationPermissionOnce() {
+    /** Один раз просит разрешение на уведомления (Android 13+). Нужно и загрузкам, и медиа-уведомлению. */
+    fun askNotificationPermissionOnce() {
         if (Build.VERSION.SDK_INT < 33) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
         if (prefs.getBoolean("notif_asked", false)) return
@@ -295,6 +303,11 @@ class Downloads(private val context: Context) {
         } catch (e: ActivityNotFoundException) {
             toast("Нет приложения, чтобы поделиться файлом")
         }
+    }
+
+    /** Закрылась последняя приватная вкладка: убираем завершённые приватные загрузки из списка (файлы остаются). */
+    fun clearPrivate() {
+        items.removeAll { it.isPrivate && it.status != DlStatus.RUNNING }
     }
 
     fun clearFinished() {

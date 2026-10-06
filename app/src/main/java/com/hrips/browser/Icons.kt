@@ -120,6 +120,16 @@ object HripsIcons {
     val Star by lazy { icon("Star") { star() } }
     val StarFilled by lazy { icon("StarFilled", filled = true) { star() } }
 
+    val Mask by lazy {
+        icon("Mask") {
+            // шляпа
+            moveTo(3f, 11f); horizontalLineTo(21f)
+            moveTo(6f, 11f); lineTo(8f, 4f); horizontalLineTo(16f); lineTo(18f, 11f)
+            // очки
+            circle(8f, 17f, 3f); circle(16f, 17f, 3f)
+            moveTo(11f, 16.5f); horizontalLineTo(13f)
+        }
+    }
     val MoreVert by lazy { icon("MoreVert") { circle(12f, 5f, 1f); circle(12f, 12f, 1f); circle(12f, 19f, 1f) } }
 
     val Pencil by lazy {
@@ -215,6 +225,85 @@ object HripsIcons {
             arcToRelative(2f, 2f, 0f, false, false, 2f, -2f)
             verticalLineTo(8f)
             moveTo(10f, 12f); horizontalLineToRelative(4f)
+        }
+    }
+
+    val Camera by lazy {
+        icon("Camera") {
+            moveTo(3f, 8f)
+            arcToRelative(2f, 2f, 0f, false, true, 2f, -2f); horizontalLineToRelative(8f)
+            arcToRelative(2f, 2f, 0f, false, true, 2f, 2f); verticalLineToRelative(8f)
+            arcToRelative(2f, 2f, 0f, false, true, -2f, 2f); horizontalLineTo(5f)
+            arcToRelative(2f, 2f, 0f, false, true, -2f, -2f); close()
+            moveTo(16f, 10.5f); lineToRelative(5f, -3f); verticalLineToRelative(9f); lineToRelative(-5f, -3f)
+        }
+    }
+
+    val Mic by lazy {
+        icon("Mic") {
+            moveTo(12f, 3f)
+            arcToRelative(3f, 3f, 0f, false, false, -3f, 3f); verticalLineToRelative(6f)
+            arcToRelative(3f, 3f, 0f, false, false, 6f, 0f); verticalLineTo(6f)
+            arcToRelative(3f, 3f, 0f, false, false, -3f, -3f); close()
+            moveTo(5f, 11f); arcToRelative(7f, 7f, 0f, false, false, 14f, 0f)
+            moveTo(12f, 18f); verticalLineToRelative(3f)
+        }
+    }
+
+    val Pin by lazy {
+        icon("Pin") {
+            moveTo(12f, 21f)
+            curveToRelative(0f, 0f, -7f, -6.2f, -7f, -11f)
+            arcToRelative(7f, 7f, 0f, false, true, 14f, 0f)
+            curveToRelative(0f, 4.8f, -7f, 11f, -7f, 11f); close()
+            circle(12f, 10f, 2.5f)
+        }
+    }
+
+    val Bell by lazy {
+        icon("Bell") {
+            moveTo(6f, 9f)
+            arcToRelative(6f, 6f, 0f, false, true, 12f, 0f)
+            curveToRelative(0f, 6f, 2f, 7.5f, 2f, 7.5f); horizontalLineTo(4f)
+            curveToRelative(0f, 0f, 2f, -1.5f, 2f, -7.5f); close()
+            moveTo(10f, 20f); arcToRelative(2f, 2f, 0f, false, false, 4f, 0f)
+        }
+    }
+
+    val Key by lazy {
+        icon("Key") {
+            circle(7.5f, 15.5f, 4.5f)
+            moveTo(10.7f, 12.3f); lineTo(20f, 3f)
+            moveTo(16f, 7f); lineToRelative(3f, 3f)
+            moveTo(13.5f, 9.5f); lineToRelative(2f, 2f)
+        }
+    }
+
+    val Shield by lazy {
+        icon("Shield") {
+            moveTo(12f, 3f); lineToRelative(7f, 3f); verticalLineToRelative(5.5f)
+            curveToRelative(0f, 4.4f, -3f, 7.6f, -7f, 9.5f)
+            curveToRelative(-4f, -1.9f, -7f, -5.1f, -7f, -9.5f)
+            verticalLineTo(6f); close()
+            moveTo(9f, 12f); lineToRelative(2f, 2f); lineToRelative(4f, -4f)
+        }
+    }
+
+    val Block by lazy {
+        icon("Block") {
+            circle(12f, 12f, 9f)
+            moveTo(5.6f, 5.6f); lineTo(18.4f, 18.4f)
+        }
+    }
+
+    val Folder by lazy {
+        icon("Folder") {
+            moveTo(3f, 7f)
+            arcToRelative(2f, 2f, 0f, false, true, 2f, -2f); horizontalLineToRelative(4f)
+            lineToRelative(2f, 2.5f); horizontalLineToRelative(7f)
+            arcToRelative(2f, 2f, 0f, false, true, 2f, 2f); verticalLineTo(17f)
+            arcToRelative(2f, 2f, 0f, false, true, -2f, 2f); horizontalLineTo(5f)
+            arcToRelative(2f, 2f, 0f, false, true, -2f, -2f); close()
         }
     }
 }

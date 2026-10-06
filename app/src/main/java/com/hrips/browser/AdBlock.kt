@@ -26,6 +26,11 @@ class AdBlock(private val runtime: GeckoRuntime) {
                 { ext ->
                     extension = ext
                     enabled = ext?.metaData?.enabled ?: true
+                    // По умолчанию расширения в приватных вкладках не работают: без этого там не было бы блокировки
+                    if (ext != null && !ext.metaData.allowedInPrivateBrowsing) {
+                        runtime.webExtensionController.setAllowedInPrivateBrowsing(ext, true)
+                            .accept({ updated -> if (updated != null) extension = updated }, { })
+                    }
                 },
                 { e -> error = e?.message ?: "неизвестная ошибка" },
             )

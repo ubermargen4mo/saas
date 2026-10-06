@@ -33,7 +33,13 @@ class DownloadService : Service() {
     }
 
     private fun build(running: List<DownloadItem>): Notification {
-        val title = if (running.size == 1) running[0].name else "Загрузки: ${running.size}"
+        // Имена файлов из приватных вкладок не показываем в шторке уведомлений
+        val title = when {
+            running.isNotEmpty() && running.all { it.isPrivate } ->
+                if (running.size == 1) "Приватная загрузка" else "Приватные загрузки: ${running.size}"
+            running.size == 1 -> running[0].name
+            else -> "Загрузки: ${running.size}"
+        }
         val b = NotificationCompat.Builder(this, Downloads.CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)

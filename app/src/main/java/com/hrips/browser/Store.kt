@@ -43,6 +43,51 @@ class Store(context: Context) {
         prefs.edit().remove("searches").apply()
     }
 
+    /** Разрешить скриншоты и миниатюру в списке приложений, пока открыта приватная вкладка. По умолчанию запрещено. */
+    /** Экран с разрешениями показывается один раз при первом запуске. */
+    var firstRunDone by mutableStateOf(prefs.getBoolean("firstrun", false))
+        private set
+
+    fun finishFirstRun() {
+        firstRunDone = true
+        prefs.edit().putBoolean("firstrun", true).apply()
+    }
+
+    /** Картинка в картинке при выходе на главный экран с видео на весь экран. */
+    var pipEnabled by mutableStateOf(prefs.getBoolean("pip", true))
+        private set
+
+    fun updatePip(on: Boolean) {
+        pipEnabled = on
+        prefs.edit().putBoolean("pip", on).apply()
+    }
+
+    /** Уведомление с кнопками и фоновое воспроизведение. */
+    var mediaControls by mutableStateOf(prefs.getBoolean("mediactl", true))
+        private set
+
+    fun updateMediaControls(on: Boolean) {
+        mediaControls = on
+        prefs.edit().putBoolean("mediactl", on).apply()
+    }
+
+    /** Показывать окно подтверждения перед загрузкой файла. */
+    var askBeforeDownload by mutableStateOf(prefs.getBoolean("dlask", true))
+        private set
+
+    fun updateAskBeforeDownload(on: Boolean) {
+        askBeforeDownload = on
+        prefs.edit().putBoolean("dlask", on).apply()
+    }
+
+    var allowPrivateShots by mutableStateOf(prefs.getBoolean("pshots", false))
+        private set
+
+    fun updatePrivateShots(on: Boolean) {
+        allowPrivateShots = on
+        prefs.edit().putBoolean("pshots", on).apply()
+    }
+
     /** Защита от трекеров движка. Если какой-то сайт ломается, её можно выключить в настройках. */
     var trackingProtection by mutableStateOf(prefs.getBoolean("tp", true))
         private set

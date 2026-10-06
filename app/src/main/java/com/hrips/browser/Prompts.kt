@@ -1,6 +1,30 @@
 package com.hrips.browser
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.YearMonth
+import java.time.ZoneOffset
+import java.time.temporal.IsoFields
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.compose.foundation.clickable
@@ -39,6 +63,16 @@ sealed class PromptRequest {
     class Alert(val title: String, val message: String, val onClose: () -> Unit) : PromptRequest()
     class Confirm(val title: String, val message: String, val onAnswer: (Boolean) -> Unit) : PromptRequest()
     class Input(val title: String, val message: String, val initial: String, val onAnswer: (String?) -> Unit) : PromptRequest()
+    class Auth(
+        val title: String,
+        val message: String,
+        val host: String,
+        val onlyPassword: Boolean,
+        val user: String,
+        val onAnswer: (Pair<String, String>?) -> Unit,
+    ) : PromptRequest()
+    class ColorPick(val initial: String, val presets: List<String>, val onAnswer: (String?) -> Unit) : PromptRequest()
+    class DateTime(val type: Int, val initial: String?, val onAnswer: (String?) -> Unit) : PromptRequest()
     class Pick(
         val title: String,
         val items: List<PickItem>,
@@ -236,6 +270,57 @@ class Prompts(private val context: Context) {
             })
             return result
         }
+
+        // Вход по HTTP-авторизации (окно "логин и пароль" от сервера или роутера)
+        override fun onAuthPrompt(
+            session: GeckoSession,
+            prompt: PromptDelegate.AuthPrompt,
+        ): GeckoResult<PromptDelegate.PromptResponse>? {
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            val opts = prompt.authOptions
+            val onlyPassword = (opts.flags and PromptDelegate.AuthPrompt.AuthOptions.Flags.ONLY_PASSWORD) != 0
+            val host = opts.uri?.let { Uri.parse(it).host }.orEmpty()
+            show(PromptRequest.Auth(
+                prompt.title.orEmpty().ifBlank { "Вход" },
+                prompt.message.orEmpty(),
+                host,
+                onlyPassword,
+                opts.username.orEmpty(),
+            ) { cred ->
+                complete(result) {
+                    when {
+                        cred == null -> prompt.dismiss()
+                        onlyPassword -> prompt.confirm(cred.second)
+                        else -> prompt.confirm(cred.first, cred.second)
+                    }
+                }
+            })
+            return result
+        }
+
+        // <input type="color">
+        override fun onColorPrompt(
+            session: GeckoSession,
+            prompt: PromptDelegate.ColorPrompt,
+        ): GeckoResult<PromptDelegate.PromptResponse>? {
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            show(PromptRequest.ColorPick(prompt.defaultValue ?: "#000000", prompt.predefinedValues?.filterNotNull().orEmpty()) { c ->
+                complete(result) { if (c == null) prompt.dismiss() else prompt.confirm(c) }
+            })
+            return result
+        }
+
+        // <input type="date | time | month | week | datetime-local">
+        override fun onDateTimePrompt(
+            session: GeckoSession,
+            prompt: PromptDelegate.DateTimePrompt,
+        ): GeckoResult<PromptDelegate.PromptResponse>? {
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            show(PromptRequest.DateTime(prompt.type, prompt.defaultValue) { v ->
+                complete(result) { if (v == null) prompt.dismiss() else prompt.confirm(v) }
+            })
+            return result
+        }
     }
 }
 
@@ -338,6 +423,180 @@ fun PromptHost(prompts: Prompts) {
                     dismissButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(null) } }) { Text("Отмена") } },
                 )
             }
+
+            is PromptRequest.Auth -> AuthDialog(req, prompts)
+            is PromptRequest.ColorPick -> ColorDialog(req, prompts)
+            is PromptRequest.DateTime -> DateTimeDialog(req, prompts)
         }
+    }
+}
+
+@Composable
+private fun AuthDialog(req: PromptRequest.Auth, prompts: Prompts) {
+    var user by remember(req) { mutableStateOf(req.user) }
+    var pass by remember(req) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
+        title = { Text(req.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val msg = req.message.ifBlank { req.host }
+                if (msg.isNotBlank()) Text(msg)
+                if (!req.onlyPassword) {
+                    OutlinedTextField(user, { user = it }, label = { Text("Логин") }, singleLine = true)
+                }
+                OutlinedTextField(
+                    pass, { pass = it },
+                    label = { Text("Пароль") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(user to pass) } }) { Text("Войти") } },
+        dismissButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(null) } }) { Text("Отмена") } },
+    )
+}
+
+private val defaultColors = listOf(
+    "#f44336", "#e91e63", "#9c27b0", "#3f51b5", "#2196f3", "#009688",
+    "#4caf50", "#ffeb3b", "#ff9800", "#795548", "#607d8b", "#000000", "#ffffff",
+)
+
+@Composable
+private fun ColorDialog(req: PromptRequest.ColorPick, prompts: Prompts) {
+    var hex by remember(req) { mutableStateOf(req.initial) }
+    val parsed = remember(hex) { runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
+    val presets = req.presets.ifEmpty { defaultColors }
+    AlertDialog(
+        onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
+        title = { Text("Выберите цвет") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                presets.chunked(6).forEach { line ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        line.forEach { c ->
+                            val p = runCatching { android.graphics.Color.parseColor(c) }.getOrNull()
+                            if (p != null) {
+                                Box(
+                                    Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(p))
+                                        .border(
+                                            if (c.equals(hex, ignoreCase = true)) 3.dp else 1.dp,
+                                            if (c.equals(hex, ignoreCase = true)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                            CircleShape,
+                                        )
+                                        .clickable { hex = c },
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (parsed != null) Color(parsed) else Color.Transparent)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    OutlinedTextField(hex, { hex = it }, label = { Text("Код цвета") }, singleLine = true)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = parsed != null,
+                onClick = {
+                    val rgb = (parsed ?: 0) and 0xFFFFFF
+                    prompts.resolve(req) { req.onAnswer(String.format("#%06x", rgb)) }
+                },
+            ) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(null) } }) { Text("Отмена") } },
+    )
+}
+
+private fun parseDate(type: Int, v: String?): LocalDate {
+    val today = LocalDate.now()
+    if (v.isNullOrBlank()) return today
+    return runCatching {
+        when (type) {
+            PromptDelegate.DateTimePrompt.Type.MONTH -> YearMonth.parse(v).atDay(1)
+            PromptDelegate.DateTimePrompt.Type.WEEK -> {
+                val m = Regex("(\\d{4})-W(\\d{2})").find(v)!!
+                LocalDate.of(m.groupValues[1].toInt(), 1, 4)
+                    .with(IsoFields.WEEK_OF_WEEK_BASED_YEAR, m.groupValues[2].toLong())
+            }
+            PromptDelegate.DateTimePrompt.Type.DATETIME_LOCAL -> LocalDate.parse(v.substringBefore('T'))
+            else -> LocalDate.parse(v)
+        }
+    }.getOrDefault(today)
+}
+
+private fun parseTime(type: Int, v: String?): LocalTime {
+    if (v.isNullOrBlank()) return LocalTime.now()
+    return runCatching {
+        LocalTime.parse(if (type == PromptDelegate.DateTimePrompt.Type.DATETIME_LOCAL) v.substringAfter('T') else v)
+    }.getOrDefault(LocalTime.now())
+}
+
+private fun formatDate(type: Int, d: LocalDate): String = when (type) {
+    PromptDelegate.DateTimePrompt.Type.MONTH -> YearMonth.from(d).toString()
+    PromptDelegate.DateTimePrompt.Type.WEEK ->
+        String.format("%04d-W%02d", d.get(IsoFields.WEEK_BASED_YEAR), d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR))
+    else -> d.toString()
+}
+
+/** Дата и время. Минимум и максимум, которые задал сайт, пока не учитываются. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateTimeDialog(req: PromptRequest.DateTime, prompts: Prompts) {
+    val type = req.type
+    val isTime = type == PromptDelegate.DateTimePrompt.Type.TIME
+    val withTime = isTime || type == PromptDelegate.DateTimePrompt.Type.DATETIME_LOCAL
+    val initDate = remember(req) { parseDate(type, req.initial) }
+    val initTime = remember(req) { parseTime(type, req.initial) }
+    var stage by remember(req) { mutableIntStateOf(if (isTime) 1 else 0) }
+    var picked by remember(req) { mutableStateOf(initDate) }
+
+    if (stage == 0) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = initDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
+            confirmButton = {
+                TextButton(onClick = {
+                    val ms = state.selectedDateMillis
+                    val d = if (ms != null) Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate() else initDate
+                    if (withTime) {
+                        picked = d
+                        stage = 1
+                    } else {
+                        prompts.resolve(req) { req.onAnswer(formatDate(type, d)) }
+                    }
+                }) { Text(if (withTime) "Далее" else "OK") }
+            },
+            dismissButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(null) } }) { Text("Отмена") } },
+        ) { DatePicker(state = state) }
+    } else {
+        val time = rememberTimePickerState(initialHour = initTime.hour, initialMinute = initTime.minute, is24Hour = true)
+        AlertDialog(
+            onDismissRequest = { prompts.resolve(req) { req.onAnswer(null) } },
+            title = { Text("Время") },
+            text = { TimePicker(state = time) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val t = String.format("%02d:%02d", time.hour, time.minute)
+                    prompts.resolve(req) { req.onAnswer(if (isTime) t else "${picked}T$t") }
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { prompts.resolve(req) { req.onAnswer(null) } }) { Text("Отмена") } },
+        )
     }
 }

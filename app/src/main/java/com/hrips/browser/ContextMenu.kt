@@ -79,21 +79,26 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
 
     val linkActs = buildList {
         if (link != null) {
-            if (!link.startsWith("javascript:")) add(Act(HripsIcons.Add, "Открыть ссылку в новой вкладке") { browser.newTab(link) })
+            if (!link.startsWith("javascript:")) {
+                add(Act(HripsIcons.Add, "Открыть ссылку в новой вкладке") { browser.newTab(link, incognito = browser.current.isPrivate) })
+                if (!browser.current.isPrivate) {
+                    add(Act(HripsIcons.Mask, "Открыть ссылку в приватной вкладке") { browser.newTab(link, incognito = true) })
+                }
+            }
             add(Act(HripsIcons.Share, "Поделиться ссылкой") { share(link) })
             add(Act(HripsIcons.Link, "Копировать адрес ссылки") { copy(link) })
-            if (isHttp(link)) add(Act(HripsIcons.Download, "Скачать по ссылке") { browser.saveUrl(link, info.baseUri) })
+            if (isHttp(link)) add(Act(HripsIcons.Download, "Скачать по ссылке") { browser.saveUrl(link, info.baseUri, browser.current.isPrivate) })
         }
     }
     val mediaActs = buildList {
         if (media != null) {
             if (isImage && isHttp(media)) {
                 add(Act(HripsIcons.Search, "Найти это изображение") {
-                    browser.newTab("https://yandex.ru/images/search?rpt=imageview&url=" + Uri.encode(media))
+                    browser.newTab("https://yandex.ru/images/search?rpt=imageview&url=" + Uri.encode(media), incognito = browser.current.isPrivate)
                 })
             }
-            if (isHttp(media)) add(Act(HripsIcons.Add, "Открыть $noun в новой вкладке") { browser.newTab(media) })
-            if (isHttp(media)) add(Act(HripsIcons.Download, "Сохранить $noun…") { browser.saveUrl(media, info.baseUri) })
+            if (isHttp(media)) add(Act(HripsIcons.Add, "Открыть $noun в новой вкладке") { browser.newTab(media, incognito = browser.current.isPrivate) })
+            if (isHttp(media)) add(Act(HripsIcons.Download, "Сохранить $noun…") { browser.saveUrl(media, info.baseUri, browser.current.isPrivate) })
             if (isImage && isHttp(media)) {
                 add(Act(HripsIcons.Copy, "Скопировать изображение") { copyImage(ctx.applicationContext, browser, media, info.baseUri) })
             }
@@ -169,7 +174,7 @@ private fun ActGroup(acts: List<Act>, onDone: () -> Unit) {
 private fun copyImage(app: Context, browser: Browser, url: String, referrer: String?) {
     val main = Handler(Looper.getMainLooper())
     fun say(msg: String) = main.post { Toast.makeText(app, msg, Toast.LENGTH_SHORT).show() }
-    browser.fetch(url, referrer) { resp ->
+    browser.fetch(url, referrer, browser.current.isPrivate) { resp ->
         val body = resp?.body
         if (resp == null || body == null || resp.statusCode !in 200..299) {
             say("Не удалось скопировать изображение")

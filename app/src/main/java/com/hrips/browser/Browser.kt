@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -16,6 +17,14 @@ import org.mozilla.geckoview.WebRequest
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebResponse
 
+
+/** Настройки движка только для приватных вкладок: куки каждого сайта изолированы, защита от отпечатков включена. */
+fun applyPrivateDefaults(runtime: GeckoRuntime) {
+    runtime.settings.contentBlocking.setCookieBehaviorPrivateMode(
+        ContentBlocking.CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
+    )
+    runtime.settings.setFingerprintingProtectionPrivateBrowsing(true)
+}
 
 fun applyTrackingProtection(runtime: GeckoRuntime, on: Boolean) {
     runtime.settings.contentBlocking.setAntiTracking(
@@ -90,6 +99,10 @@ class Tab(
     private val promptDelegate: GeckoSession.PromptDelegate,
     private val onNewWindow: (String) -> GeckoSession,
     private val onMenu: (ContextInfo) -> Unit,
+    private val onExternal: (uri: String, hasUserGesture: Boolean) -> Boolean,
+    private val media: MediaHub,
+    /** Приватная вкладка: отдельная сессия движка, всё хранится только в памяти */
+    val isPrivate: Boolean = false,
     openNow: Boolean = true,
 ) {
     private val startUrl = if (rawStartUrl == "about:blank") "" else rawStartUrl
@@ -132,6 +145,7 @@ class Tab(
             GeckoSessionSettings.Builder()
                 .userAgentMode(uaMode(desktopMode))
                 .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .usePrivateMode(isPrivate)
                 .build()
         )
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
@@ -166,6 +180,14 @@ class Tab(
             }
             override fun onCanGoForward(sess: GeckoSession, value: Boolean) {
                 if (sess === session) canGoForward = value
+            }
+            // Ссылки не для браузера (tel:, mailto:, intent:, схемы приложений) уходят в ExternalLinks
+            override fun onLoadRequest(
+                sess: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                if (sess !== session) return null
+                return if (onExternal(request.uri, request.hasUserGesture)) GeckoResult.fromValue(AllowOrDeny.DENY) else null
             }
             // Ссылки с target="_blank" и window.open: открываем в новой вкладке
             override fun onNewSession(sess: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
@@ -205,6 +227,7 @@ class Tab(
                 if (sess === session) recover()
             }
         }
+        media.attach(s, isPrivate) { title }
         return s
     }
 
@@ -221,6 +244,7 @@ class Tab(
         canGoBack = false
         canGoForward = false
         if (!home && target.isNotBlank()) fresh.loadUri(target)
+        media.forget(old)
         runCatching { old.close() }
     }
 
@@ -239,17 +263,22 @@ class Tab(
         if (!home) session.reload()
     }
 
-    fun close() = session.close()
+    fun close() {
+        media.forget(session)
+        session.close()
+    }
 }
 
 class Browser(
-    private val runtime: GeckoRuntime,
+    val runtime: GeckoRuntime,
     val store: Store,
     private val desktopByDefault: Boolean,
     val downloads: Downloads,
     val permissions: Permissions,
     val prompts: Prompts,
     val adBlock: AdBlock,
+    val external: ExternalLinks,
+    private val media: MediaHub,
 ) {
     val tabs = mutableStateListOf<Tab>()
     /** Открытое контекстное меню (null = нет). Рисуется в BrowserScreen. */
@@ -259,16 +288,17 @@ class Browser(
     val current: Tab get() = tabs[currentIndex]
 
     /** Скачивание по адресу (из контекстного меню): запрос идёт через движок, дальше обычная плашка "Скачать файл?". */
-    fun saveUrl(uri: String, referrer: String?) {
-        fetch(uri, referrer) { r ->
-            if (r != null && r.statusCode in 200..299) downloads.request(r) else downloads.toast("Не удалось скачать файл")
+    fun saveUrl(uri: String, referrer: String?, incognito: Boolean = false) {
+        fetch(uri, referrer, incognito) { r ->
+            if (r != null && r.statusCode in 200..299) downloads.request(r, incognito) else downloads.toast("Не удалось скачать файл")
         }
     }
 
     /** Запрос через движок (с cookies и referer страницы). Поток ответа читать не в главном потоке. */
-    fun fetch(uri: String, referrer: String?, onDone: (WebResponse?) -> Unit) {
+    fun fetch(uri: String, referrer: String?, incognito: Boolean = false, onDone: (WebResponse?) -> Unit) {
         val req = WebRequest.Builder(uri).apply { if (!referrer.isNullOrBlank()) referrer(referrer) }.build()
-        val result = try { executor.fetch(req) } catch (e: Throwable) { null }
+        val flags = if (incognito) GeckoWebExecutor.FETCH_FLAGS_PRIVATE else GeckoWebExecutor.FETCH_FLAGS_NONE
+        val result = try { executor.fetch(req, flags) } catch (e: Throwable) { null }
         if (result == null) {
             onDone(null)
             return
@@ -293,14 +323,18 @@ class Browser(
         runtime.webExtensionController.setTabActive(session, active)
     }
 
-    private fun create(url: String, openNow: Boolean = true) = Tab(
+    private fun create(url: String, openNow: Boolean = true, isPrivate: Boolean = false) = Tab(
         runtime, url, desktopByDefault,
-        onVisited = { u, t -> store.addHistory(u, t) },
+        // В приватной вкладке история не пишется
+        onVisited = { u, t -> if (!isPrivate) store.addHistory(u, t) },
         onDownload = { tab, response -> handleDownload(tab, response) },
         permissionDelegate = permissions.delegate,
         promptDelegate = prompts.delegate,
         onNewWindow = { openPopup(it) },
         onMenu = { contextMenu = it },
+        onExternal = { u, g -> external.handle(u, g) },
+        media = media,
+        isPrivate = isPrivate,
         openNow = openNow,
     )
 
@@ -321,14 +355,16 @@ class Browser(
             } else {
                 currentIndex = if (parentIndex >= 0) parentIndex else (old - 1).coerceIn(0, tabs.lastIndex)
             }
+            if (tab.isPrivate) privateTabRemoved()
         }
-        downloads.request(response) { if (blankPopup) tab.close() }
+        downloads.request(response, tab.isPrivate) { if (blankPopup) tab.close() }
     }
 
     /** Вкладка, которую просит открыть страница. Сессию возвращаем неоткрытой, движок откроет её сам. */
     private fun openPopup(uri: String): GeckoSession {
         val opener = tabs.getOrNull(currentIndex)
-        val tab = create(uri, openNow = false)
+        // Окно, открытое из приватной вкладки, тоже приватное
+        val tab = create(uri, openNow = false, isPrivate = opener?.isPrivate == true)
         tab.parent = opener
         tabs.add(tab)
         currentIndex = tabs.lastIndex
@@ -340,8 +376,8 @@ class Browser(
         applyTrackingProtection(runtime, on)
     }
 
-    fun newTab(url: String = "") {
-        tabs.add(create(url))
+    fun newTab(url: String = "", incognito: Boolean = false) {
+        tabs.add(create(url, isPrivate = incognito))
         currentIndex = tabs.lastIndex
     }
 
@@ -353,8 +389,16 @@ class Browser(
         currentIndex = tabs.indexOf(cur)
     }
 
+    /** Переключается на вкладку сайта (нужно, когда нажали на его уведомление). */
+    fun focusSite(source: String?) {
+        val host = source?.let { Uri.parse(it).host ?: it } ?: return
+        val i = tabs.indexOfFirst { it.url.contains(host) }
+        if (i >= 0) currentIndex = i
+    }
+
     fun closeTab(index: Int) {
-        tabs[index].close()
+        val closed = tabs[index]
+        closed.close()
         tabs.removeAt(index)
         if (tabs.isEmpty()) {
             newTab()
@@ -362,6 +406,29 @@ class Browser(
             if (index < currentIndex) currentIndex--
             currentIndex = currentIndex.coerceIn(0, tabs.lastIndex)
         }
+        if (closed.isPrivate) privateTabRemoved()
+    }
+
+    val privateCount: Int get() = tabs.count { it.isPrivate }
+
+    /** Закрыть все приватные вкладки сразу. Выбранной остаётся прежняя обычная вкладка, если она была. */
+    fun closePrivateTabs() {
+        val doomed = tabs.filter { it.isPrivate }
+        if (doomed.isEmpty()) return
+        val keep = tabs.getOrNull(currentIndex)?.takeIf { !it.isPrivate }
+        doomed.forEach { it.close() }
+        tabs.removeAll(doomed)
+        if (tabs.isEmpty()) {
+            newTab()
+        } else {
+            currentIndex = keep?.let { tabs.indexOf(it) }?.takeIf { it >= 0 } ?: tabs.lastIndex
+        }
+        privateTabRemoved()
+    }
+
+    /** Если приватных вкладок не осталось, убираем из приложения всё, что о них помнили (список загрузок). */
+    private fun privateTabRemoved() {
+        if (tabs.none { it.isPrivate }) downloads.clearPrivate()
     }
 
     /** Восстанавливает вкладки с прошлого запуска. Возвращает true, если было что восстанавливать. */
@@ -374,6 +441,11 @@ class Browser(
     }
 
     fun saveState() {
-        if (tabs.isNotEmpty()) store.saveTabs(tabs.map { if (it.home) "" else it.url }, currentIndex)
+        if (tabs.isEmpty()) return
+        // Приватные вкладки на диск не пишутся: после перезапуска их не будет
+        val regular = tabs.filter { !it.isPrivate }
+        val cur = tabs.getOrNull(currentIndex)
+        val idx = regular.indexOf(cur).takeIf { it >= 0 } ?: regular.lastIndex.coerceAtLeast(0)
+        store.saveTabs(regular.map { if (it.home) "" else it.url }, idx)
     }
 }

@@ -1,6 +1,8 @@
 package com.hrips.browser
 
 import android.app.Activity
+import android.view.WindowManager
+import androidx.compose.foundation.isSystemInDarkTheme
 import android.widget.Toast
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -59,7 +61,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.mozilla.geckoview.GeckoView
 
-private fun Tab.label() = if (home) "Начальная страница" else title.ifBlank { url }
+private fun Tab.label() = when {
+    home && isPrivate -> "Приватная вкладка"
+    home -> "Начальная страница"
+    else -> title.ifBlank { url }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -73,8 +79,11 @@ fun BrowserScreen(browser: Browser) {
     var showLibrary by remember { mutableStateOf(false) }
     var libPage by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
+    var showSitePerms by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    var findOpen by remember { mutableStateOf(false) }
     // Разовый выбор движка с главной страницы: сбрасывается после поиска
     var oneOff by remember { mutableStateOf<SearchEngine?>(null) }
     // Если открыта выдача поисковика, в строке показываем запрос и логотип движка, а не ссылку
@@ -110,6 +119,22 @@ fun BrowserScreen(browser: Browser) {
     }
     BackHandler(enabled = fs) { tab.session.exitFullScreen() }
 
+    // Приватная вкладка: окно закрыто от скриншотов и миниатюры в списке приложений
+    val priv = tab.isPrivate
+    val systemDark = isSystemInDarkTheme()
+    LaunchedEffect(priv, store.allowPrivateShots) {
+        val w = activity?.window ?: return@LaunchedEffect
+        if (priv && !store.allowPrivateShots) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else w.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+    // Приватная тема всегда тёмная: значки системных панелей должны быть светлыми
+    LaunchedEffect(priv, systemDark) {
+        val w = activity?.window ?: return@LaunchedEffect
+        val c = WindowCompat.getInsetsController(w, w.decorView)
+        c.isAppearanceLightStatusBars = !priv && !systemDark
+        c.isAppearanceLightNavigationBars = !priv && !systemDark
+    }
+
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().imePadding()) {
         if (!fs) {
@@ -140,7 +165,7 @@ fun BrowserScreen(browser: Browser) {
                         engine = shownEngine,
                         query = parsed?.second,
                         onPickEngine = pickEngine,
-                        onMenu = { showLibrary = true },
+                        onMenu = { showTools = true },
                         showMenu = !wide,
                         downloads = browser.downloads,
                         modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
@@ -149,7 +174,7 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     DownloadsButton(browser.downloads, onClick = { showDownloads = true })
                     TabCounterButton(browser.tabs.size) { showTabs = true }
-                    IconButton(onClick = { libPage = 0; showLibrary = true }) { Icon(HripsIcons.Menu, "Меню") }
+                    IconButton(onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
                     Spacer(Modifier.width(48.dp)) // балансирует левые кнопки (4 шт.), чтобы строка была по центру
                 }
             }
@@ -161,16 +186,33 @@ fun BrowserScreen(browser: Browser) {
             }
         }
 
+        if (findOpen && !tab.home) {
+            key(tab.session) { FindBar(tab.session, onClose = { findOpen = false }) }
+        }
+
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (tab.home) {
+            if (tab.home && tab.isPrivate) {
+                PrivateStartPage(
+                    privateCount = browser.privateCount,
+                    screenshotsBlocked = !store.allowPrivateShots,
+                    onSearch = { showSearch = true },
+                    onCloseAll = { browser.closePrivateTabs() },
+                )
+            } else if (tab.home) {
                 StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true })
             } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { GeckoView(it) },
-                    update = { if (it.session !== tab.session) it.setSession(tab.session) },
+                    factory = { HripsGeckoView(it) },
+                    update = {
+                        it.incognito = tab.isPrivate
+                        // Системное автозаполнение Android (Google, Bitwarden, 1Password...).
+                        // В приватной вкладке выключено, чтобы менеджер паролей не запоминал логины оттуда.
+                        it.setAutofillEnabled(!tab.isPrivate)
+                        if (it.session !== tab.session) it.setSession(tab.session)
+                    },
                 )
             }
         }
@@ -191,7 +233,7 @@ fun BrowserScreen(browser: Browser) {
                     IconButton(onClick = { if (tab.loading) tab.session.stop() else tab.session.reload() }, enabled = !tab.home) {
                         Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
                     }
-                    IconButton(onClick = { browser.newTab() }) { Icon(HripsIcons.Add, "Новая вкладка") }
+                    IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
                     TabCounterButton(browser.tabs.size) { showTabs = true }
                 }
             }
@@ -208,6 +250,20 @@ fun BrowserScreen(browser: Browser) {
     ) {
         DownloadsScreen(browser.downloads, onBack = { showDownloads = false })
     }
+    // Настройки: отдельная страница, как загрузки
+    AnimatedVisibility(
+        visible = showSettings,
+        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
+        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
+    ) {
+        SettingsScreen(
+            browser = browser,
+            app = app,
+            onBack = { showSettings = false },
+            onSitePermissions = { showSitePerms = true },
+            onOpenDownloads = { showSettings = false; showDownloads = true },
+        )
+    }
     // Поисковая панель: разовый выбор движка, история запросов, подсказки
     AnimatedVisibility(
         visible = showSearch,
@@ -219,17 +275,39 @@ fun BrowserScreen(browser: Browser) {
             initial = if (tab.home) "" else parsed?.second ?: tab.url,
             initialEngine = shownEngine,
             onSubmit = { text, engine ->
-                if (isSearch(text)) store.addSearch(text)
+                if (isSearch(text) && !tab.isPrivate) store.addSearch(text)
                 tab.load(text, engine)
                 oneOff = null
                 showSearch = false
             },
             onDismiss = { showSearch = false },
+            incognito = tab.isPrivate,
         )
     }
     // Плашка "Скачать файл?" и иконка, летящая к кнопке загрузок
     DownloadPrompt(browser.downloads)
     DownloadFlightOverlay(browser.downloads.fx)
+
+    if (showSitePerms) {
+        SitePermissionsSheet(browser.runtime, browser.permissions.sites) { showSitePerms = false }
+    }
+
+    // Первый запуск: все разрешения одним заходом
+    if (!store.firstRunDone) FirstRunScreen(store, browser.permissions)
+
+    // Меню "три точки" у правого верхнего края
+    Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = if (wide) 100.dp else 60.dp, end = 12.dp)) {
+        ToolsMenu(
+            expanded = showTools,
+            onDismiss = { showTools = false },
+            browser = browser,
+            tab = tab,
+            onFind = { findOpen = true },
+            onLibrary = { page -> libPage = page; showLibrary = true },
+            onDownloads = { showDownloads = true },
+            onSettings = { showSettings = true },
+        )
+    }
     }
 
     if (showTabs) {
@@ -251,6 +329,10 @@ fun BrowserScreen(browser: Browser) {
                         ),
                     ) {
                         Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (t.isPrivate) {
+                                Icon(HripsIcons.Mask, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(10.dp))
+                            }
                             Column(Modifier.weight(1f)) {
                                 Text(t.label(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                                 Text(if (t.home) "" else t.url, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
@@ -267,34 +349,6 @@ fun BrowserScreen(browser: Browser) {
         val downloads = browser.downloads
         val context = LocalContext.current
         ModalBottomSheet(onDismissRequest = { showLibrary = false }) {
-            ListItem(
-                headlineContent = { Text("Настройки") },
-                leadingContent = { Icon(HripsIcons.Settings, null) },
-                modifier = Modifier.clickable { showLibrary = false; showSettings = true },
-            )
-            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Версия для ПК", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = tab.desktopMode, onCheckedChange = { tab.setDesktop(it) })
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Блокировка рекламы", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        when {
-                            browser.adBlock.error != null -> "Не загрузилась: " + browser.adBlock.error
-                            browser.adBlock.extension == null -> "Загружается…"
-                            else -> "uBlock Origin"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = browser.adBlock.enabled,
-                    enabled = browser.adBlock.extension != null,
-                    onCheckedChange = { browser.adBlock.setBlocking(it); tab.session.reload() },
-                )
-            }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = libPage == 0, onClick = { libPage = 0 }, label = { Text("Закладки") })
                 FilterChip(selected = libPage == 1, onClick = { libPage = 1 }, label = { Text("История") })
@@ -327,101 +381,52 @@ fun BrowserScreen(browser: Browser) {
         }
     }
 
-    if (showSettings) {
-        val context = LocalContext.current
-        var clearHistory by remember { mutableStateOf(true) }
-        var clearCookies by remember { mutableStateOf(false) }
-        var clearCache by remember { mutableStateOf(true) }
-        ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-            Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState())) {
-                Text("Поисковая система", style = MaterialTheme.typography.titleMedium)
-                SearchEngines.all.forEach { e ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { store.setSearchEngine(e) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = SearchEngines.current == e, onClick = { store.setSearchEngine(e) })
-                        Text(e.name, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Подсказки при вводе", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Вводимый текст отправляется выбранному поисковику",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = store.suggestionsOn, onCheckedChange = { store.updateSuggestions(it) })
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                Text("Обои главной страницы", style = MaterialTheme.typography.titleMedium)
-                Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { app.wallpaper.pick?.invoke() }) { Text("Выбрать фото") }
-                    TextButton(enabled = app.wallpaper.image != null, onClick = { app.wallpaper.clear() }) { Text("Убрать") }
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Защита от трекеров", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Если сайт работает неправильно, попробуйте выключить и перезагрузить страницу",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = store.trackingProtection, onCheckedChange = { browser.setTracking(it) })
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                Text("Очистить данные", style = MaterialTheme.typography.titleMedium)
-                listOf(
-                    Triple("История", clearHistory) { v: Boolean -> clearHistory = v },
-                    Triple("Cookies и данные сайтов (выход из аккаунтов)", clearCookies) { v: Boolean -> clearCookies = v },
-                    Triple("Кэш", clearCache) { v: Boolean -> clearCache = v },
-                ).forEach { (label, checked, set) ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { set(!checked) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(checked = checked, onCheckedChange = { set(it) })
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    enabled = clearHistory || clearCookies || clearCache,
-                    onClick = {
-                        if (clearHistory) { store.clearHistory(); store.clearSearches() }
-                        browser.clearData(clearCookies, clearCache) {
-                            Toast.makeText(context, "Данные очищены", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                ) { Text("Очистить") }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-
     // Контекстное меню страницы (долгое нажатие / правая кнопка)
     browser.contextMenu?.let { info -> ContextMenuSheet(info, browser) { browser.contextMenu = null } }
 
     // Диалоги страниц: alert/confirm/prompt, выпадающие списки, повторная отправка формы
     PromptHost(browser.prompts)
 
+    // Ссылка для другого приложения (intent:, market:, схемы приложений)
+    browser.external.pending?.let { r ->
+        AlertDialog(
+            onDismissRequest = { browser.external.dismiss() },
+            title = { Text("Открыть в другом приложении?") },
+            text = { Text(r.uri.take(200)) },
+            confirmButton = {
+                TextButton(onClick = { browser.external.open(r) { fallback -> tab.load(fallback) } }) { Text("Открыть") }
+            },
+            dismissButton = { TextButton(onClick = { browser.external.dismiss() }) { Text("Отмена") } },
+        )
+    }
+
     // Запрос разрешения сайта (камера, микрофон, местоположение)
     browser.permissions.queue.firstOrNull()?.let { req ->
         AlertDialog(
             onDismissRequest = { browser.permissions.answer(req, false) },
             title = { Text(req.origin) },
-            text = { Text("Сайт хочет ${req.what}.") },
+            text = {
+                Column {
+                    Text("Сайт хочет ${req.what}.")
+                    if (req.canRemember) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 12.dp).clickable { req.remember = !req.remember },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = req.remember, onCheckedChange = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Запомнить для этого сайта")
+                        }
+                    } else if (req.note != null) {
+                        Text(
+                            req.note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
             confirmButton = { TextButton(onClick = { browser.permissions.answer(req, true) }) { Text("Разрешить") } },
             dismissButton = { TextButton(onClick = { browser.permissions.answer(req, false) }) { Text("Запретить") } },
         )
@@ -485,7 +490,7 @@ private fun AddressBar(
                 )
             }
             // На телефоне отдельной кнопки загрузок нет: иконка летит к меню, кольцо рисуется вокруг него
-            if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.Menu, description = "Меню")
+            if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты")
         }
     }
 }
@@ -537,7 +542,10 @@ private fun TabStrip(browser: Browser) {
                         },
                 ) {
                     Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (t.home) {
+                        if (t.isPrivate) {
+                            // У приватных вкладок иконку сайта не загружаем и не кэшируем
+                            Icon(HripsIcons.Mask, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        } else if (t.home) {
                             Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
                             Favicon(t.url, 18.dp) {
@@ -568,7 +576,7 @@ private fun TabStrip(browser: Browser) {
                 }
             }
         }
-        IconButton(onClick = { browser.newTab() }) { Icon(HripsIcons.Add, "Новая вкладка") }
+        IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
     }
 }
 
@@ -594,4 +602,22 @@ private fun TabCounterButton(count: Int, onClick: () -> Unit) {
             }
         }
     }
+}
+
+/** Открывает выбор сервиса автозаполнения в настройках Android (на части прошивок сразу общие настройки). */
+fun openAutofillSettings(context: android.content.Context) {
+    val intents = listOf(
+        android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+            .setData(android.net.Uri.parse("package:")),
+        android.content.Intent(android.provider.Settings.ACTION_SETTINGS),
+    )
+    for (i in intents) {
+        try {
+            context.startActivity(i)
+            return
+        } catch (e: Exception) {
+            // пробуем следующий вариант
+        }
+    }
+    Toast.makeText(context, "Откройте: Настройки → Пароли и аккаунты → Автозаполнение", Toast.LENGTH_LONG).show()
 }
