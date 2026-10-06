@@ -197,8 +197,8 @@ private fun MenuRow(
     icon: ImageVector,
     text: String,
     enabled: Boolean,
-    onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
 ) {
     Surface(
         onClick = onClick,
