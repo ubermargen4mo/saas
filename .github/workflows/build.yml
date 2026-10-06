@@ -38,7 +38,23 @@ jobs:
           unzip -q -o ubo.xpi -d app/src/main/assets/ublock
           rm -rf app/src/main/assets/ublock/META-INF
 
+      # Постоянный ключ подписи из секретов репозитория. Нет секрета - сборка подпишется debug-ключом
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/hrips.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/hrips.jks" >> "$GITHUB_ENV"
+          else
+            echo "Секрет KEYSTORE_BASE64 не задан: сборка будет подписана временным ключом"
+          fi
+
       - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease --stacktrace
 
       - uses: actions/upload-artifact@v4
