@@ -576,7 +576,7 @@ private fun TabStrip(browser: Browser) {
                 }
             }
         }
-        IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
+        IconButton(onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
     }
 }
 

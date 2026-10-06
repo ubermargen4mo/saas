@@ -94,22 +94,22 @@ private fun SettingsPage.icon(): ImageVector = when (this) {
 }
 
 /** Для поиска по настройкам: название пункта, слова для поиска и раздел, где он находится. */
-private class Entry(val title: String, val keywords: String, val page: SettingsPage)
+private class SettingEntry(val title: String, val keywords: String, val page: SettingsPage)
 
 private val index = listOf(
-    Entry("Поисковая система", "google yandex duckduckgo bing поиск движок", SettingsPage.SEARCH),
-    Entry("История поиска", "очистить запросы", SettingsPage.SEARCH),
-    Entry("Обои главной страницы", "фон картинка фото", SettingsPage.HOME),
-    Entry("Скриншоты в приватных вкладках", "приватный режим снимок экрана", SettingsPage.PRIVACY),
-    Entry("Очистить данные", "история cookies куки кэш удалить", SettingsPage.PRIVACY),
-    Entry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
-    Entry("Разрешения сайтов", "камера микрофон геолокация местоположение уведомления сброс", SettingsPage.PERMISSIONS),
-    Entry("Разрешения приложения", "android системные права", SettingsPage.PERMISSIONS),
-    Entry("Картинка в картинке", "pip видео окно", SettingsPage.MEDIA),
-    Entry("Управление в уведомлении", "фоновое воспроизведение музыка шторка", SettingsPage.MEDIA),
-    Entry("Спрашивать перед загрузкой", "подтверждение скачивание", SettingsPage.DOWNLOADS),
-    Entry("Список загрузок", "файлы скачанные", SettingsPage.DOWNLOADS),
-    Entry("Версия", "о программе движок gecko", SettingsPage.ABOUT),
+    SettingEntry("Поисковая система", "google yandex duckduckgo bing поиск движок", SettingsPage.SEARCH),
+    SettingEntry("История поиска", "очистить запросы", SettingsPage.SEARCH),
+    SettingEntry("Обои главной страницы", "фон картинка фото", SettingsPage.HOME),
+    SettingEntry("Скриншоты в приватных вкладках", "приватный режим снимок экрана", SettingsPage.PRIVACY),
+    SettingEntry("Очистить данные", "история cookies куки кэш удалить", SettingsPage.PRIVACY),
+    SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
+    SettingEntry("Разрешения сайтов", "камера микрофон геолокация местоположение уведомления сброс", SettingsPage.PERMISSIONS),
+    SettingEntry("Разрешения приложения", "android системные права", SettingsPage.PERMISSIONS),
+    SettingEntry("Картинка в картинке", "pip видео окно", SettingsPage.MEDIA),
+    SettingEntry("Управление в уведомлении", "фоновое воспроизведение музыка шторка", SettingsPage.MEDIA),
+    SettingEntry("Спрашивать перед загрузкой", "подтверждение скачивание", SettingsPage.DOWNLOADS),
+    SettingEntry("Список загрузок", "файлы скачанные", SettingsPage.DOWNLOADS),
+    SettingEntry("Версия", "о программе движок gecko", SettingsPage.ABOUT),
 )
 
 /**
