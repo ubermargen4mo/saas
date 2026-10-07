@@ -318,10 +318,15 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
 
         newGroupFor?.let { t ->
-            GroupDialog("Новая группа", "", browser.groups.size % GroupColors.size, "Создать", onDismiss = { newGroupFor = null }) { n, c ->
-                browser.createGroup(t, n, c)
-                newGroupFor = null
-            }
+            GroupDialog(
+                "Новая группа", "", browser.groups.size % GroupColors.size, "Создать",
+                onDismiss = { newGroupFor = null },
+                // По имени: после onConfirm в GroupDialog есть необязательные лямбды, и хвостовая лямбда уходила бы в последнюю из них
+                onConfirm = { n, c ->
+                    browser.createGroup(t, n, c)
+                    newGroupFor = null
+                },
+            )
         }
         editGroup?.let { g ->
             GroupDialog(
