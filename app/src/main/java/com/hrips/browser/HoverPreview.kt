@@ -34,7 +34,8 @@ class HoverPreview(private val runtime: GeckoRuntime) {
             )
     }
 
-    fun setEnabled(value: Boolean) {
+    // Не называем setEnabled: конфликтует с авто-сеттером свойства `enabled` (JVM-сигнатура setEnabled(Z)V)
+    fun setHoverEnabled(value: Boolean) {
         val ext = extension ?: return
         val c = runtime.webExtensionController
         val r = if (value) c.enable(ext, WebExtensionController.EnableSource.USER) else c.disable(ext, WebExtensionController.EnableSource.USER)

@@ -581,7 +581,7 @@ private fun MediaPage(store: Store, hover: HoverPreview, onBack: () -> Unit) {
                     HripsIcons.Video, "Оживление миниатюр",
                     "Удерживайте палец на миниатюре видео: сайт запустит предпросмотр, как при наведении мыши. Работает там, где он есть у самого сайта",
                     hover.enabled, hover.extension != null, s,
-                ) { hover.setEnabled(it) }
+                ) { hover.setHoverEnabled(it) }
             },
         )
     }
