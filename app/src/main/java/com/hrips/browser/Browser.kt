@@ -131,6 +131,8 @@ class Tab(
     private val localDesktop = HashMap<String, Boolean>()
     /** Снимок страницы для карточки в переключателе вкладок (только в памяти) */
     var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    /** id группы вкладок (см. Browser.groups); null - вкладка вне групп. Приватные вкладки в группы не входят. */
+    var group by mutableStateOf<String?>(null)
     /** true = показываем нативную стартовую страницу вместо веб-страницы */
     var home by mutableStateOf(!popup && startUrl.isBlank())
     var url by mutableStateOf(startUrl)
@@ -190,6 +192,7 @@ class Tab(
         if (home) "" else url,
         title,
         if (home) null else (sessionState ?: lazyState)?.toString(),
+        group,
     )
 
     private fun uaMode(desktop: Boolean) =
@@ -394,8 +397,13 @@ class Browser(
     val adBlock: AdBlock,
     val external: ExternalLinks,
     private val media: MediaHub,
+    val extensions: Extensions,
 ) {
     val tabs = mutableStateListOf<Tab>()
+    /** Группы вкладок (цвет и название). Пустые группы убираются сами, см. [pruneGroups]. */
+    val groups = mutableStateListOf<TabGroup>()
+    /** Недавно закрытые обычные вкладки (до 15), только в памяти. Приватные сюда не попадают. */
+    val closedTabs = mutableStateListOf<ClosedTab>()
     /** Открытое контекстное меню (null = нет). Рисуется в BrowserScreen. */
     var contextMenu by mutableStateOf<ContextInfo?>(null)
     private val executor by lazy { GeckoWebExecutor(runtime) }
@@ -497,6 +505,14 @@ class Browser(
     }
 
     /** Включает или выключает версию для ПК для сайта: запоминает и применяет во всех открытых вкладках этого сайта. */
+    /** Вкладка для расширения (его страница настроек, tabs.create). Сессия уже открыта. */
+    fun openForExtension(url: String, active: Boolean): GeckoSession {
+        val tab = create(url)
+        tabs.add(tab)
+        if (active) currentIndex = tabs.lastIndex
+        return tab.session
+    }
+
     fun setSiteDesktop(host: String, on: Boolean) {
         store.setDesktopSite(host, on)
         tabs.forEach { if (!it.isPrivate && it.siteHost() == host && it.desktopMode != on) it.applyDesktop(on, reload = true) }
@@ -534,10 +550,71 @@ class Browser(
         if (i >= 0) currentIndex = i
     }
 
+    fun groupOf(tab: Tab): TabGroup? = tab.group?.let { id -> groups.firstOrNull { it.id == id } }
+
+    /** Создаёт группу и кладёт в неё вкладку. */
+    fun createGroup(tab: Tab, name: String, color: Int): TabGroup {
+        val g = TabGroup(java.util.UUID.randomUUID().toString(), name, color)
+        groups.add(g)
+        tab.group = g.id
+        pruneGroups()
+        return g
+    }
+
+    /** Переносит вкладку в группу; null - убрать из группы. */
+    fun setGroup(tab: Tab, group: TabGroup?) {
+        if (tab.isPrivate) return
+        tab.group = group?.id
+        pruneGroups()
+    }
+
+    /** Убирает группы, в которых не осталось вкладок. */
+    fun pruneGroups() {
+        groups.removeAll { g -> tabs.none { it.group == g.id } }
+    }
+
+    /** Расформировать группу: вкладки остаются, группа исчезает. */
+    fun ungroup(g: TabGroup) {
+        tabs.forEach { if (it.group == g.id) it.group = null }
+        groups.remove(g)
+    }
+
+    /** Закрыть все вкладки группы (их можно вернуть из «Недавно закрытых»). */
+    fun closeGroup(g: TabGroup) {
+        tabs.indices.reversed().filter { tabs[it].group == g.id }.forEach { closeTab(it) }
+    }
+
+    /** Возвращает закрытую вкладку вместе с историей страницы и группой (если группы уже нет, она создаётся заново). */
+    fun reopen(c: ClosedTab) {
+        closedTabs.remove(c)
+        val tab = create(c.snap.url, savedState = c.snap.state, savedTitle = c.snap.title)
+        c.group?.let { g ->
+            if (groups.none { it.id == g.id }) groups.add(g)
+            tab.group = g.id
+        }
+        // Если открыта только пустая вкладка (после закрытия последней), она не нужна
+        val blank = tabs.singleOrNull()?.takeIf { it.home && !it.isPrivate }
+        tabs.add(tab)
+        if (blank != null) {
+            blank.close()
+            tabs.remove(blank)
+        }
+        currentIndex = tabs.lastIndex
+    }
+
+    fun reopenLast() {
+        closedTabs.firstOrNull()?.let { reopen(it) }
+    }
+
     fun closeTab(index: Int) {
         val closed = tabs[index]
+        if (!closed.isPrivate && !closed.home && closed.url.isNotBlank()) {
+            closedTabs.add(0, ClosedTab(closed.snapshot(), groupOf(closed)))
+            while (closedTabs.size > 15) closedTabs.removeAt(closedTabs.lastIndex)
+        }
         closed.close()
         tabs.removeAt(index)
+        pruneGroups()
         if (tabs.isEmpty()) {
             newTab()
         } else {
@@ -573,7 +650,10 @@ class Browser(
     fun restore(): Boolean {
         val (snaps, index) = store.loadTabSnaps()
         if (snaps.isEmpty()) return false
-        snaps.forEach { tabs.add(create(it.url, savedState = it.state, savedTitle = it.title)) }
+        groups.clear()
+        groups.addAll(store.loadGroups())
+        snaps.forEach { snap -> tabs.add(create(snap.url, savedState = snap.state, savedTitle = snap.title).also { it.group = snap.group }) }
+        pruneGroups()
         currentIndex = index.coerceIn(0, tabs.lastIndex)
         return true
     }
@@ -584,6 +664,7 @@ class Browser(
         val regular = tabs.filter { !it.isPrivate }
         val cur = tabs.getOrNull(currentIndex)
         val idx = regular.indexOf(cur).takeIf { it >= 0 } ?: regular.lastIndex.coerceAtLeast(0)
-        store.saveTabSnaps(regular.map { it.snapshot() }, idx)
+        pruneGroups()
+        store.saveTabSnaps(regular.map { it.snapshot() }, idx, groups.toList())
     }
 }

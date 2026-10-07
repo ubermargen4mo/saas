@@ -6,6 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.view.Surface
+import android.view.TextureView
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.viewinterop.AndroidView
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
@@ -118,9 +124,16 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
         value = if (media != null && isImage && isHttp(media)) withContext(Dispatchers.IO) { loadThumb(media, info.baseUri) } else null
     }
     val badge = remember { MaterialShapes.Cookie6Sided }
+    // Превью видео: только если есть прямой адрес (http/https). У blob: (YouTube и подобные) файла для показа нет
+    val previewUrl = media?.takeIf { info.type == ContextElement.TYPE_VIDEO && isHttp(it) }
+    var previewFailed by remember(previewUrl) { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+            if (previewUrl != null && !previewFailed) {
+                VideoPreview(previewUrl, info.baseUri) { previewFailed = true }
+                Spacer(Modifier.height(8.dp))
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                     val t = thumb
@@ -128,7 +141,14 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
                         Image(t, null, Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Crop)
                     } else {
                         Box(Modifier.fillMaxSize().background(cs.primaryContainer, badge.toShape()), contentAlignment = Alignment.Center) {
-                            Icon(if (link != null) HripsIcons.Link else HripsIcons.Image, null, tint = cs.onPrimaryContainer)
+                            Icon(
+                when {
+                    link != null -> HripsIcons.Link
+                    info.type == ContextElement.TYPE_VIDEO -> HripsIcons.Video
+                    else -> HripsIcons.Image
+                },
+                null, tint = cs.onPrimaryContainer,
+            )
                         }
                     }
                 }
@@ -142,6 +162,94 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
             if (linkActs.isNotEmpty() && mediaActs.isNotEmpty()) Spacer(Modifier.height(10.dp))
             if (mediaActs.isNotEmpty()) ActGroup(mediaActs, onDismiss)
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+private class PreviewHolder {
+    var player: MediaPlayer? = null
+    var surface: Surface? = null
+    fun release() {
+        runCatching { player?.release() }
+        runCatching { surface?.release() }
+        player = null
+        surface = null
+    }
+}
+
+/**
+ * Беззвучное зацикленное превью видео над действиями меню. Нажатие ставит на паузу и снимает с неё.
+ * MediaPlayer + TextureView (не SurfaceView): картинка обрезается скруглением и нормально живёт внутри шторки.
+ * Играет прямые файлы и HLS; если не получилось (защита от хотлинка, неподдерживаемый формат), вызывает [onFail].
+ */
+@Composable
+private fun VideoPreview(url: String, referrer: String?, onFail: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var ready by remember(url) { mutableStateOf(false) }
+    var paused by remember(url) { mutableStateOf(false) }
+    var aspect by remember(url) { mutableFloatStateOf(16f / 9f) }
+    val holder = remember(url) { PreviewHolder() }
+    val fail by rememberUpdatedState(onFail)
+    DisposableEffect(holder) { onDispose { holder.release() } }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.Black)
+            .clickable {
+                holder.player?.let { p ->
+                    runCatching { if (p.isPlaying) { p.pause(); paused = true } else { p.start(); paused = false } }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        AndroidView(
+            modifier = Modifier.aspectRatio(aspect),
+            factory = { c ->
+                TextureView(c).apply {
+                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                            if (holder.player != null) return
+                            try {
+                                val surface = Surface(st)
+                                holder.surface = surface
+                                val p = MediaPlayer()
+                                holder.player = p
+                                p.setSurface(surface)
+                                p.setVolume(0f, 0f)
+                                p.isLooping = true
+                                val headers = HashMap<String, String>()
+                                headers["User-Agent"] = "Mozilla/5.0 (Linux; Android 14) hrips"
+                                if (!referrer.isNullOrBlank()) headers["Referer"] = referrer
+                                p.setDataSource(c, Uri.parse(url), headers)
+                                p.setOnVideoSizeChangedListener { _, vw, vh -> if (vw > 0 && vh > 0) aspect = vw.toFloat() / vh }
+                                p.setOnPreparedListener { it.start(); ready = true }
+                                p.setOnErrorListener { _, _, _ -> fail(); true }
+                                p.prepareAsync()
+                            } catch (e: Exception) {
+                                fail()
+                            }
+                        }
+                        override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
+                        override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                            holder.release()
+                            return true
+                        }
+                        override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                    }
+                }
+            },
+        )
+        if (!ready) CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 3.dp)
+        if (paused) {
+            Text(
+                "Пауза",
+                style = MaterialTheme.typography.labelLarge,
+                color = cs.onPrimaryContainer,
+                modifier = Modifier.background(cs.primaryContainer, RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 6.dp),
+            )
         }
     }
 }

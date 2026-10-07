@@ -207,6 +207,21 @@ class MainActivity : ComponentActivity() {
             hrips.siteNotifications.clicked(siteId, browser)
             return
         }
-        intent?.data?.toString()?.let { browser.newTab(it) }
+        // Повторная доставка того же intent'а при запуске из списка недавних: вкладку второй раз не открываем
+        if (intent != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // Ссылка, локальный HTML/PDF, «Поделиться в hrips», «Искать в hrips»
+        if (IncomingIntents.isLocalFile(intent)) {
+            // Файл копируется в кэш: в фоне, чтобы большой PDF не вешал интерфейс
+            val src = intent
+            Thread {
+                val url = IncomingIntents.resolve(applicationContext, src)
+                runOnUiThread {
+                    if (url != null) browser.newTab(url)
+                    else android.widget.Toast.makeText(this, "Не удалось открыть файл", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }.start()
+        } else {
+            IncomingIntents.resolve(this, intent)?.let { browser.newTab(it) }
+        }
     }
 }

@@ -287,6 +287,21 @@ object HripsIcons {
         }
     }
 
+    /** Пазл: расширения. */
+    val Puzzle by lazy {
+        icon("Puzzle") {
+            moveTo(20.5f, 11f); horizontalLineTo(19f); verticalLineTo(7f)
+            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f); horizontalLineToRelative(-4f); verticalLineTo(3.5f)
+            curveTo(13f, 2.12f, 11.88f, 1f, 10.5f, 1f); curveTo(9.12f, 1f, 8f, 2.12f, 8f, 3.5f); verticalLineTo(5f); horizontalLineTo(4f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f); verticalLineToRelative(3.8f); horizontalLineTo(3.5f)
+            curveToRelative(1.49f, 0f, 2.7f, 1.21f, 2.7f, 2.7f); curveToRelative(0f, 1.49f, -1.21f, 2.7f, -2.7f, 2.7f); horizontalLineTo(2f)
+            verticalLineTo(20f); curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f); horizontalLineToRelative(3.8f); verticalLineToRelative(-1.5f)
+            curveToRelative(0f, -1.49f, 1.21f, -2.7f, 2.7f, -2.7f); curveToRelative(1.49f, 0f, 2.7f, 1.21f, 2.7f, 2.7f); verticalLineTo(22f)
+            horizontalLineTo(17f); curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f); verticalLineToRelative(-4f); horizontalLineToRelative(1.5f)
+            curveToRelative(1.38f, 0f, 2.5f, -1.12f, 2.5f, -2.5f); curveTo(23f, 12.12f, 21.88f, 11f, 20.5f, 11f); close()
+        }
+    }
+
     /** Перевод: «A» и иероглиф. */
     val Translate by lazy {
         icon("Translate") {

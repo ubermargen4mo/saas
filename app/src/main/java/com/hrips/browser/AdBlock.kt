@@ -19,6 +19,9 @@ class AdBlock(private val runtime: GeckoRuntime) {
     var error by mutableStateOf<String?>(null)
         private set
 
+    /** Вызывается, когда встроенное расширение готово: список расширений в интерфейсе обновляется. */
+    var onInstalled: (() -> Unit)? = null
+
     fun install() {
         runtime.webExtensionController
             .ensureBuiltIn("resource://android/assets/ublock/", "uBlock0@raymondhill.net")
@@ -26,10 +29,11 @@ class AdBlock(private val runtime: GeckoRuntime) {
                 { ext ->
                     extension = ext
                     enabled = ext?.metaData?.enabled ?: true
+                    onInstalled?.invoke()
                     // По умолчанию расширения в приватных вкладках не работают: без этого там не было бы блокировки
                     if (ext != null && !ext.metaData.allowedInPrivateBrowsing) {
                         runtime.webExtensionController.setAllowedInPrivateBrowsing(ext, true)
-                            .accept({ updated -> if (updated != null) extension = updated }, { })
+                            .accept({ updated -> if (updated != null) extension = updated; onInstalled?.invoke() }, { })
                     }
                 },
                 { e -> error = e?.message ?: "неизвестная ошибка" },

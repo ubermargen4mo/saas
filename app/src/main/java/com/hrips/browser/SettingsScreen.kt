@@ -8,6 +8,12 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -74,7 +80,7 @@ import androidx.core.content.ContextCompat
 /** Разделы настроек. Порядок = порядок на главной странице настроек. */
 enum class SettingsPage(val title: String, val subtitle: String) {
     SEARCH("Поиск", "Поисковая система, подсказки"),
-    HOME("Начальная страница", "Обои"),
+    HOME("Внешний вид", "Значок приложения, обои"),
     PRIVACY("Конфиденциальность", "Трекеры, очистка данных, приватный режим"),
     PASSWORDS("Пароли и автозаполнение", "Системные менеджеры паролей"),
     PERMISSIONS("Разрешения", "Камера, микрофон, местоположение, уведомления"),
@@ -103,12 +109,15 @@ private val index = listOf(
     SettingEntry("Поисковая система", "google yandex duckduckgo bing поиск движок", SettingsPage.SEARCH),
     SettingEntry("История поиска", "очистить запросы", SettingsPage.SEARCH),
     SettingEntry("Обои главной страницы", "фон картинка фото", SettingsPage.HOME),
+    SettingEntry("Значок приложения", "иконка лого креветка синяя оранжевая серая icon", SettingsPage.HOME),
+    SettingEntry("Внешний вид", "оформление тема значок обои", SettingsPage.HOME),
     SettingEntry("Скриншоты в приватных вкладках", "приватный режим снимок экрана", SettingsPage.PRIVACY),
     SettingEntry("Очистить данные", "история cookies куки кэш удалить", SettingsPage.PRIVACY),
     SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
     SettingEntry("Разрешения сайтов", "камера микрофон геолокация местоположение уведомления сброс", SettingsPage.PERMISSIONS),
     SettingEntry("Разрешения приложения", "android системные права", SettingsPage.PERMISSIONS),
     SettingEntry("Версия для ПК", "десктопный режим компьютер сайт", SettingsPage.DESKTOP),
+    SettingEntry("Оживление миниатюр", "предпросмотр видео наведение удержание превью", SettingsPage.MEDIA),
     SettingEntry("Картинка в картинке", "pip видео окно", SettingsPage.MEDIA),
     SettingEntry("Управление в уведомлении", "фоновое воспроизведение музыка шторка", SettingsPage.MEDIA),
     SettingEntry("Спрашивать перед загрузкой", "подтверждение скачивание", SettingsPage.DOWNLOADS),
@@ -156,7 +165,7 @@ fun SettingsScreen(
                 SettingsPage.PASSWORDS -> PasswordsPage(back)
                 SettingsPage.PERMISSIONS -> PermissionsPage(onSitePermissions, back)
                 SettingsPage.DESKTOP -> DesktopPage(browser, back)
-                SettingsPage.MEDIA -> MediaPage(browser.store, back)
+                SettingsPage.MEDIA -> MediaPage(browser.store, app.hoverPreview, back)
                 SettingsPage.DOWNLOADS -> DownloadsPage(browser, back, onOpenDownloads)
                 SettingsPage.ABOUT -> AboutPage(app, back)
             }
@@ -204,6 +213,9 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, onOpen: (SettingsP
     val store = browser.store
     val adBlock = app.adBlock
     Column {
+        DefaultBrowserRow()
+        Spacer(Modifier.height(20.dp))
+
         // Быстрые переключатели
         val adSubtitle = when {
             adBlock.error != null -> "Недоступна: ${adBlock.error}"
@@ -239,6 +251,42 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, onOpen: (SettingsP
             SettingsRow(p.icon(), p.title, p.subtitle, s, onClick = { onOpen(p) })
         }
     }
+}
+
+/** Карточка «Браузер по умолчанию»: системное окно выбора, статус обновляется при возврате в приложение. */
+@Composable
+private fun DefaultBrowserRow() {
+    val context = LocalContext.current
+    var isDefault by remember { mutableStateOf(DefaultBrowser.isDefault(context)) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        isDefault = DefaultBrowser.isDefault(context)
+    }
+    val owner = context as? LifecycleOwner
+    DisposableEffect(owner) {
+        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) isDefault = DefaultBrowser.isDefault(context) }
+        owner?.lifecycle?.addObserver(obs)
+        onDispose { owner?.lifecycle?.removeObserver(obs) }
+    }
+    val check: (@Composable () -> Unit)? = if (isDefault) ({ Icon(HripsIcons.Check, null, tint = MaterialTheme.colorScheme.primary) }) else null
+    Group(
+        { s ->
+            SettingsRow(
+                HripsIcons.Link,
+                "Браузер по умолчанию",
+                if (isDefault) "hrips открывает ссылки из других приложений" else "Сделать hrips браузером по умолчанию",
+                s,
+                onClick = {
+                    val intent = if (isDefault) DefaultBrowser.settingsIntent() else DefaultBrowser.requestIntent(context)
+                    try {
+                        launcher.launch(intent)
+                    } catch (e: Exception) {
+                        runCatching { context.startActivity(DefaultBrowser.settingsIntent()) }
+                    }
+                },
+                trailing = check,
+            )
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -284,8 +332,11 @@ private fun SearchPage(store: Store, onBack: () -> Unit) {
 @Composable
 private fun HomePage(app: HripsApp, onBack: () -> Unit) {
     val wallpaper = app.wallpaper
-    PageScaffold("Начальная страница", onBack) {
-        SectionTitle("Обои")
+    PageScaffold("Внешний вид", onBack) {
+        SectionTitle("Значок приложения")
+        AppIconPicker()
+
+        SectionTitle("Обои главной страницы")
         wallpaper.image?.let { img ->
             Image(
                 bitmap = img,
@@ -305,6 +356,47 @@ private fun HomePage(app: HripsApp, onBack: () -> Unit) {
                 )
             },
         )
+    }
+}
+
+/** Два варианта значка с превью: выбранный выделен рамкой. Переключается сразу. */
+@Composable
+private fun AppIconPicker() {
+    val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var selected by remember { mutableStateOf(AppIcons.current(context)) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppIcon.entries.forEach { icon ->
+            val isSelected = icon == selected
+            Surface(
+                onClick = {
+                    if (!isSelected) {
+                        AppIcons.set(context, icon)
+                        selected = icon
+                        Toast.makeText(context, "Значок изменён. На рабочем столе он может обновиться через пару секунд", Toast.LENGTH_LONG).show()
+                    }
+                },
+                shape = RoundedCornerShape(28.dp),
+                color = if (isSelected) cs.primaryContainer else cs.surfaceContainerHigh,
+                border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, cs.primary) else null,
+                modifier = Modifier.weight(1f),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Image(
+                        painter = androidx.compose.ui.res.painterResource(icon.preview),
+                        contentDescription = icon.title,
+                        modifier = Modifier.size(84.dp).clip(RoundedCornerShape(26.dp)),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        icon.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (isSelected) cs.onPrimaryContainer else cs.onSurface,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -346,6 +438,11 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
             enabled = clearHistory || clearCookies || clearCache,
             onClick = {
                 if (clearHistory) { store.clearHistory(); store.clearSearches() }
+                if (clearHistory || clearCache) {
+                    // Превью страниц в карточках вкладок: и на диске, и в памяти
+                    TabThumbs.clear(context)
+                    browser.tabs.forEach { it.thumbnail = null }
+                }
                 browser.clearData(clearCookies, clearCache) {
                     Toast.makeText(context, "Данные очищены", Toast.LENGTH_SHORT).show()
                 }
@@ -462,7 +559,7 @@ private fun DesktopPage(browser: Browser, onBack: () -> Unit) {
 }
 
 @Composable
-private fun MediaPage(store: Store, onBack: () -> Unit) {
+private fun MediaPage(store: Store, hover: HoverPreview, onBack: () -> Unit) {
     PageScaffold("Медиа", onBack) {
         Group(
             { s ->
@@ -478,6 +575,13 @@ private fun MediaPage(store: Store, onBack: () -> Unit) {
                     "Видео на весь экран уходит в маленькое окно, когда вы выходите на главный экран",
                     store.pipEnabled, true, s,
                 ) { store.updatePip(it) }
+            },
+            { s ->
+                SwitchRow(
+                    HripsIcons.Video, "Оживление миниатюр",
+                    "Удерживайте палец на миниатюре видео: сайт запустит предпросмотр, как при наведении мыши. Работает там, где он есть у самого сайта",
+                    hover.enabled, hover.extension != null, s,
+                ) { hover.setEnabled(it) }
             },
         )
     }
@@ -544,7 +648,7 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
 /** Страница с большим сворачивающимся заголовком и кнопкой "назад", как у загрузок. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier

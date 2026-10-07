@@ -23,7 +23,7 @@ fun siteKey(url: String?): String? {
 
 /** Закладки, история и список вкладок. Пока в SharedPreferences (JSON), позже можно заменить на Room. */
 /** Что хранится о вкладке между запусками: адрес, заголовок и состояние сессии движка (история, прокрутка). */
-class TabSnap(val url: String, val title: String, val state: String?)
+class TabSnap(val url: String, val title: String, val state: String?, val group: String? = null)
 
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("hrips", Context.MODE_PRIVATE)
@@ -222,18 +222,29 @@ class Store(context: Context) {
     }
 
     /** Состояние вкладок может быть большим, поэтому пишем его в файл, а не в SharedPreferences. */
-    fun saveTabSnaps(list: List<TabSnap>, index: Int) {
+    fun saveTabSnaps(list: List<TabSnap>, index: Int, groups: List<TabGroup> = emptyList()) {
         runCatching {
             val arr = JSONArray()
             list.forEach { t ->
-                arr.put(JSONObject().put("u", t.url).put("t", t.title).apply { if (t.state != null) put("s", t.state) })
+                arr.put(JSONObject().put("u", t.url).put("t", t.title).apply { if (t.state != null) put("s", t.state); if (t.group != null) put("g", t.group) })
             }
             val root = JSONObject().put("index", index).put("tabs", arr)
+                .put("groups", JSONArray().apply { groups.forEach { put(JSONObject().put("id", it.id).put("n", it.name).put("c", it.color)) } })
             val tmp = java.io.File(tabsFile.parentFile, "tabs.json.tmp")
             tmp.writeText(root.toString())
             if (!tmp.renameTo(tabsFile)) { tabsFile.delete(); tmp.renameTo(tabsFile) }
         }
     }
+
+    /** Группы вкладок с прошлого запуска. */
+    fun loadGroups(): List<TabGroup> = runCatching {
+        if (!tabsFile.exists()) return emptyList()
+        val arr = JSONObject(tabsFile.readText()).optJSONArray("groups") ?: return emptyList()
+        (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            TabGroup(o.getString("id"), o.optString("n", "Группа"), o.optInt("c", 0))
+        }
+    }.getOrDefault(emptyList())
 
     /** Вкладки с прошлого запуска. Старый формат (только адреса) тоже читается. */
     fun loadTabSnaps(): Pair<List<TabSnap>, Int> {
@@ -243,7 +254,7 @@ class Store(context: Context) {
                 val arr = root.getJSONArray("tabs")
                 val list = (0 until arr.length()).map {
                     val o = arr.getJSONObject(it)
-                    TabSnap(o.optString("u"), o.optString("t"), if (o.has("s")) o.getString("s") else null)
+                    TabSnap(o.optString("u"), o.optString("t"), if (o.has("s")) o.getString("s") else null, if (o.has("g")) o.getString("g") else null)
                 }
                 return list to root.optInt("index", 0)
             }

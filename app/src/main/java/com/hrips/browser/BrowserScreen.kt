@@ -1,6 +1,8 @@
 package com.hrips.browser
 
 import android.app.Activity
+import androidx.compose.ui.platform.LocalDensity
+import android.net.Uri
 import android.view.WindowManager
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.widget.Toast
@@ -72,6 +74,9 @@ internal fun Tab.label() = when {
 @Composable
 fun BrowserScreen(browser: Browser) {
     val tab = browser.current
+    // Жест «потяните вниз, чтобы обновить»: расстояние пальца и порог срабатывания
+    var pullPx by remember { mutableFloatStateOf(0f) }
+    val pullThresholdPx = with(LocalDensity.current) { 110.dp.toPx() }
     val store = browser.store
     val app = LocalContext.current.applicationContext as HripsApp
     // Адаптивность: планшеты и широкие окна (>= 600dp) получают десктопную раскладку
@@ -82,6 +87,9 @@ fun BrowserScreen(browser: Browser) {
     var showSettings by remember { mutableStateOf(false) }
     var showSitePerms by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
+    var showExtSheet by remember { mutableStateOf(false) }
+    var showExtManager by remember { mutableStateOf(false) }
+    var extStoreFirst by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var findOpen by remember { mutableStateOf(false) }
@@ -110,6 +118,9 @@ fun BrowserScreen(browser: Browser) {
     // Полноэкранный режим из меню: прячет интерфейс браузера, как видео на весь экран
     var immersive by remember { mutableStateOf(false) }
     LaunchedEffect(tab) { immersive = false }
+    // Расширения должны знать, какая вкладка сейчас перед глазами
+    LaunchedEffect(tab.session) { browser.extensions.setActive(tab.session) }
+    BackHandler(enabled = showExtManager) { showExtManager = false }
     val fs = tab.fullscreen || immersive
     val activity = LocalContext.current as? Activity
     LaunchedEffect(fs) {
@@ -143,6 +154,13 @@ fun BrowserScreen(browser: Browser) {
     // Ссылка на GeckoView нужна, чтобы снять превью страницы перед открытием переключателя вкладок
     val viewRef = remember { arrayOfNulls<GeckoView>(1) }
     val requestTabs: () -> Unit = { captureThumbnail(activity, viewRef[0], tab) { showTabs = true } }
+    // Превью обновляем сами, когда страница догрузилась: карточки в переключателе сразу с актуальной картинкой
+    LaunchedEffect(tab, tab.loading, tab.url) {
+        if (!tab.loading && !tab.home && !showTabs && !showSearch && !showLibrary) {
+            kotlinx.coroutines.delay(1200)
+            if (!showTabs && !showSearch && !showLibrary) captureThumbnail(activity, viewRef[0], tab) { }
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -175,6 +193,7 @@ fun BrowserScreen(browser: Browser) {
                         query = parsed?.second,
                         onPickEngine = pickEngine,
                         onMenu = { showTools = true },
+                        onExtensions = { showExtSheet = true },
                         showMenu = !wide,
                         downloads = browser.downloads,
                         modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
@@ -184,8 +203,9 @@ fun BrowserScreen(browser: Browser) {
                     // Сначала счётчик вкладок, затем загрузки, затем меню
                     TabCounterButton(browser.tabs.size, Modifier.size(40.dp)) { requestTabs() }
                     DownloadsButton(browser.downloads, onClick = { showDownloads = true }, size = 40.dp)
+                    // Пазл расширений перед меню; справа теперь 4 кнопки, как слева, поэтому адресная строка по центру
+                    IconButton(modifier = Modifier.size(40.dp), onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения") }
                     IconButton(modifier = Modifier.size(40.dp), onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
-                    Spacer(Modifier.width(40.dp)) // балансирует левые кнопки (4 шт.), чтобы строка была по центру
                 }
             }
         }
@@ -218,12 +238,21 @@ fun BrowserScreen(browser: Browser) {
                     factory = { ctx -> HripsGeckoView(ctx).also { viewRef[0] = it } },
                     update = {
                         it.incognito = tab.isPrivate
+                        // Выделенный текст -> «Искать» открывает результаты в новой вкладке того же режима
+                        it.onSearchText = { text ->
+                            browser.newTab(SearchEngines.current.template + Uri.encode(text), incognito = tab.isPrivate)
+                        }
+                        // Потянули страницу вниз, пока она наверху: обновляем при отпускании
+                        it.pullEnabled = !fs
+                        it.onPull = { px -> pullPx = px }
+                        it.onPullRelease = { px -> if (px >= pullThresholdPx) tab.session.reload() }
                         // Системное автозаполнение Android (Google, Bitwarden, 1Password...).
                         // В приватной вкладке выключено, чтобы менеджер паролей не запоминал логины оттуда.
                         it.setAutofillEnabled(!tab.isPrivate)
                         if (it.session !== tab.session) it.setSession(tab.session)
                     },
                 )
+                PullIndicator(pullPx, pullThresholdPx, Modifier.align(Alignment.TopCenter))
             }
         }
 
@@ -250,6 +279,32 @@ fun BrowserScreen(browser: Browser) {
         } else if (wide && !fs) {
             Spacer(Modifier.navigationBarsPadding())
         }
+    }
+
+    // Расширения: кнопки по значку пазла, страница управления, запросы прав и окна расширений
+    if (showExtSheet) {
+        ExtensionsSheet(
+            extensions = browser.extensions,
+            isPrivate = tab.isPrivate,
+            onManage = { store -> extStoreFirst = store; showExtManager = true },
+            onClose = { showExtSheet = false },
+        )
+    }
+    AnimatedVisibility(
+        visible = showExtManager,
+        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
+        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
+    ) {
+        ExtensionsScreen(browser.extensions, extStoreFirst, onBack = { showExtManager = false })
+    }
+    browser.extensions.prompt?.let { p ->
+        ExtensionPromptDialog(p) { allow, priv -> browser.extensions.answerPrompt(allow, priv) }
+    }
+    browser.extensions.popup?.let { p ->
+        ExtensionPopupDialog(p, onClose = { browser.extensions.closePopup() })
+    }
+    browser.extensions.error?.let { msg ->
+        ExtensionErrorDialog(msg) { browser.extensions.error = null }
     }
 
     // Страница загрузок поверх браузера
@@ -416,6 +471,7 @@ private fun AddressBar(
     query: String?,
     onPickEngine: (SearchEngine) -> Unit,
     onMenu: () -> Unit,
+    onExtensions: () -> Unit,
     showMenu: Boolean,
     downloads: Downloads,
     modifier: Modifier = Modifier,
@@ -467,6 +523,8 @@ private fun AddressBar(
                 )
             }
             if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+            // Пазл расширений стоит прямо перед меню
+            if (showMenu) IconButton(modifier = Modifier.size(40.dp), onClick = onExtensions) { Icon(HripsIcons.Puzzle, "Расширения") }
             // На телефоне отдельной кнопки загрузок нет: иконка летит к меню, кольцо рисуется вокруг него
             if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты", size = 40.dp)
         }
