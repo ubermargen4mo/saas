@@ -58,7 +58,6 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, modifier: Modifier = Modifier) {
     val wide = isWideWindow()
-    val markSize = if (wide) 96.sp else 72.sp
     // На обоях текст всегда белый, на обычном фоне цвет берётся из темы
     val textColor = if (wallpaper != null) Color.White else MaterialTheme.colorScheme.onSurface
     var showAdd by remember { mutableStateOf(false) }
@@ -93,20 +92,14 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(R.drawable.logo_shrimp),
-                            contentDescription = null,
-                            modifier = Modifier.size(if (wide) 88.dp else 64.dp),
-                            colorFilter = ColorFilter.tint(textColor),
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Text(
-                            "hrips",
-                            style = WordmarkStyle.copy(fontSize = markSize, lineHeight = markSize * 0.95f),
-                            color = textColor,
-                        )
-                    }
+                    // Логотип с надписью одной прозрачной картинкой; красится в цвет текста (белый на обоях)
+                    Image(
+                        painter = painterResource(R.drawable.logo_hrips),
+                        contentDescription = "hrips",
+                        modifier = Modifier.height(if (wide) 104.dp else 72.dp),
+                        contentScale = ContentScale.Fit,
+                        colorFilter = ColorFilter.tint(textColor),
+                    )
                     Spacer(Modifier.height(24.dp))
                     // Вид строки снят со скриншота Оперы (плотность 2.0): высота 56dp, края скруглены полностью,
                     // значки по центру «ячеек» 56dp слева и справа, текст начинается на 56dp от левого края.
@@ -114,7 +107,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         onClick = onSearch,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = barMax).height(56.dp),
+                        modifier = Modifier.widthIn(max = barMax).fillMaxWidth().height(56.dp),
                     ) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
