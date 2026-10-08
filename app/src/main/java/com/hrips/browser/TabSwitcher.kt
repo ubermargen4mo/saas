@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,9 +64,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 /**
  * Снимок страницы для карточки вкладки. Делается через PixelCopy, пока страница ещё на экране
@@ -152,7 +156,6 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     BackHandler(onBack = onClose)
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    val pager = rememberPagerState(initialPage = if (browser.current.isPrivate) 1 else 0) { 2 }
     var grid by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -186,36 +189,97 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     val current = browser.currentIndex
     val normalCount = all.count { !it.isPrivate }
     val privateCount = all.size - normalCount
-    val privTop = lerp(cs.primaryContainer, Color.Black, 0.6f)
-    val normalTop = cs.primaryContainer
-    val surface = cs.surface
+    val q = query.trim()
+
+    // Списки вкладок с учётом группы и поиска
+    val normalList = all.mapIndexedNotNull { i, t ->
+        if (!t.isPrivate && (filter == null || t.group == filter) && t.matches(q)) i to t else null
+    }
+    val privList = all.mapIndexedNotNull { i, t -> if (t.isPrivate && t.matches(q)) i to t else null }
+
+    // Карусель одна на все вкладки: сначала обычные, потом приватные. Поэтому к приватным
+    // можно перейти одним обычным смахиванием, без отдельного «перелистывания страницы».
+    // Пустой раздел представлен одной карточкой-заглушкой.
+    val slides = buildList {
+        normalList.forEach { add(Slide(it.second, it.first, false)) }
+        if (normalList.isEmpty()) add(Slide(null, -1, false))
+        privList.forEach { add(Slide(it.second, it.first, true)) }
+        if (privList.isEmpty()) add(Slide(null, -1, true))
+    }
+    val slidesNow by rememberUpdatedState(slides)
+
+    // 0 = обычные, 1 = приватные. Источник правды для шапки, фона и нижней панели
+    var mode by remember { mutableIntStateOf(if (browser.current.isPrivate) 1 else 0) }
+    val firstSlide = { m: Int ->
+        slides.indexOfFirst { it.index == current && it.priv == (m == 1) }
+            .takeIf { it >= 0 } ?: slides.indexOfFirst { it.priv == (m == 1) }.coerceAtLeast(0)
+    }
+    val cp = rememberPagerState(initialPage = firstSlide(mode)) { slides.size }
+    val gp = rememberPagerState(initialPage = mode) { 2 }
+
+    LaunchedEffect(grid) {
+        if (grid) gp.scrollToPage(mode) else cp.scrollToPage(firstSlide(mode))
+    }
+    LaunchedEffect(cp) {
+        snapshotFlow { cp.currentPage }.collect { p ->
+            if (!grid) slidesNow.getOrNull(p)?.let { mode = if (it.priv) 1 else 0 }
+        }
+    }
+    LaunchedEffect(gp) {
+        snapshotFlow { gp.currentPage }.collect { if (grid) mode = it }
+    }
+
+    // Положение между «обычными» (0) и «приватными» (1), плавно следует за пальцем
+    val progress: () -> Float = {
+        if (grid) {
+            (gp.currentPage + gp.currentPageOffsetFraction).coerceIn(0f, 1f)
+        } else {
+            val list = slidesNow
+            val pos = (cp.currentPage + cp.currentPageOffsetFraction).coerceIn(0f, list.lastIndex.toFloat())
+            val lo = pos.toInt()
+            val hi = (lo + 1).coerceAtMost(list.lastIndex)
+            val f = pos - lo
+            val a = if (list[lo].priv) 1f else 0f
+            val b = if (list[hi].priv) 1f else 0f
+            a + (b - a) * f
+        }
+    }
+    val bgNormal = cs.surface
+    val bgPrivate = lerp(cs.surface, cs.tertiaryContainer, 0.55f)
+
+    val select: (Int) -> Unit = { m ->
+        scope.launch { if (grid) gp.animateScrollToPage(m) else cp.animateScrollToPage(firstSlide(m)) }
+    }
+
+    @Composable
+    fun card(t: Tab, i: Int, compact: Boolean, mod: Modifier) {
+        TabCard(
+            t, selected = i == current, compact = compact, onClick = { browser.currentIndex = i; onClose() }, onClose = { closeWithUndo(i) },
+            group = browser.groupOf(t), groups = browser.groups,
+            onAssign = { g -> browser.setGroup(t, g) }, onNewGroup = { newGroupFor = t },
+            modifier = mod,
+        )
+    }
 
     Box(
         Modifier
             .fillMaxSize()
-            // Фон плавно темнеет по мере свайпа к приватной странице
-            .drawBehind {
-                val p = (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, 1f)
-                drawRect(
-                    Brush.verticalGradient(
-                        listOf(lerp(normalTop, privTop, p), lerp(surface, Color.Black, p * 0.55f)),
-                    ),
-                )
-            }
+            // Фон плавно меняет тон по мере смахивания к приватным вкладкам
+            .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress())) }
             // Экран лежит поверх GeckoView: нажатия мимо карточек не должны попадать в сайт под ним
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             // Шапка: переключатель «Вкладки / Приватные» и поиск по вкладкам
             Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (searching) {
                     Surface(shape = CircleShape, color = cs.surfaceContainerHigh, modifier = Modifier.weight(1f)) {
                         Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
-                            Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 14.dp)) {
+                            Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 16.dp)) {
                                 if (query.isEmpty()) Text("Поиск по вкладкам", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
                                 BasicTextField(
                                     value = query,
@@ -231,20 +295,20 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                     }
                 } else {
                     ModeToggle(
-                        page = pager.currentPage,
+                        progress = progress,
                         normal = normalCount,
                         priv = privateCount,
-                        onSelect = { scope.launch { pager.animateScrollToPage(it) } },
-                        modifier = Modifier.weight(1f).widthIn(max = 380.dp),
+                        onSelect = select,
+                        modifier = Modifier.weight(1f).widthIn(max = 400.dp),
                     )
                     Spacer(Modifier.width(12.dp))
-                    FilledTonalIconButton(onClick = { searching = true }, modifier = Modifier.size(52.dp)) {
+                    FilledTonalIconButton(onClick = { searching = true }, modifier = Modifier.size(56.dp)) {
                         Icon(HripsIcons.Search, "Поиск по вкладкам")
                     }
                 }
             }
 
-            if (!searching && pager.currentPage == 0 && browser.groups.isNotEmpty()) {
+            if (!searching && mode == 0 && browser.groups.isNotEmpty()) {
                 GroupChips(
                     groups = browser.groups,
                     counts = browser.groups.associate { g -> g.id to all.count { it.group == g.id } },
@@ -255,76 +319,65 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 )
             }
 
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
-                val priv = page == 1
-                val q = query.trim()
-                val list = all.mapIndexedNotNull { i, t ->
-                    if (t.isPrivate == priv && (priv || filter == null || t.group == filter) &&
-                        (q.isEmpty() || t.label().contains(q, true) || t.url.contains(q, true))
-                    ) i to t else null
-                }
-                val pick: (Int) -> Unit = { i -> browser.currentIndex = i; onClose() }
-                val newTab: () -> Unit = { browser.newTab(incognito = priv); onClose() }
-                when {
-                    list.isEmpty() -> EmptyTabs(priv, searching = q.isNotEmpty(), onNew = newTab)
-                    grid -> LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 170.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        gridItems(list, key = { tabKey(it.second) }) { (i, t) ->
-                            TabCard(
-                                t, selected = i == current, compact = true, onClick = { pick(i) }, onClose = { closeWithUndo(i) },
-                                group = browser.groupOf(t), groups = browser.groups,
-                                onAssign = { g -> browser.setGroup(t, g) }, onNewGroup = { newGroupFor = t },
-                                modifier = Modifier.fillMaxWidth().aspectRatio(0.78f).animateItem(),
-                            )
+            if (grid) {
+                // Сетка: два раздела, между ними переключаемся обычным смахиванием (вертикальная прокрутка не мешает)
+                HorizontalPager(state = gp, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
+                    val priv = page == 1
+                    val list = if (priv) privList else normalList
+                    if (list.isEmpty()) {
+                        EmptyTabs(priv, searching = q.isNotEmpty(), onNew = { browser.newTab(incognito = priv); onClose() })
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 170.dp),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            gridItems(list, key = { tabKey(it.second) }) { (i, t) ->
+                                card(t, i, true, Modifier.fillMaxWidth().aspectRatio(0.78f).animateItem())
+                            }
                         }
                     }
-                    else -> BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
-                        val cardW = minOf(maxWidth * 0.76f, 400.dp)
-                        val cardH = minOf(cardW * (if (maxWidth > 600.dp) 1.0f else 1.35f), maxHeight - 24.dp)
-                        val state = rememberLazyListState()
-                        val gapPx = with(LocalDensity.current) { 16.dp.toPx() }
-                        LaunchedEffect(Unit) {
-                            val idx = list.indexOfFirst { it.first == current }
-                            if (idx >= 0) state.scrollToItem(idx)
-                        }
-                        LazyRow(
-                            state = state,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = (maxWidth - cardW) / 2),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            flingBehavior = rememberSnapFlingBehavior(state),
+                }
+            } else {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(bottom = 104.dp)) {
+                    val cardW = minOf(maxWidth * 0.78f, 400.dp)
+                    val cardH = minOf(cardW * (if (maxWidth > 600.dp) 1.0f else 1.4f), maxHeight - 16.dp)
+                    HorizontalPager(
+                        state = cp,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = (maxWidth - cardW) / 2),
+                        pageSize = PageSize.Fixed(cardW),
+                        pageSpacing = 14.dp,
+                        beyondViewportPageCount = 1,
+                        key = { slidesNow.getOrNull(it)?.key ?: it },
+                    ) { page ->
+                        val slide = slidesNow.getOrNull(page)
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                // Центральная карточка крупнее и ярче, соседние уменьшаются и бледнеют
+                                .graphicsLayer {
+                                    val d = ((cp.currentPage - page) + cp.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
+                                    val sc = 1f - 0.08f * d
+                                    scaleX = sc
+                                    scaleY = sc
+                                    alpha = 1f - 0.45f * d
+                                },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            items(list, key = { tabKey(it.second) }) { (i, t) ->
-                                val key = tabKey(t)
-                                TabCard(
-                                    t, selected = i == current, compact = false, onClick = { pick(i) }, onClose = { closeWithUndo(i) },
-                                    group = browser.groupOf(t), groups = browser.groups,
-                                    onAssign = { g -> browser.setGroup(t, g) }, onNewGroup = { newGroupFor = t },
-                                    modifier = Modifier
-                                        .width(cardW)
-                                        .height(cardH)
-                                        .animateItem()
-                                        // Карточка в центре крупнее и ярче, соседние уменьшаются и бледнеют
-                                        .graphicsLayer {
-                                            val info = state.layoutInfo
-                                            val item = info.visibleItemsInfo.firstOrNull { it.key == key }
-                                            if (item != null) {
-                                                val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-                                                val itemCenter = item.offset + item.size / 2f
-                                                val d = (abs(itemCenter - viewportCenter) / (item.size + gapPx)).coerceIn(0f, 1f)
-                                                val s = 1f - 0.1f * d
-                                                scaleX = s
-                                                scaleY = s
-                                                alpha = 1f - 0.4f * d
-                                            }
-                                        },
+                            val t = slide?.tab
+                            if (slide == null) {
+                                Unit
+                            } else if (t == null) {
+                                EmptySlide(
+                                    slide.priv, searching = q.isNotEmpty(),
+                                    onNew = { browser.newTab(incognito = slide.priv); onClose() },
+                                    modifier = Modifier.width(cardW).height(cardH),
                                 )
+                            } else {
+                                card(t, slide.index, false, Modifier.width(cardW).height(cardH))
                             }
                         }
                     }
@@ -337,11 +390,11 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             count = browser.tabs.size,
             onToggleGrid = { grid = !grid },
             onHistory = onHistory,
-            onNew = { browser.newTab(incognito = pager.currentPage == 1); onClose() },
+            onNew = { browser.newTab(incognito = mode == 1); onClose() },
             onDone = onClose,
-            privatePage = pager.currentPage == 1,
+            privatePage = mode == 1,
             onCloseAll = {
-                if (pager.currentPage == 1) browser.closePrivateTabs()
+                if (mode == 1) browser.closePrivateTabs()
                 else browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it) }
             },
             closedCount = browser.closedTabs.size,
@@ -377,15 +430,34 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     }
 }
 
+private class Slide(val tab: Tab?, val index: Int, val priv: Boolean) {
+    val key: Any = tab?.let { tabKey(it) } ?: if (priv) "empty-private" else "empty-normal"
+}
+
+private fun Tab.matches(q: String) = q.isEmpty() || label().contains(q, true) || url.contains(q, true)
+
 /**
- * Связанная группа из двух кнопок, как в Material 3 Expressive: выбранная становится «таблеткой»,
- * у невыбранной внутренний край остаётся с малым скруглением. Форма и цвет меняются пружиной.
+ * Переключатель «Вкладки / Приватные»: одна большая таблетка, внутри цветной «ползунок», который едет
+ * за пальцем, пока смахиваете карточки. При переходе к приватным цвет меняется на акцентный третичный.
  */
 @Composable
-private fun ModeToggle(page: Int, normal: Int, priv: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.height(52.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        ModeSegment(HripsIcons.Grid, "Вкладки", normal, selected = page == 0, first = true, modifier = Modifier.weight(1f)) { onSelect(0) }
-        ModeSegment(HripsIcons.Mask, "Приватные", priv, selected = page == 1, first = false, modifier = Modifier.weight(1f)) { onSelect(1) }
+private fun ModeToggle(progress: () -> Float, normal: Int, priv: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val p = progress().coerceIn(0f, 1f)
+    BoxWithConstraints(modifier.height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(4.dp)) {
+        val half = maxWidth / 2
+        Box(
+            Modifier
+                .offset { IntOffset((progress().coerceIn(0f, 1f) * half.toPx()).roundToInt(), 0) }
+                .width(half)
+                .fillMaxHeight()
+                .clip(CircleShape)
+                .background(lerp(cs.primary, cs.tertiary, p)),
+        )
+        Row(Modifier.fillMaxSize()) {
+            ModeSegment(HripsIcons.Grid, "Вкладки", normal, lerp(cs.onPrimary, cs.onSurfaceVariant, p), Modifier.weight(1f)) { onSelect(0) }
+            ModeSegment(HripsIcons.Mask, "Приватные", priv, lerp(cs.onSurfaceVariant, cs.onTertiary, p), Modifier.weight(1f)) { onSelect(1) }
+        }
     }
 }
 
@@ -394,27 +466,17 @@ private fun ModeSegment(
     icon: ImageVector,
     label: String,
     count: Int,
-    selected: Boolean,
-    first: Boolean,
+    content: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
-    val inner by animateDpAsState(if (selected) 26.dp else 8.dp, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "inner")
-    val container by animateColorAsState(if (selected) cs.primary else cs.surfaceContainerHigh, label = "segBg")
-    val content by animateColorAsState(if (selected) cs.onPrimary else cs.onSurfaceVariant, label = "segFg")
-    val shape = if (first) {
-        RoundedCornerShape(topStart = 26.dp, bottomStart = 26.dp, topEnd = inner, bottomEnd = inner)
-    } else {
-        RoundedCornerShape(topStart = inner, bottomStart = inner, topEnd = 26.dp, bottomEnd = 26.dp)
-    }
-    Surface(onClick = onClick, shape = shape, color = container, contentColor = content, modifier = modifier.fillMaxHeight()) {
-        Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+    Surface(onClick = onClick, shape = CircleShape, color = Color.Transparent, contentColor = content, modifier = modifier.fillMaxHeight()) {
+        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             Icon(icon, null, Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            Spacer(Modifier.width(8.dp))
-            Surface(shape = CircleShape, color = content.copy(alpha = 0.18f), contentColor = content) {
+            Spacer(Modifier.width(6.dp))
+            Surface(shape = CircleShape, color = content.copy(alpha = 0.2f), contentColor = content) {
                 Text(count.toString(), Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelMedium)
             }
         }
@@ -514,11 +576,10 @@ private fun TabCard(
             shape = shape,
             color = if (selected) cs.primaryContainer else cs.surfaceContainerHigh,
             border = when {
-                selected -> BorderStroke(3.dp, cs.primary)
                 group != null -> BorderStroke(2.dp, group.tint.copy(alpha = 0.85f))
                 else -> null
             },
-            shadowElevation = if (selected) 8.dp else 0.dp,
+            shadowElevation = 0.dp,
             modifier = Modifier
                 .fillMaxSize()
                 .clip(shape)
@@ -646,9 +707,16 @@ private fun TabCard(
 }
 
 @Composable
-private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit) {
+private fun EmptySlide(priv: Boolean, searching: Boolean, onNew: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(36.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
+        EmptyTabs(priv, searching, onNew, Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modifier: Modifier = Modifier.fillMaxSize().padding(bottom = 104.dp)) {
     Column(
-        Modifier.fillMaxSize().padding(bottom = 104.dp),
+        modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -690,6 +758,8 @@ private fun SwitcherBar(
 ) {
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
+    val fabBg by animateColorAsState(if (privatePage) cs.tertiary else cs.primary, label = "fabBg")
+    val fabFg by animateColorAsState(if (privatePage) cs.onTertiary else cs.onPrimary, label = "fabFg")
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HorizontalFloatingToolbar(expanded = true) {
@@ -720,8 +790,8 @@ private fun SwitcherBar(
             FloatingActionButton(
                 onClick = onNew,
                 shape = MaterialShapes.Cookie9Sided.toShape(),
-                containerColor = cs.primary,
-                contentColor = cs.onPrimary,
+                containerColor = fabBg,
+                contentColor = fabFg,
                 modifier = Modifier.size(68.dp),
             ) {
                 Icon(HripsIcons.Add, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", Modifier.size(30.dp))
