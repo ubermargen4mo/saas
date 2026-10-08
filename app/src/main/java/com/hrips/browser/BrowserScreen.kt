@@ -172,23 +172,21 @@ fun BrowserScreen(browser: Browser) {
         Column(Modifier.fillMaxWidth().statusBarsPadding()) {
             if (wide) TabStrip(browser)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = if (wide) 8.dp else 12.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(horizontal = if (wide) 4.dp else 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (wide) {
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
+                    // Слева: назад, вперёд, домой. «Обновить» теперь внутри адресной строки
+                    IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
                         Icon(HripsIcons.Back, "Назад")
                     }
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
+                    IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
                         Icon(HripsIcons.Forward, "Вперёд")
                     }
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                        Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
-                    }
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
+                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
                 }
                 // Адресная строка занимает всё свободное место между кнопками
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Box(Modifier.weight(1f).padding(horizontal = if (wide) 4.dp else 0.dp), contentAlignment = Alignment.Center) {
                     AddressBar(
                         tab = tab,
                         store = store,
@@ -201,15 +199,15 @@ fun BrowserScreen(browser: Browser) {
                         showMenu = !wide,
                         downloads = browser.downloads,
                         modifier = Modifier.fillMaxWidth(),
+                        wide = wide,
                     )
                 }
                 if (wide) {
-                    // Сначала счётчик вкладок, затем загрузки, затем меню
-                    TabCounterButton(browser.tabs.size, Modifier.size(40.dp)) { requestTabs() }
-                    DownloadsButton(browser.downloads, onClick = { showDownloads = true }, size = 40.dp)
-                    // Пазл расширений перед меню; справа теперь 4 кнопки, как слева, поэтому адресная строка по центру
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения") }
-                    IconButton(modifier = Modifier.size(40.dp), onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
+                    // Справа: вкладки, расширения, [загрузки: только пока идут], меню
+                    TabCounterButton(browser.tabs.size) { requestTabs() }
+                    IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения") }
+                    AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true })
+                    IconButton(onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
                 }
             }
         }

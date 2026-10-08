@@ -38,6 +38,7 @@ internal fun AddressBar(
     showMenu: Boolean,
     downloads: Downloads,
     modifier: Modifier = Modifier,
+    wide: Boolean = false,
 ) {
     // Логотип движка с выбором: на главной и на странице выдачи. На обычных сайтах - замок и адрес.
     val withPicker = tab.home || query != null
@@ -46,6 +47,47 @@ internal fun AddressBar(
         tab.home -> ""
         query != null -> query
         else -> tab.url.removePrefix("https://")
+    }
+    if (wide) {
+        // Планшетный вид: контурный щит слева, адрес, кнопка «Обновить» справа внутри строки
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = modifier.height(40.dp),
+        ) {
+            Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                if (withPicker) {
+                    Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+                } else {
+                    IconButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            if (tab.trust == Trust.SECURE) HripsIcons.Shield else HripsIcons.Info,
+                            "Безопасность соединения",
+                            Modifier.size(20.dp),
+                            tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().clickable(onClick = onSearch),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        shown.ifEmpty { "Искать или задать вопрос" },
+                        modifier = Modifier.padding(start = if (withPicker) 8.dp else 4.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (shown.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
+                    Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить", Modifier.size(20.dp))
+                }
+                if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+            }
+        }
+        return
     }
     Surface(
         shape = MaterialTheme.shapes.extraLarge,

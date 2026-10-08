@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -417,6 +419,56 @@ private fun PromptPanel(p: PendingDownload, downloads: Downloads) {
                     Text("Загрузить")
                 }
             }
+        }
+    }
+}
+
+/**
+ * Кнопка загрузок для верхней панели широкого экрана: появляется только пока идёт загрузка (и ещё немного после),
+ * занимает место между «Расширениями» и меню, а соседние элементы (адресная строка) плавно уступают ей место.
+ *
+ * Сама кнопка всегда стоит на своём конечном месте у правого края слота, поэтому «полёт» значка загрузки
+ * приземляется точно туда, где кнопка окажется. Слот раскрывается пружиной, кнопка проявляется и «вырастает».
+ */
+@Composable
+fun AnimatedDownloadsSlot(
+    downloads: Downloads,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 48.dp,
+) {
+    val fx = downloads.fx
+    val live = downloads.items.any { downloads.isActive(it) } || fx.flight != null
+    var show by remember { mutableStateOf(false) }
+    // После окончания держим кнопку ещё 1.5 с: успевает дорисоваться кольцо и мигнуть значок «готово»
+    LaunchedEffect(live) {
+        if (live) show = true else {
+            delay(1500)
+            show = false
+        }
+    }
+    val width by androidx.compose.animation.core.animateDpAsState(
+        if (show) size else 0.dp,
+        spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "dlSlotWidth",
+    )
+    val appear by animateFloatAsState(
+        if (show) 1f else 0f,
+        spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow),
+        label = "dlSlotAppear",
+    )
+    Box(modifier.width(width).height(size).clipToBounds()) {
+        Box(
+            Modifier
+                .wrapContentWidth(Alignment.End, unbounded = true)
+                .graphicsLayer {
+                    val sc = 0.4f + 0.6f * appear
+                    scaleX = sc
+                    scaleY = sc
+                    alpha = appear.coerceIn(0f, 1f)
+                },
+        ) {
+            DownloadsButton(downloads, onClick = onClick, size = size)
         }
     }
 }
