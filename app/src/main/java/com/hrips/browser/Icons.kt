@@ -144,7 +144,7 @@ object HripsIcons {
             moveTo(11f, 16.5f); horizontalLineTo(13f)
         }
     }
-    val MoreVert by lazy { icon("MoreVert") { circle(12f, 5f, 1f); circle(12f, 12f, 1f); circle(12f, 19f, 1f) } }
+    val MoreVert by lazy { icon("MoreVert") { circle(12f, 5f, 1.4f); circle(12f, 12f, 1.4f); circle(12f, 19f, 1.4f) } }
 
     val Pencil by lazy {
         icon("Pencil") {
@@ -296,15 +296,15 @@ object HripsIcons {
     /** Пазл: расширения. */
     val Puzzle by lazy {
         icon("Puzzle") {
-            moveTo(20.5f, 11f); horizontalLineTo(19f); verticalLineTo(7f)
-            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f); horizontalLineToRelative(-4f); verticalLineTo(3.5f)
-            curveTo(13f, 2.12f, 11.88f, 1f, 10.5f, 1f); curveTo(9.12f, 1f, 8f, 2.12f, 8f, 3.5f); verticalLineTo(5f); horizontalLineTo(4f)
-            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f); verticalLineToRelative(3.8f); horizontalLineTo(3.5f)
-            curveToRelative(1.49f, 0f, 2.7f, 1.21f, 2.7f, 2.7f); curveToRelative(0f, 1.49f, -1.21f, 2.7f, -2.7f, 2.7f); horizontalLineTo(2f)
-            verticalLineTo(20f); curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f); horizontalLineToRelative(3.8f); verticalLineToRelative(-1.5f)
-            curveToRelative(0f, -1.49f, 1.21f, -2.7f, 2.7f, -2.7f); curveToRelative(1.49f, 0f, 2.7f, 1.21f, 2.7f, 2.7f); verticalLineTo(22f)
-            horizontalLineTo(17f); curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f); verticalLineToRelative(-4f); horizontalLineToRelative(1.5f)
-            curveToRelative(1.38f, 0f, 2.5f, -1.12f, 2.5f, -2.5f); curveTo(23f, 12.12f, 21.88f, 11f, 20.5f, 11f); close()
+            moveTo(18.88f, 11.57f); horizontalLineTo(17.59f); verticalLineTo(8.13f)
+            curveToRelative(0f, -0.946f, -0.774f, -1.72f, -1.72f, -1.72f); horizontalLineToRelative(-3.44f); verticalLineTo(5.12f)
+            curveTo(12.43f, 3.933f, 11.467f, 2.97f, 10.28f, 2.97f); curveTo(9.093f, 2.97f, 8.13f, 3.933f, 8.13f, 5.12f); verticalLineTo(6.41f); horizontalLineTo(4.69f)
+            curveToRelative(-0.946f, 0f, -1.72f, 0.774f, -1.72f, 1.72f); verticalLineToRelative(3.268f); horizontalLineTo(4.26f)
+            curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); curveToRelative(0f, 1.281f, -1.041f, 2.322f, -2.322f, 2.322f); horizontalLineTo(2.97f)
+            verticalLineTo(19.31f); curveToRelative(0f, 0.946f, 0.774f, 1.72f, 1.72f, 1.72f); horizontalLineToRelative(3.268f); verticalLineToRelative(-1.29f)
+            curveToRelative(0f, -1.281f, 1.041f, -2.322f, 2.322f, -2.322f); curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); verticalLineTo(21.03f)
+            horizontalLineTo(15.87f); curveToRelative(0.946f, 0f, 1.72f, -0.774f, 1.72f, -1.72f); verticalLineToRelative(-3.44f); horizontalLineToRelative(1.29f)
+            curveToRelative(1.187f, 0f, 2.15f, -0.963f, 2.15f, -2.15f); curveTo(21.03f, 12.533f, 20.067f, 11.57f, 18.88f, 11.57f); close()
         }
     }
 

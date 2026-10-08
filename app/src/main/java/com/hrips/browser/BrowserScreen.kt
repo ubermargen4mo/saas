@@ -178,12 +178,12 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     // Слева: назад, вперёд, домой. «Обновить» теперь внутри адресной строки
                     IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
-                        Icon(HripsIcons.Back, "Назад")
+                        Icon(HripsIcons.Back, "Назад", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                        Icon(HripsIcons.Forward, "Вперёд")
+                        Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
                     }
-                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
+                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой", Modifier.size(24.dp)) }
                 }
                 // Адресная строка занимает всё свободное место между кнопками
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 4.dp else 0.dp), contentAlignment = Alignment.Center) {
@@ -205,9 +205,14 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     // Справа: вкладки, расширения, [загрузки: только пока идут], меню
                     TabCounterButton(browser.tabs.size) { requestTabs() }
-                    IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения") }
+                    IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
                     AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true })
-                    IconButton(onClick = { showTools = true }) { Icon(HripsIcons.MoreVert, "Инструменты") }
+                    // Три точки узкие, из-за этого казались дальше остальных: кнопка уже на 7dp, зазор выравнивается
+                    Box(Modifier.width(41.dp).height(48.dp), contentAlignment = Alignment.Center) {
+                        IconButton(onClick = { showTools = true }, modifier = Modifier.wrapContentSize(unbounded = true)) {
+                            Icon(HripsIcons.MoreVert, "Инструменты", Modifier.size(24.dp))
+                        }
+                    }
                 }
             }
         }
@@ -269,10 +274,10 @@ fun BrowserScreen(browser: Browser) {
             ) {
                 HorizontalFloatingToolbar(expanded = true) {
                     IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
-                        Icon(HripsIcons.Back, "Назад")
+                        Icon(HripsIcons.Back, "Назад", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                        Icon(HripsIcons.Forward, "Вперёд")
+                        Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
                         Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")

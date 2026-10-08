@@ -63,7 +63,6 @@ internal fun AddressBar(
                         Icon(
                             if (tab.trust == Trust.SECURE) HripsIcons.Shield else HripsIcons.Info,
                             "Безопасность соединения",
-                            Modifier.size(20.dp),
                             tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -82,7 +81,7 @@ internal fun AddressBar(
                     )
                 }
                 IconButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                    Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить", Modifier.size(20.dp))
+                    Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
                 }
                 if (showSecurity) SecurityDialog(tab) { showSecurity = false }
             }
@@ -244,7 +243,8 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> U
     ) {
         val color = LocalContentColor.current
         Box(
-            Modifier.size(24.dp).border(2.dp, color, RoundedCornerShape(7.dp)),
+            // Размер и толщина линии как у остальных значков панели (контур 18 из 24, линия 1.8)
+            Modifier.size(20.dp).border(1.8.dp, color, RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(
@@ -254,7 +254,7 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> U
             ) { n ->
                 Text(
                     if (n > 99) ":)" else n.toString(),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = if (n > 9) 10.sp else 12.sp, fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = if (n > 9) 9.sp else 11.sp, fontWeight = FontWeight.SemiBold),
                     color = color,
                 )
             }
