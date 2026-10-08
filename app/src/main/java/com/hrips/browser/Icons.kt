@@ -41,26 +41,7 @@ object HripsIcons {
         }
     }
 
-    val Home by lazy {
-        icon("Home") {
-            moveTo(15f, 21f); verticalLineToRelative(-8f)
-            arcToRelative(1f, 1f, 0f, false, false, -1f, -1f)
-            horizontalLineToRelative(-4f)
-            arcToRelative(1f, 1f, 0f, false, false, -1f, 1f)
-            verticalLineToRelative(8f)
-            moveTo(3f, 10f)
-            arcToRelative(2f, 2f, 0f, false, true, 0.709f, -1.528f)
-            lineToRelative(7f, -5.999f)
-            arcToRelative(2f, 2f, 0f, false, true, 2.582f, 0f)
-            lineToRelative(7f, 5.999f)
-            arcTo(2f, 2f, 0f, false, true, 21f, 10f)
-            verticalLineToRelative(9f)
-            arcToRelative(2f, 2f, 0f, false, true, -2f, 2f)
-            horizontalLineTo(5f)
-            arcToRelative(2f, 2f, 0f, false, true, -2f, -2f)
-            close()
-        }
-    }
+    val Home by lazy { icon("Home") { home() } }
 
     val Copy by lazy {
         icon("Copy") {
@@ -111,7 +92,7 @@ object HripsIcons {
         }
     }
 
-    val Info by lazy { icon("Info") { circle(12f, 12f, 9.5f); moveTo(12f, 16.5f); verticalLineTo(11.5f); moveTo(12f, 8f); horizontalLineToRelative(0.01f) } }
+    val Info by lazy { icon("Info") { info() } }
     val Alert by lazy { icon("Alert") { circle(12f, 12f, 9.5f); moveTo(12f, 7.5f); verticalLineTo(12.5f); moveTo(12f, 16.2f); horizontalLineToRelative(0.01f) } }
     val History by lazy { icon("History") { circle(12f, 12f, 9.5f); moveTo(12f, 7f); verticalLineToRelative(5f); lineToRelative(3f, 2f) } }
 
@@ -365,15 +346,7 @@ object HripsIcons {
         }
     }
 
-    val Shield by lazy {
-        icon("Shield") {
-            moveTo(12f, 3f); lineToRelative(7f, 3f); verticalLineToRelative(5.5f)
-            curveToRelative(0f, 4.4f, -3f, 7.6f, -7f, 9.5f)
-            curveToRelative(-4f, -1.9f, -7f, -5.1f, -7f, -9.5f)
-            verticalLineTo(6f); close()
-            moveTo(9f, 12f); lineToRelative(2f, 2f); lineToRelative(4f, -4f)
-        }
-    }
+    val Shield by lazy { icon("Shield") { shield() } }
 
     val Block by lazy {
         icon("Block") {
@@ -392,24 +365,113 @@ object HripsIcons {
             arcToRelative(2f, 2f, 0f, false, true, -2f, -2f); close()
         }
     }
+
+    // ---- Значки верхней панели (планшет). Размеры сняты со скриншота Оперы 1 в 1 (плотность 2.0) ----
+    // Стрелки, обновление, три точки: линия 2dp, рисунок 16x16dp в рамке 24dp. Остальные значки панели - наши, но тоже приведены
+    // к размерам значков Оперы: линейные (домой, щит) 16-17dp, значки в рамке (вкладки, расширения) 20dp.
+
+    /** Назад: стержень 13.7dp, «голова» 6.5dp под 45 градусов, линия 2dp. */
+    val BarBack by lazy {
+        icon("BarBack", stroke = 2f) {
+            moveTo(18.85f, 12f); horizontalLineTo(5.15f)
+            moveTo(11.65f, 18.5f); lineTo(5.15f, 12f); lineTo(11.65f, 5.5f)
+        }
+    }
+    val BarForward by lazy {
+        icon("BarForward", stroke = 2f) {
+            moveTo(5.15f, 12f); horizontalLineTo(18.85f)
+            moveTo(12.35f, 5.5f); lineTo(18.85f, 12f); lineTo(12.35f, 18.5f)
+        }
+    }
+
+    /** Обновить: кольцо r=7dp, разрыв справа (от 25 градусов), «уголок» стрелки 5x5dp в правом верхнем углу. */
+    val BarRefresh by lazy {
+        icon("BarRefresh", stroke = 2f) {
+            moveTo(18.34f, 14.96f)
+            arcTo(7f, 7f, 0f, true, true, 12f, 5f)
+            curveTo(13.96f, 5f, 15.84f, 5.78f, 17.15f, 7.18f)
+            lineTo(19f, 10f)
+            moveTo(19f, 5f); verticalLineTo(10f); horizontalLineTo(14f)
+        }
+    }
+
+    /** Остановить загрузку: тот же размер, что у остальных значков панели. */
+    val BarClose by lazy { icon("BarClose", stroke = 2f) { moveTo(19f, 5f); lineTo(5f, 19f); moveTo(5f, 5f); lineTo(19f, 19f) } }
+
+    /** Три точки: круги 4dp, шаг 6dp, высота 16dp. */
+    val BarMore by lazy { fillIcon("BarMore") { circle(12f, 6f, 2f); circle(12f, 12f, 2f); circle(12f, 18f, 2f) } }
+
+    /** Наши значки в размерах Оперы: домой 16x17dp, щит 14x17dp, «инфо» 16dp; линия 2dp. */
+    val BarHome by lazy { icon("BarHome", stroke = 2f, scale = 0.8f) { home() } }
+    val BarShield by lazy { icon("BarShield", stroke = 2f, scale = 0.833f) { shield() } }
+    val BarInfo by lazy { icon("BarInfo", stroke = 2f, scale = 0.75f) { info() } }
 }
 
-private fun icon(name: String, filled: Boolean = false, block: PathBuilder.() -> Unit): ImageVector =
+/**
+ * [stroke] - итоговая толщина линии в dp (в сетке 24 при размере иконки 24dp это 1 к 1).
+ * [scale] - уменьшение рисунка вокруг центра сетки; толщину линии он не меняет: её компенсируем здесь.
+ */
+private fun icon(
+    name: String,
+    filled: Boolean = false,
+    stroke: Float = 1.8f,
+    scale: Float = 1f,
+    block: PathBuilder.() -> Unit,
+): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+        if (scale != 1f) addGroup(pivotX = 12f, pivotY = 12f, scaleX = scale, scaleY = scale)
         path(
             fill = if (filled) SolidColor(Color.Black) else null,
             stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.8f,
+            strokeLineWidth = stroke / scale,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round,
             pathBuilder = block,
         )
+        if (scale != 1f) clearGroup()
+    }.build()
+
+/** Только заливка, без обводки: точки меню. */
+private fun fillIcon(name: String, block: PathBuilder.() -> Unit): ImageVector =
+    ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black), stroke = null, pathBuilder = block)
     }.build()
 
 private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
     moveTo(cx + r, cy)
     arcToRelative(r, r, 0f, true, true, -2 * r, 0f)
     arcToRelative(r, r, 0f, true, true, 2 * r, 0f)
+}
+
+private fun PathBuilder.home() {
+    moveTo(15f, 21f); verticalLineToRelative(-8f)
+    arcToRelative(1f, 1f, 0f, false, false, -1f, -1f)
+    horizontalLineToRelative(-4f)
+    arcToRelative(1f, 1f, 0f, false, false, -1f, 1f)
+    verticalLineToRelative(8f)
+    moveTo(3f, 10f)
+    arcToRelative(2f, 2f, 0f, false, true, 0.709f, -1.528f)
+    lineToRelative(7f, -5.999f)
+    arcToRelative(2f, 2f, 0f, false, true, 2.582f, 0f)
+    lineToRelative(7f, 5.999f)
+    arcTo(2f, 2f, 0f, false, true, 21f, 10f)
+    verticalLineToRelative(9f)
+    arcToRelative(2f, 2f, 0f, false, true, -2f, 2f)
+    horizontalLineTo(5f)
+    arcToRelative(2f, 2f, 0f, false, true, -2f, -2f)
+    close()
+}
+
+private fun PathBuilder.shield() {
+    moveTo(12f, 3f); lineToRelative(7f, 3f); verticalLineToRelative(5.5f)
+    curveToRelative(0f, 4.4f, -3f, 7.6f, -7f, 9.5f)
+    curveToRelative(-4f, -1.9f, -7f, -5.1f, -7f, -9.5f)
+    verticalLineTo(6f); close()
+    moveTo(9f, 12f); lineToRelative(2f, 2f); lineToRelative(4f, -4f)
+}
+
+private fun PathBuilder.info() {
+    circle(12f, 12f, 9.5f); moveTo(12f, 16.5f); verticalLineTo(11.5f); moveTo(12f, 8f); horizontalLineToRelative(0.01f)
 }
 
 private fun PathBuilder.roundRect(x: Float, y: Float, w: Float, h: Float, r: Float) {

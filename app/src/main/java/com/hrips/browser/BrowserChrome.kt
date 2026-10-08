@@ -61,7 +61,7 @@ internal fun AddressBar(
                 } else {
                     IconButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
                         Icon(
-                            if (tab.trust == Trust.SECURE) HripsIcons.Shield else HripsIcons.Info,
+                            if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
                             "Безопасность соединения",
                             tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -81,7 +81,7 @@ internal fun AddressBar(
                     )
                 }
                 IconButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                    Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
+                    Icon(if (tab.loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
                 }
                 if (showSecurity) SecurityDialog(tab) { showSecurity = false }
             }
@@ -160,7 +160,8 @@ internal fun TabStrip(browser: Browser) {
         }
     }
 
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Высота полосы 44dp (4 сверху, 0 снизу): строка с адресом встаёт ровно туда, где она в Опере
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(browser.tabs, key = { _, t -> t.id }) { i, t ->
                 val id = t.id
@@ -254,7 +255,7 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> U
             ) { n ->
                 Text(
                     if (n > 99) ":)" else n.toString(),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = if (n > 9) 9.sp else 11.sp, fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = if (n > 9) 9.sp else 10.sp, fontWeight = FontWeight.SemiBold),
                     color = color,
                 )
             }

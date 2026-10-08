@@ -171,19 +171,26 @@ fun BrowserScreen(browser: Browser) {
         if (!fs) {
         Column(Modifier.fillMaxWidth().statusBarsPadding()) {
             if (wide) TabStrip(browser)
+            // Размеры строки сняты со скриншота Оперы (плотность 2.0): центр строки на 102dp от верха экрана,
+            // низ шторки на 131dp (под ним сразу страница). Кнопки по 48dp, адресная строка 40dp.
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = if (wide) 4.dp else 12.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(
+                    start = if (wide) 4.dp else 12.dp,
+                    end = if (wide) 4.dp else 12.dp,
+                    top = 4.dp,
+                    bottom = if (wide) 1.dp else 4.dp,
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (wide) {
                     // Слева: назад, вперёд, домой. «Обновить» теперь внутри адресной строки
                     IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
-                        Icon(HripsIcons.Back, "Назад", Modifier.size(24.dp))
+                        Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                        Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
+                        Icon(HripsIcons.BarForward, "Вперёд", Modifier.size(24.dp))
                     }
-                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой", Modifier.size(24.dp)) }
+                    IconButton(onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(24.dp)) }
                 }
                 // Адресная строка занимает всё свободное место между кнопками
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 4.dp else 0.dp), contentAlignment = Alignment.Center) {
@@ -207,12 +214,14 @@ fun BrowserScreen(browser: Browser) {
                     TabCounterButton(browser.tabs.size) { requestTabs() }
                     IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
                     AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true })
-                    // Три точки узкие, из-за этого казались дальше остальных: кнопка уже на 7dp, зазор выравнивается
-                    Box(Modifier.width(41.dp).height(48.dp), contentAlignment = Alignment.Center) {
+                    // Три точки как в Опере: центр на 28dp от правого края экрана, от значка расширений 42dp.
+                    // Кнопка 36dp + отступ 6dp справа дают именно такое положение.
+                    Box(Modifier.width(36.dp).height(48.dp), contentAlignment = Alignment.Center) {
                         IconButton(onClick = { showTools = true }, modifier = Modifier.wrapContentSize(unbounded = true)) {
-                            Icon(HripsIcons.MoreVert, "Инструменты", Modifier.size(24.dp))
+                            Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
                         }
                     }
+                    Spacer(Modifier.width(6.dp))
                 }
             }
         }
