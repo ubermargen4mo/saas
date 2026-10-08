@@ -347,6 +347,22 @@ class Store(context: Context) {
         save("dial", speedDial)
     }
 
+    /** Меняет адрес и название плитки, место в списке остаётся прежним. */
+    fun updateDial(old: Entry, url: String, title: String) {
+        val i = speedDial.indexOf(old)
+        if (i < 0) return
+        speedDial[i] = old.copy(url = url, title = title)
+        save("dial", speedDial)
+    }
+
+    /** Переставляет плитку при перетаскивании. Пишем на диск не сразу, а по отпусканию ([saveDial]). */
+    fun moveDial(from: Int, to: Int) {
+        if (from !in speedDial.indices || to !in speedDial.indices || from == to) return
+        speedDial.add(to, speedDial.removeAt(from))
+    }
+
+    fun saveDial() = save("dial", speedDial)
+
     /** Состояние вкладок может быть большим, поэтому пишем его в файл, а не в SharedPreferences. */
     fun saveTabSnaps(list: List<TabSnap>, index: Int, groups: List<TabGroup> = emptyList()) {
         writeTabSnaps(list, index, groups)

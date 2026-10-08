@@ -1,6 +1,26 @@
 package com.hrips.browser
 
 import android.net.Uri
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.coerceIn
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,6 +63,16 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     val textColor = if (wallpaper != null) Color.White else MaterialTheme.colorScheme.onSurface
     var showAdd by remember { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<Entry?>(null) }
+    var toEdit by remember { mutableStateOf<Entry?>(null) }
+    var menuKey by remember { mutableStateOf<String?>(null) }
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val gridState = rememberLazyGridState()
+    val drag = remember { DialDrag() }
+    // В Опере строка занимает 1120px из 2560px экрана, то есть 43.75% ширины окна. Берём ту же долю
+    // (не меньше 360dp и не больше 640dp), чтобы длина совпадала на любой плотности экрана.
+    val screenW = LocalConfiguration.current.screenWidthDp
+    val barMax = if (wide) (screenW * 0.4375f).dp.coerceIn(360.dp, 640.dp) else 640.dp
 
     Box(modifier.fillMaxSize()) {
     if (wallpaper != null) {
@@ -51,13 +81,14 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Adaptive(minSize = 96.dp),
             modifier = Modifier.widthIn(max = 880.dp).fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                 Column(
                     Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -83,7 +114,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         onClick = onSearch,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp).height(56.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = barMax).height(56.dp),
                     ) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
@@ -109,36 +140,137 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                 }
             }
 
-            items(store.speedDial.toList()) { e ->
-                Column(
+            items(store.speedDial.toList(), key = { tileKey(it) }) { e ->
+                val k = tileKey(e)
+                val lifted = drag.key == k
+                val settling = drag.settling == k
+                // Взятая плитка «приподнимается»: растёт и отбрасывает тень, после отпускания мягко садится на место
+                val scale by animateFloatAsState(
+                    if (lifted) 1.14f else 1f,
+                    spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+                    label = "dialLift",
+                )
+                val elevation by animateDpAsState(if (lifted) 16.dp else 0.dp, label = "dialElevation")
+
+                fun reorder() {
+                    val infos = gridState.layoutInfo.visibleItemsInfo
+                    val me = infos.firstOrNull { it.key == k } ?: return
+                    val cx = drag.startOffset.x + drag.delta.x + me.size.width / 2f
+                    val cy = drag.startOffset.y + drag.delta.y + me.size.height / 2f
+                    val keys = store.speedDial.map { tileKey(it) }
+                    val target = infos.firstOrNull {
+                        it.key != k && it.key in keys &&
+                            cx >= it.offset.x && cx < it.offset.x + it.size.width &&
+                            cy >= it.offset.y && cy < it.offset.y + it.size.height
+                    } ?: return
+                    val from = keys.indexOf(k)
+                    val to = keys.indexOf(target.key)
+                    if (from >= 0 && to >= 0 && from != to) {
+                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        store.moveDial(from, to)
+                    }
+                }
+
+                fun finish() {
+                    if (drag.key != k) return
+                    val from = drag.translation(gridState, k)
+                    val wasMoved = drag.moved
+                    drag.key = null
+                    drag.settling = k
+                    store.saveDial()
+                    scope.launch {
+                        drag.settle.snapTo(from)
+                        // Подержали и отпустили, не двигая: вместо перестановки показываем меню плитки
+                        if (!wasMoved) menuKey = k
+                        drag.settle.animateTo(Offset.Zero, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow))
+                        if (drag.settling == k) drag.settling = null
+                    }
+                }
+
+                Box(
                     Modifier
-                        .combinedClickable(onClick = { onOpen(e.url) }, onLongClick = { toDelete = e })
-                        .padding(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        // Пока плитку несут, место она не анимирует (её двигает палец); остальные плавно расступаются
+                        .then(if (lifted || settling) Modifier else Modifier.animateItem())
+                        .zIndex(if (lifted || settling) 1f else 0f)
+                        .graphicsLayer {
+                            val t = when {
+                                lifted -> drag.translation(gridState, k)
+                                settling -> drag.settle.value
+                                else -> Offset.Zero
+                            }
+                            translationX = t.x
+                            translationY = t.y
+                            scaleX = scale
+                            scaleY = scale
+                        },
                 ) {
-                    val (bg, fg) = tileColors(e.title)
-                    Surface(shape = RoundedCornerShape(28.dp), color = bg, modifier = Modifier.size(72.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Favicon(e.url, 72.dp, fill = true) {
-                                SiteTile(e.url, e.title.ifBlank { siteKey(e.url) ?: e.url }, 72.dp, shape = RoundedCornerShape(28.dp))
+                    Column(
+                        Modifier
+                            .combinedClickable(onClick = { onOpen(e.url) }, onLongClick = {})
+                            .pointerInput(k) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        val info = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == k }
+                                        if (info != null) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            menuKey = null
+                                            drag.begin(k, info.offset)
+                                        }
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        drag.delta += amount
+                                        if (drag.delta.getDistance() > viewConfiguration.touchSlop) drag.moved = true
+                                        reorder()
+                                    },
+                                    onDragEnd = { finish() },
+                                    onDragCancel = { finish() },
+                                )
+                            }
+                            .padding(4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val (bg, fg) = tileColors(e.title)
+                        Surface(
+                            shape = RoundedCornerShape(28.dp),
+                            color = bg,
+                            shadowElevation = elevation,
+                            modifier = Modifier.size(72.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Favicon(e.url, 72.dp, fill = true) {
+                                    SiteTile(e.url, e.title.ifBlank { siteKey(e.url) ?: e.url }, 72.dp, shape = RoundedCornerShape(28.dp))
+                                }
                             }
                         }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            e.title,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = textColor,
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        e.title,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = textColor,
-                    )
+                    DropdownMenu(expanded = menuKey == k, onDismissRequest = { if (menuKey == k) menuKey = null }) {
+                        DropdownMenuItem(
+                            text = { Text("Изменить") },
+                            leadingIcon = { Icon(HripsIcons.Pencil, null, Modifier.size(20.dp)) },
+                            onClick = { menuKey = null; toEdit = e },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Удалить") },
+                            leadingIcon = { Icon(HripsIcons.Trash, null, Modifier.size(20.dp)) },
+                            onClick = { menuKey = null; toDelete = e },
+                        )
+                    }
                 }
             }
 
-            item {
+            item(key = "add") {
                 Column(
-                    Modifier.clickable { showAdd = true }.padding(4.dp),
+                    Modifier.animateItem().clickable { showAdd = true }.padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Surface(
@@ -155,31 +287,33 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     }
 
     if (showAdd) {
-        var name by remember { mutableStateOf("") }
-        var address by remember { mutableStateOf("") }
-        HripsDialog(
+        DialDialog(
             icon = HripsIcons.Add,
-            onDismissRequest = { showAdd = false },
-            title = { Text("Новая плитка") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HripsField(name, { name = it }, label = { Text("Название") }, singleLine = true)
-                    HripsField(address, { address = it }, label = { Text("Адрес") }, singleLine = true)
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = address.isNotBlank(),
-                    onClick = {
-                        val url = toUrl(address)
-                        val title = name.ifBlank { Uri.parse(url).host?.removePrefix("www.") ?: url }
-                        store.addDial(url, title)
-                        showAdd = false
-                    },
-                ) { Text("Добавить") }
-            },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Отмена") } },
-        )
+            title = "Новая плитка",
+            confirm = "Добавить",
+            initialName = "",
+            initialAddress = "",
+            onDismiss = { showAdd = false },
+        ) { name, address ->
+            val url = toUrl(address)
+            store.addDial(url, name.ifBlank { Uri.parse(url).host?.removePrefix("www.") ?: url })
+            showAdd = false
+        }
+    }
+
+    toEdit?.let { e ->
+        DialDialog(
+            icon = HripsIcons.Pencil,
+            title = "Изменить плитку",
+            confirm = "Сохранить",
+            initialName = e.title,
+            initialAddress = e.url,
+            onDismiss = { toEdit = null },
+        ) { name, address ->
+            val url = toUrl(address)
+            store.updateDial(e, url, name.ifBlank { Uri.parse(url).host?.removePrefix("www.") ?: url })
+            toEdit = null
+        }
     }
 
     toDelete?.let { e ->
@@ -204,4 +338,60 @@ private fun tileColors(key: String): Pair<Color, Color> {
         c.tertiaryContainer to c.onTertiaryContainer,
     )
     return options[Math.floorMod(key.hashCode(), options.size)]
+}
+
+/** Ключ плитки в сетке: по нему сетка узнаёт плитку при перестановке и анимирует её переезд. */
+private fun tileKey(e: Entry) = "${e.time}|${e.url}|${e.title}"
+
+/** Состояние перетаскивания плитки. Положение плитки = старт + сдвиг пальца, независимо от того, куда её переставила сетка. */
+private class DialDrag {
+    var key by mutableStateOf<String?>(null)
+    var settling by mutableStateOf<String?>(null)
+    var startOffset by mutableStateOf(IntOffset.Zero)
+    var delta by mutableStateOf(Offset.Zero)
+    var moved = false
+    /** Возврат отпущенной плитки в свою ячейку. */
+    val settle = Animatable(Offset.Zero, Offset.VectorConverter)
+
+    fun begin(k: String, offset: IntOffset) {
+        key = k
+        settling = null
+        startOffset = offset
+        delta = Offset.Zero
+        moved = false
+    }
+
+    /** На сколько плитку надо сдвинуть от её текущей ячейки, чтобы она была под пальцем. */
+    fun translation(state: LazyGridState, k: String): Offset {
+        val cur = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == k }?.offset ?: startOffset
+        return Offset(startOffset.x + delta.x - cur.x, startOffset.y + delta.y - cur.y)
+    }
+}
+
+/** Диалог плитки: название и адрес. Один для добавления и для изменения. */
+@Composable
+private fun DialDialog(
+    icon: ImageVector,
+    title: String,
+    confirm: String,
+    initialName: String,
+    initialAddress: String,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, address: String) -> Unit,
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var address by remember { mutableStateOf(initialAddress) }
+    HripsDialog(
+        icon = icon,
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HripsField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                HripsField(address, { address = it }, label = { Text("Адрес") }, singleLine = true)
+            }
+        },
+        confirmButton = { TextButton(enabled = address.isNotBlank(), onClick = { onConfirm(name, address) }) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
