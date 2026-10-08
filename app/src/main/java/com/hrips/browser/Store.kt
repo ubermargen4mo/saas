@@ -408,7 +408,7 @@ class Store(context: Context) {
         }
     }
 
-    private const val MAX_TAB_STATE_BYTES = 32L * 1024L * 1024L
+    private val MAX_TAB_STATE_BYTES = 32L * 1024L * 1024L
 
     private fun readTabRoot(file: java.io.File): JSONObject? = runCatching {
         if (!file.isFile || file.length() !in 1L..MAX_TAB_STATE_BYTES) return@runCatching null

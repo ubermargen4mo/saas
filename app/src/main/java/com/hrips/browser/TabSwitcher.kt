@@ -554,9 +554,10 @@ private fun TabCard(
                     }
                     val thumb = tab.thumbnail ?: fromDisk
                     // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
-                    val pageImage by produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
+                    val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
                         value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
                     }
+                    val pageImage = pageImageState.value
                     if (thumb != null && !tab.home) {
                         Image(
                             bitmap = thumb,

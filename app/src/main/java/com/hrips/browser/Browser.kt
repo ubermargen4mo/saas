@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import android.net.Uri
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import android.os.Handler

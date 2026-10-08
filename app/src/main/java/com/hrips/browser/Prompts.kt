@@ -257,7 +257,8 @@ class Prompts(private val context: Context) {
                             // Prompt could have been cancelled by Gecko while SAF was open.
                             android.util.Log.w("Prompts", "Не удалось передать файл сайту", e)
                             android.widget.Toast.makeText(context, "Не удалось прикрепить файл", android.widget.Toast.LENGTH_SHORT).show()
-                            runCatching { prompt.dismiss() }
+                            // Если и dismiss() не удастся, исключение поймает complete()
+                            prompt.dismiss()
                         }
                     }
                 }
@@ -634,7 +635,7 @@ private fun parseComparable(type: Int, value: String): Long? = runCatching {
         }
         else -> LocalDate.parse(value).toEpochDay()
     }
-}
+}.getOrNull()
 
 private fun clampDate(type: Int, date: LocalDate, min: String?, max: String?): LocalDate {
     val lower = min?.takeIf { it.isNotBlank() }?.let { runCatching { parseDate(type, it) }.getOrNull() }

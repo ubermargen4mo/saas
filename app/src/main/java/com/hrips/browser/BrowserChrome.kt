@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 
 @Composable
-private fun AddressBar(
+internal fun AddressBar(
     tab: Tab,
     store: Store,
     onSearch: () -> Unit,
@@ -102,11 +102,11 @@ private fun AddressBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TabStrip(browser: Browser) {
+internal fun TabStrip(browser: Browser) {
     val listState = rememberLazyListState()
     val haptic = LocalHapticFeedback.current
     // Перетаскивание вкладки: долгое нажатие, затем движение влево/вправо
-    var draggingId by remember { mutableStateOf<Int?>(null) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
     // При переключении вкладки автоматически возвращаем выбранную вкладку в видимую область.

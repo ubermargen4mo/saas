@@ -68,17 +68,6 @@ object Suggestions {
             c.disconnect()
         }
     }
-
-    private fun java.io.InputStream.readBounded(maxBytes: Int): ByteArray {
-        val out = java.io.ByteArrayOutputStream(minOf(maxBytes, 16 * 1024))
-        val buf = ByteArray(8 * 1024)
-        while (out.size() < maxBytes) {
-            val n = read(buf, 0, minOf(buf.size, maxBytes - out.size()))
-            if (n < 0) break
-            out.write(buf, 0, n)
-        }
-        return out.toByteArray()
-    }
 }
 
 private class Chip(val text: String, val icon: ImageVector?)

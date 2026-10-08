@@ -74,7 +74,7 @@ object PageImages {
             fromDisk(app, pageUrl) ?: if (isMissing(app, pageUrl)) null else fromNetwork(app, pageUrl)
         }
         val img = bmp?.asImageBitmap()
-        if (img != null) synchronized(memory) { memory[pageUrl] = img }
+        if (img != null) synchronized(memory) { memory.put(pageUrl, img) }
         return img
     }
 
@@ -198,7 +198,7 @@ object PageImages {
 
     fun clear(c: Context) {
         dir(c).listFiles()?.forEach { it.delete() }
-        synchronized(memory) { memory.clear() }
+        synchronized(memory) { memory.evictAll() }
         synchronized(errorsLock) { errors.evictAll() }
     }
 }
