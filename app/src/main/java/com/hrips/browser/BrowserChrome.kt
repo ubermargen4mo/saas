@@ -50,13 +50,14 @@ internal fun AddressBar(
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.heightIn(min = 48.dp),
+        // Фиксированная высота: на сайтах и на главной строка выглядит одинаково
+        modifier = modifier.height(48.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             if (withPicker) Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
             // Нажатие на текст открывает поисковую панель (ввод, подсказки, история)
             Row(
-                Modifier.weight(1f).clickable(onClick = onSearch).padding(vertical = 9.dp),
+                Modifier.weight(1f).fillMaxHeight().clickable(onClick = onSearch),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!withPicker) {

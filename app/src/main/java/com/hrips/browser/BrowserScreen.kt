@@ -187,7 +187,7 @@ fun BrowserScreen(browser: Browser) {
                     }
                     IconButton(modifier = Modifier.size(40.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.Home, "Домой") }
                 }
-                // На широком экране адресная строка по центру и не растягивается на всю ширину
+                // Адресная строка занимает всё свободное место между кнопками
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     AddressBar(
                         tab = tab,
@@ -200,7 +200,7 @@ fun BrowserScreen(browser: Browser) {
                         onExtensions = { showExtSheet = true },
                         showMenu = !wide,
                         downloads = browser.downloads,
-                        modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 if (wide) {
