@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -19,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
@@ -34,7 +36,7 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
+fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, modifier: Modifier = Modifier) {
     val wide = isWideWindow()
     val markSize = if (wide) 96.sp else 72.sp
     // На обоях текст всегда белый, на обычном фоне цвет берётся из темы
@@ -75,16 +77,33 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         )
                     }
                     Spacer(Modifier.height(24.dp))
+                    // Вид строки снят со скриншота Оперы (плотность 2.0): высота 56dp, края скруглены полностью,
+                    // значки по центру «ячеек» 56dp слева и справа, текст начинается на 56dp от левого края.
                     Surface(
                         onClick = onSearch,
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp).height(56.dp),
                     ) {
-                        Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(HripsIcons.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Искать или задать вопрос", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+                        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                Icon(HripsIcons.Search, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                "Искать или задать вопрос",
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                            )
+                            // QR сразу открывает сканер, остальная строка - поиск
+                            Box(
+                                Modifier.width(56.dp).fillMaxHeight().clip(CircleShape).clickable(onClick = onScanQr),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(HripsIcons.Qr, "Сканировать QR-код", Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }

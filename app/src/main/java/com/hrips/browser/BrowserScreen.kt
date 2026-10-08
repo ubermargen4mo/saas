@@ -258,7 +258,7 @@ fun BrowserScreen(browser: Browser) {
                     onCloseAll = { browser.closePrivateTabs() },
                 )
             } else if (tab.home) {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true })
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true })
             } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),

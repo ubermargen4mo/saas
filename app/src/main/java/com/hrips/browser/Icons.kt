@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -314,15 +315,30 @@ object HripsIcons {
         }
     }
 
+    /**
+     * QR-код как в Опере: сетка 9x9 модулей по 2 единицы (18 из 24), три «глаза» с квадратной дырой,
+     * палочка между верхними и россыпь модулей. Сплошная заливка, красится через tint.
+     */
     val Qr by lazy {
-        icon("Qr") {
-            roundRect(3f, 3f, 7f, 7f, 1.5f)
-            roundRect(14f, 3f, 7f, 7f, 1.5f)
-            roundRect(3f, 14f, 7f, 7f, 1.5f)
-            moveTo(14f, 17.5f); horizontalLineTo(17.5f); verticalLineTo(14f)
-            moveTo(21f, 14f); verticalLineToRelative(0.01f)
-            moveTo(14f, 21f); horizontalLineToRelative(0.01f)
-            moveTo(17.5f, 21f); horizontalLineTo(21f)
+        fillIcon("Qr", evenOdd = true) {
+            // «Глаза»: внешний квадрат 6x6 со скруглением и дыра 2x2 (дыра вычитается правилом even-odd)
+            for ((x, y) in listOf(3f to 3f, 15f to 3f, 3f to 15f)) {
+                roundRect(x, y, 6f, 6f, 0.5f)
+                rect(x + 2f, y + 2f, 2f, 2f)
+            }
+            // Остальные модули (каждый 2x2 или слитые в полоски, без наложений)
+            moduleRect(11f, 5f, 2f, 4f)    // палочка между верхними «глазами»
+            moduleRect(3f, 11f, 2f, 2f)
+            moduleRect(9f, 11f, 4f, 2f)
+            moduleRect(11f, 13f, 2f, 2f)
+            moduleRect(15f, 11f, 2f, 2f)
+            moduleRect(19f, 11f, 2f, 2f)
+            moduleRect(17f, 13f, 2f, 2f)
+            moduleRect(15f, 15f, 2f, 4f)
+            moduleRect(19f, 15f, 2f, 4f)
+            moduleRect(11f, 17f, 4f, 2f)
+            moduleRect(11f, 19f, 2f, 2f)
+            moduleRect(17f, 19f, 2f, 2f)
         }
     }
 
@@ -421,10 +437,22 @@ private fun icon(
     }.build()
 
 /** Только заливка, без обводки: точки меню. */
-private fun fillIcon(name: String, block: PathBuilder.() -> Unit): ImageVector =
+private fun fillIcon(name: String, evenOdd: Boolean = false, block: PathBuilder.() -> Unit): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
-        path(fill = SolidColor(Color.Black), stroke = null, pathBuilder = block)
+        path(
+            fill = SolidColor(Color.Black),
+            stroke = null,
+            pathFillType = if (evenOdd) PathFillType.EvenOdd else PathFillType.NonZero,
+            pathBuilder = block,
+        )
     }.build()
+
+private fun PathBuilder.rect(x: Float, y: Float, w: Float, h: Float) {
+    moveTo(x, y); horizontalLineToRelative(w); verticalLineToRelative(h); horizontalLineToRelative(-w); close()
+}
+
+/** Модуль QR: чуть скруглённый прямоугольник, как пиксели в Опере. */
+private fun PathBuilder.moduleRect(x: Float, y: Float, w: Float, h: Float) = roundRect(x, y, w, h, 0.2f)
 
 private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
     moveTo(cx + r, cy)
