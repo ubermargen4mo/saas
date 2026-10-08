@@ -73,12 +73,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.sin
 
 // ───────────────────────── Типы файлов ─────────────────────────
 
@@ -195,6 +198,7 @@ fun DownloadsButton(
     icon: ImageVector = HripsIcons.Download,
     description: String = "Загрузки",
     size: Dp = 48.dp,
+    reportTarget: Boolean = true,
 ) {
     val fx = downloads.fx
     val busy = downloads.items.any { downloads.isActive(it) }
@@ -221,7 +225,7 @@ fun DownloadsButton(
     LaunchedEffect(fx.pulse) {
         if (fx.pulse > 0) {
             pulse.snapTo(1f)
-            pulse.animateTo(1.28f, tween(110))
+            pulse.animateTo(1.14f, tween(110))
             pulse.animateTo(1f, spring(dampingRatio = 0.3f, stiffness = Spring.StiffnessLow))
         }
     }
@@ -229,29 +233,36 @@ fun DownloadsButton(
     // Округляем до 1%, чтобы кнопка не перерисовывалась на каждый принятый блок данных
     val progress by remember(downloads) { derivedStateOf { (downloads.aggregateProgress() * 100).toInt() / 100f } }
 
-    DisposableEffect(fx) { onDispose { fx.target = null } }
+    if (reportTarget) DisposableEffect(fx) { onDispose { fx.target = null } }
 
     Box(
         modifier
             .size(size)
-            .onGloballyPositioned {
-                val c = it.boundsInRoot().center
-                if (fx.target != c) fx.target = c
-            }
+            .then(
+                if (!reportTarget) Modifier else Modifier.onGloballyPositioned {
+                    val c = it.boundsInRoot().center
+                    if (fx.target != c) fx.target = c
+                },
+            )
             .graphicsLayer { scaleX = pulse.value; scaleY = pulse.value },
         contentAlignment = Alignment.Center,
     ) {
         if (ringAlpha > 0.01f) {
             DownloadRing(
                 progress = progress,
+                // Кольцо чуть шире иконки 24dp, как значок в баре, а не на всю кнопку
                 modifier = Modifier
-                    .size(size - 6.dp)
+                    .size(RING_SIZE)
                     .graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = ringAlpha },
             )
         }
-        IconButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description) }
+        IconButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description, Modifier.size(ICON_SIZE)) }
     }
 }
+
+/** Значок загрузок такой же, как остальные в баре (24dp), кольцо прогресса - на 4dp шире с каждой стороны. */
+private val ICON_SIZE = 24.dp
+private val RING_SIZE = 32.dp
 
 @Composable
 private fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
@@ -265,7 +276,7 @@ private fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
         label = "rot",
     )
     Canvas(modifier) {
-        val w = 3.dp.toPx()
+        val w = 2.5.dp.toPx()
         val topLeft = Offset(w / 2, w / 2)
         val arc = Size(size.width - w, size.height - w)
         drawArc(track, 0f, 360f, false, topLeft, arc, style = Stroke(w))
@@ -279,27 +290,32 @@ private fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
 
 // ───────────────────────── Полёт иконки ─────────────────────────
 
-/** Рисуется поверх всего экрана: иконка файла по дуге летит к кнопке загрузок, уменьшаясь. */
+/**
+ * Рисуется поверх всего экрана. Файл «отрывается» от плашки (небольшой подскок), по дуге летит к месту,
+ * где появится значок загрузок, покачиваясь и уменьшаясь до размера этого значка, и растворяется в нём.
+ */
 @Composable
 fun DownloadFlightOverlay(fx: DownloadFx) {
     val flight = fx.flight ?: return
     val progress = remember(flight) { Animatable(0f) }
     LaunchedEffect(flight) {
-        progress.animateTo(1f, tween(720, easing = CubicBezierEasing(0.3f, 0f, 0f, 1f)))
+        progress.animateTo(1f, tween(820, easing = CubicBezierEasing(0.25f, 0.1f, 0.1f, 1f)))
         fx.land()
     }
     val density = LocalDensity.current
-    val sizePx = with(density) { 56.dp.toPx() }
+    val badge = 56.dp
+    val sizePx = with(density) { badge.toPx() }
+    val endScale = ICON_SIZE / badge
     // Опорная точка дуги: середина пути, смещённая вбок и вверх
     val d = flight.to - flight.from
     val len = d.getDistance().coerceAtLeast(1f)
     var n = Offset(-d.y / len, d.x / len)
     if (n.y > 0f) n = -n
-    val control = (flight.from + flight.to) / 2f + n * (len * 0.28f)
+    val control = (flight.from + flight.to) / 2f + n * (len * 0.3f)
 
     Box(
         Modifier
-            .size(56.dp)
+            .size(badge)
             .graphicsLayer {
                 val t = progress.value
                 val u = 1f - t
@@ -307,14 +323,17 @@ fun DownloadFlightOverlay(fx: DownloadFx) {
                 val y = u * u * flight.from.y + 2 * u * t * control.y + t * t * flight.to.y
                 translationX = x - sizePx / 2
                 translationY = y - sizePx / 2
-                val s = 1f - 0.62f * t
+                // В начале файл «вздувается» (отрыв от плашки), дальше плавно уменьшается до размера значка
+                val lift = if (t < 0.18f) 1f + 0.18f * sin(PI.toFloat() * t / 0.18f) else 1f
+                val s = (1f - (1f - endScale) * t) * lift
                 scaleX = s
                 scaleY = s
-                rotationZ = 14f * t
-                alpha = if (t < 0.82f) 1f else (1f - (t - 0.82f) / 0.18f).coerceIn(0f, 1f)
+                // Покачивание в полёте, к цели выравнивается
+                rotationZ = -16f * sin(PI.toFloat() * t)
+                alpha = if (t < 0.85f) 1f else (1f - (t - 0.85f) / 0.15f).coerceIn(0f, 1f)
             },
     ) {
-        KindBadge(flight.kind, 56.dp)
+        KindBadge(flight.kind, badge)
     }
 }
 
@@ -457,7 +476,21 @@ fun AnimatedDownloadsSlot(
         spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow),
         label = "dlSlotAppear",
     )
-    Box(modifier.width(width).height(size).clipToBounds()) {
+    val sizePx = with(LocalDensity.current) { size.toPx() }
+    DisposableEffect(fx) { onDispose { fx.target = null } }
+    Box(
+        modifier
+            .width(width)
+            .height(size)
+            // Слот закрыт - ширина 0, и границы кнопки внутри обрезаны. Поэтому цель считаем сами: правый край слота
+            // при раскрытии не двигается, кнопка стоит у него. Значит, значок прилетает точно туда, где кнопка окажется.
+            .onGloballyPositioned {
+                val p = it.positionInRoot()
+                val c = Offset(p.x + it.size.width - sizePx / 2f, p.y + it.size.height / 2f)
+                if (fx.target != c) fx.target = c
+            }
+            .clipToBounds(),
+    ) {
         Box(
             Modifier
                 .wrapContentWidth(Alignment.End, unbounded = true)
@@ -468,7 +501,7 @@ fun AnimatedDownloadsSlot(
                     alpha = appear.coerceIn(0f, 1f)
                 },
         ) {
-            DownloadsButton(downloads, onClick = onClick, size = size)
+            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false)
         }
     }
 }

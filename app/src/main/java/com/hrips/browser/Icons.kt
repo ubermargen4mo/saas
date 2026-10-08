@@ -23,17 +23,6 @@ object HripsIcons {
     val Close by lazy { icon("Close") { moveTo(18f, 6f); lineTo(6f, 18f); moveTo(6f, 6f); lineTo(18f, 18f) } }
     val Add by lazy { icon("Add") { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
     val Check by lazy { icon("Check") { moveTo(5f, 12.5f); lineToRelative(4.5f, 4.5f); lineTo(19f, 7.5f) } }
-    val Menu by lazy { icon("Menu") { moveTo(4f, 6f); horizontalLineTo(20f); moveTo(4f, 12f); horizontalLineTo(20f); moveTo(4f, 18f); horizontalLineTo(20f) } }
-
-    val Refresh by lazy {
-        icon("Refresh") {
-            moveTo(21f, 12f)
-            arcToRelative(9f, 9f, 0f, true, true, -9f, -9f)
-            curveToRelative(2.52f, 0f, 4.93f, 1f, 6.74f, 2.74f)
-            lineTo(21f, 8f)
-            moveTo(21f, 3f); verticalLineToRelative(5f); horizontalLineToRelative(-5f)
-        }
-    }
 
     val Speed by lazy {
         icon("Speed") {

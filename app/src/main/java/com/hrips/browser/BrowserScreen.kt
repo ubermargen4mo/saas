@@ -42,6 +42,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -75,7 +77,16 @@ fun BrowserScreen(browser: Browser) {
     val tab = browser.current
     // Жест «потяните вниз, чтобы обновить»: расстояние пальца и порог срабатывания
     var pullPx by remember { mutableFloatStateOf(0f) }
+    // Палец отпустили за порогом: кружок крутится, пока страница не обновится
+    var pullRefreshing by remember { mutableStateOf(false) }
     val pullThresholdPx = with(LocalDensity.current) { 110.dp.toPx() }
+    // Ждём, пока страница начнёт грузиться и закончит; на случай, если загрузка не стартовала, сдаёмся через 3 с
+    LaunchedEffect(pullRefreshing, tab) {
+        if (!pullRefreshing) return@LaunchedEffect
+        withTimeoutOrNull(3000) { snapshotFlow { tab.loading }.first { it } }
+        withTimeoutOrNull(30000) { snapshotFlow { tab.loading }.first { !it } }
+        pullRefreshing = false
+    }
     val store = browser.store
     val app = LocalContext.current.applicationContext as HripsApp
     // Адаптивность привязана к размеру текущего окна, а не к типу устройства/конфигурации экрана.
@@ -261,7 +272,12 @@ fun BrowserScreen(browser: Browser) {
                         // Потянули страницу вниз, пока она наверху: обновляем при отпускании
                         it.pullEnabled = !fs
                         it.onPull = { px -> pullPx = px }
-                        it.onPullRelease = { px -> if (px >= pullThresholdPx) tab.reload() }
+                        it.onPullRelease = { px ->
+                            if (px >= pullThresholdPx) {
+                                tab.reload()
+                                pullRefreshing = true
+                            }
+                        }
                         // Системное автозаполнение Android (Google, Bitwarden, 1Password...).
                         // В приватной вкладке выключено, чтобы менеджер паролей не запоминал логины оттуда.
                         it.setAutofillEnabled(!tab.isPrivate)
@@ -271,7 +287,7 @@ fun BrowserScreen(browser: Browser) {
                         }
                     },
                 )
-                PullIndicator(pullPx, pullThresholdPx, Modifier.align(Alignment.TopCenter))
+                PullIndicator(pullPx, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
         }
 
@@ -289,7 +305,7 @@ fun BrowserScreen(browser: Browser) {
                         Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                        Icon(if (tab.loading) HripsIcons.Close else HripsIcons.Refresh, "Обновить")
+                        Icon(if (tab.loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
                     }
                     IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
                     TabCounterButton(browser.tabs.size) { requestTabs() }
