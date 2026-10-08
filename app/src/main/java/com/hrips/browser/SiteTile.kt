@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,9 +37,18 @@ fun SiteTile(
     val hue = remember(url) { siteHue(url) }
     val bg = hsv(hue, if (dark) 0.50f else 0.22f, if (dark) 0.34f else 0.96f)
     val fg = hsv(hue, if (dark) 0.20f else 0.75f, if (dark) 0.96f else 0.38f)
-    val letter = remember(text) { text.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "?" }
+    // Буква берётся из адреса сайта (он известен сразу и не меняется), потом из названия. Если нет ни того ни другого, значок ссылки, а не «?»
+    val letter = remember(url, text) {
+        val host = siteKey(url)?.removePrefix("m.")
+        host?.firstOrNull { it.isLetterOrDigit() }?.uppercase()
+            ?: text.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase()
+    }
     Box(modifier.size(size).clip(shape).background(bg), contentAlignment = Alignment.Center) {
-        Text(letter, color = fg, fontWeight = FontWeight.SemiBold, fontSize = (size.value * 0.46f).sp)
+        if (letter != null) {
+            Text(letter, color = fg, fontWeight = FontWeight.SemiBold, fontSize = (size.value * 0.46f).sp)
+        } else {
+            Icon(HripsIcons.Link, null, Modifier.size(size * 0.5f), tint = fg)
+        }
     }
 }
 

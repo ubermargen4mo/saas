@@ -108,7 +108,7 @@ fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Uni
         try {
             val loc = IntArray(2)
             gv.getLocationInWindow(loc)
-            val w = 480
+            val w = 720
             val h = (w * gv.height.toFloat() / gv.width).toInt().coerceAtLeast(1)
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val rect = Rect(loc[0], loc[1], loc[0] + gv.width, loc[1] + gv.height)
@@ -127,7 +127,7 @@ fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Uni
             if (full == null || full.width <= 0 || full.height <= 0) {
                 viaPixelCopy()
             } else {
-                val w = 480
+                val w = 720
                 val h = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
                 val scaled = if (full.width > w) Bitmap.createScaledBitmap(full, w, h, true) else full
                 store(scaled)

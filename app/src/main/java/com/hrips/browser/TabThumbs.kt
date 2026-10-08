@@ -14,14 +14,14 @@ import java.security.MessageDigest
  * Превью страниц для карточек вкладок на диске (кэш приложения), чтобы после перезапуска карточки не были пустыми.
  * Ключ - адрес страницы. Приватные вкладки сюда не попадают. Чистится вместе с историей и кэшем (Настройки -> Конфиденциальность).
  *
- * Для каждой страницы хранятся две копии (идея из Opera): обычная (480 px по ширине) для крупных карточек и маленькая
- * (160 px) для сетки. Маленькая декодируется в разы быстрее и занимает меньше памяти. Пара записывается целиком:
+ * Для каждой страницы хранятся две копии (идея из Opera): обычная (720 px по ширине) для крупных карточек и маленькая
+ * (360 px) для сетки. Маленькая декодируется в разы быстрее и занимает меньше памяти. Пара записывается целиком:
  * обе копии сначала во временные файлы, потом подменяются; если что-то не получилось, удаляются обе.
  */
 object TabThumbs {
     /** Сколько страниц хранить (пар файлов) */
     private const val MAX_PAGES = 80
-    private const val MINI_WIDTH = 160
+    private const val MINI_WIDTH = 360
 
     private fun dir(c: Context) = File(c.cacheDir, "tabthumbs").apply { mkdirs() }
 
@@ -38,11 +38,11 @@ object TabThumbs {
         val tmpS = File(dir(c), "$h.s.tmp")
         var small: Bitmap? = null
         try {
-            tmpM.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+            tmpM.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }
             val sh = (MINI_WIDTH * bmp.height / bmp.width.toFloat()).toInt().coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bmp, MINI_WIDTH, sh, true)
             small = scaled
-            tmpS.outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+            tmpS.outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 88, it) }
             if (!tmpM.renameTo(medium(c, h)) || !tmpS.renameTo(mini(c, h))) {
                 medium(c, h).delete(); mini(c, h).delete()
             }
@@ -82,7 +82,7 @@ object TabThumbs {
             bounds.outWidth.toLong() * bounds.outHeight.toLong() > 16_000_000L
         ) return null
         var sample = fallbackSample.coerceAtLeast(1)
-        while (bounds.outWidth / (sample * 2) > 480 || bounds.outHeight / (sample * 2) > 960) sample *= 2
+        while (bounds.outWidth / (sample * 2) > 800 || bounds.outHeight / (sample * 2) > 1800) sample *= 2
         return BitmapFactory.decodeFile(mediumOrMini.path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
