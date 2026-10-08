@@ -80,11 +80,13 @@ object Favicons {
     }
 
     private fun fromNetwork(context: Context, host: String): Bitmap? {
-        val base = "https://$host/"
+        val base0 = "https://$host/"
         val candidates = mutableListOf<String>()
-        val html = download(base, 65536)
-        if (html != null) {
-            val text = String(html, Charsets.UTF_8)
+        val page = downloadFinal(base0, 65536)
+        // Относительные ссылки считаем от адреса, куда нас привёл редирект (например, https://www.site.com/)
+        val base = page?.second ?: base0
+        if (page != null) {
+            val text = String(page.first, Charsets.UTF_8)
             val relRe = Regex("rel\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
             val hrefRe = Regex("href\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
             val found = Regex("<link\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(text).mapNotNull { m ->
@@ -102,9 +104,10 @@ object Favicons {
                 }
             }
         }
-        candidates.add(base + "favicon.ico")
+        candidates.add(URL(URL(base), "/favicon.ico").toString())
+        candidates.add(URL(URL(base), "/apple-touch-icon.png").toString())
 
-        for (u in candidates.take(4)) {
+        for (u in candidates.distinct().take(6)) {
             val data = download(u, 1_000_000) ?: continue
             val bmp = decodeIcon(data) ?: continue
             val scaled = if (bmp.width > 96) Bitmap.createScaledBitmap(bmp, 96, (96f * bmp.height / bmp.width).toInt().coerceAtLeast(1), true) else bmp
@@ -126,17 +129,36 @@ object Favicons {
         return BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
-    internal fun download(url: String, max: Int): ByteArray? = try {
-        val c = URL(url).openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 5000
-            c.readTimeout = 5000
-            c.instanceFollowRedirects = false
-            c.useCaches = false
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) hrips")
-            if (c.responseCode !in 200..299) {
-                null
-            } else {
+    internal fun download(url: String, max: Int): ByteArray? = downloadFinal(url, max)?.first
+
+    /**
+     * Скачивает и возвращает данные вместе с конечным адресом. Редиректы (до 5) идут вручную и только на https:
+     * большинство сайтов отвечают на https://site/ перенаправлением на www или на другой путь, раньше из-за этого
+     * не находились ни иконки, ни картинки страниц.
+     */
+    internal fun downloadFinal(url: String, max: Int): Pair<ByteArray, String>? {
+        var current = url
+        repeat(6) {
+            val c = try {
+                URL(current).openConnection() as HttpURLConnection
+            } catch (e: Exception) {
+                return null
+            }
+            try {
+                c.connectTimeout = 5000
+                c.readTimeout = 5000
+                c.instanceFollowRedirects = false
+                c.useCaches = false
+                c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) hrips")
+                val code = c.responseCode
+                if (code in 301..308 && code != 304) {
+                    val loc = c.getHeaderField("Location") ?: return null
+                    val next = runCatching { URL(URL(current), loc) }.getOrNull() ?: return null
+                    if (!next.protocol.equals("https", true)) return null
+                    current = next.toString()
+                    return@repeat
+                }
+                if (code !in 200..299) return null
                 val out = ByteArrayOutputStream(minOf(max, 8192))
                 c.inputStream.use { input ->
                     val buf = ByteArray(8192)
@@ -147,13 +169,14 @@ object Favicons {
                         out.write(buf, 0, n)
                     }
                 }
-                out.toByteArray()
+                return out.toByteArray() to current
+            } catch (e: Exception) {
+                return null
+            } finally {
+                c.disconnect()
             }
-        } finally {
-            c.disconnect()
         }
-    } catch (e: Exception) {
-        null
+        return null
     }
 }
 

@@ -73,37 +73,69 @@ import kotlin.math.abs
  * [done] вызывается всегда, с картинкой или без: после него можно открывать переключатель.
  */
 fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Unit) {
-    if (activity == null || view == null || tab.home || Build.VERSION.SDK_INT < 26 ||
-        view.width == 0 || view.height == 0 || !view.isShown ||
-        (view as? org.mozilla.geckoview.GeckoView)?.session !== tab.session
+    val gv = view as? org.mozilla.geckoview.GeckoView
+    if (activity == null || gv == null || tab.home ||
+        gv.width == 0 || gv.height == 0 || !gv.isShown ||
+        gv.session !== tab.session
     ) {
         done(); return
     }
-    // Окно закрыто от скриншотов (приватная вкладка): PixelCopy вернул бы чёрный кадр
+    // Окно закрыто от скриншотов (приватная вкладка): снимок был бы чёрным
     if ((activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0) {
         done(); return
     }
+    val main = Handler(Looper.getMainLooper())
+    var finished = false
+    // done() вызываем ровно один раз и не позже чем через 1.5 с, чтобы переключатель вкладок всегда открывался
+    val finish: () -> Unit = {
+        if (!finished) { finished = true; done() }
+    }
+    main.postDelayed({ finish() }, 1500)
+
+    fun store(bmp: Bitmap) {
+        tab.thumbnail = bmp.asImageBitmap()
+        // На диск (в фоне): после перезапуска карточка сразу с картинкой. Приватные вкладки не сохраняем
+        val url = tab.url
+        if (!tab.isPrivate && url.isNotBlank()) {
+            val app = activity.applicationContext
+            AppExecutors.tryExecute { TabThumbs.save(app, url, bmp) }
+        }
+    }
+
+    // Запасной способ: PixelCopy окна (работает, пока страница на экране)
+    fun viaPixelCopy() {
+        if (finished || Build.VERSION.SDK_INT < 26) { finish(); return }
+        try {
+            val loc = IntArray(2)
+            gv.getLocationInWindow(loc)
+            val w = 480
+            val h = (w * gv.height.toFloat() / gv.width).toInt().coerceAtLeast(1)
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val rect = Rect(loc[0], loc[1], loc[0] + gv.width, loc[1] + gv.height)
+            PixelCopy.request(activity.window, rect, bmp, { result ->
+                if (result == PixelCopy.SUCCESS) store(bmp)
+                finish()
+            }, main)
+        } catch (e: Throwable) {
+            finish()
+        }
+    }
+
+    // Основной способ: снимок средствами самого движка (так делает Firefox), он не зависит от SurfaceView
     try {
-        val loc = IntArray(2)
-        view.getLocationInWindow(loc)
-        val w = 480
-        val h = (w * view.height.toFloat() / view.width).toInt().coerceAtLeast(1)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val rect = Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height)
-        PixelCopy.request(activity.window, rect, bmp, { result ->
-            if (result == PixelCopy.SUCCESS) {
-                tab.thumbnail = bmp.asImageBitmap()
-                // На диск (в фоне): после перезапуска карточка сразу с картинкой. Приватные вкладки не сохраняем
-                val url = tab.url
-                if (!tab.isPrivate && url.isNotBlank()) {
-                    val app = activity.applicationContext
-                    AppExecutors.tryExecute { TabThumbs.save(app, url, bmp) }
-                }
+        gv.capturePixels().accept({ full ->
+            if (full == null || full.width <= 0 || full.height <= 0) {
+                viaPixelCopy()
+            } else {
+                val w = 480
+                val h = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
+                val scaled = if (full.width > w) Bitmap.createScaledBitmap(full, w, h, true) else full
+                store(scaled)
+                finish()
             }
-            done()
-        }, Handler(Looper.getMainLooper()))
+        }, { viaPixelCopy() })
     } catch (e: Throwable) {
-        done()
+        viaPixelCopy()
     }
 }
 

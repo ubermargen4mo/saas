@@ -101,11 +101,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     Surface(shape = RoundedCornerShape(28.dp), color = bg, modifier = Modifier.size(72.dp)) {
                         Box(contentAlignment = Alignment.Center) {
                             Favicon(e.url, 72.dp, fill = true) {
-                                Text(
-                                    e.title.firstOrNull()?.uppercase() ?: "?",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = fg,
-                                )
+                                SiteTile(e.url, e.title.ifBlank { siteKey(e.url) ?: e.url }, 72.dp, shape = RoundedCornerShape(28.dp))
                             }
                         }
                     }
