@@ -20,9 +20,11 @@ android {
         targetSdk = 36
         // Номер сборки GitHub Actions: каждая новая сборка ставится поверх старой
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) + 100
-        versionName = "0.12.0"
+        versionName = "0.13.0"
         // Только 64-бит ARM (все современные телефоны и планшеты). Для 32-бит добавь "armeabi-v7a"
         ndk { abiFilters.add("arm64-v8a") }
+        // Откуда брать обновления: в GitHub Actions это "владелец/репозиторий", при локальной сборке пусто (обновления выключены)
+        buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: ""}\"")
     }
 
     // Постоянный ключ подписи берётся из секретов GitHub (см. build.yml). Без него - временный debug-ключ.
@@ -51,7 +53,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     // По умолчанию AGP выкидывает из assets каталоги вида "_*", а расширению нужен _locales.
     // Шаблон по умолчанию заменяем своим, без пункта "<dir>_*".

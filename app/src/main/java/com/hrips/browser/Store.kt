@@ -211,6 +211,23 @@ class Store(context: Context) {
         prefs.edit().putBoolean("tp", on).apply()
     }
 
+    // ---- Обновления приложения (см. Updater) ----
+    var autoUpdate by mutableStateOf(prefs.getBoolean("auto_update", true))
+        private set
+
+    fun updateAutoUpdate(on: Boolean) {
+        autoUpdate = on
+        prefs.edit().putBoolean("auto_update", on).apply()
+    }
+
+    var lastUpdateCheck: Long = prefs.getLong("last_update_check", 0L)
+        private set
+
+    fun markUpdateChecked() {
+        lastUpdateCheck = System.currentTimeMillis()
+        prefs.edit().putLong("last_update_check", lastUpdateCheck).apply()
+    }
+
     // ---- Сеть и приватность движка: значения применяет PrivacyEngine ----
 
     /** Global Privacy Control. Безвредный сигнал, поэтому включён по умолчанию. */

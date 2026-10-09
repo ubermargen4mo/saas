@@ -62,3 +62,10 @@ fun resolveIconUrls(base: String, links: List<IconLink>): List<String> =
     links.mapNotNull { l ->
         runCatching { URL(URL(base), l.href) }.getOrNull()?.takeIf { it.protocol.equals("https", true) }?.toString()
     }
+
+/** Номер сборки из тега релиза вида `build-123`; null для любых других тегов. */
+fun buildFromTag(tag: String?): Int? =
+    Regex("^build-(\\d{1,9})$").find(tag.orEmpty().trim())?.groupValues?.get(1)?.toIntOrNull()
+
+/** versionCode, который GitHub Actions даёт сборке с номером [build] (см. app/build.gradle.kts: номер запуска + 100). */
+fun versionCodeOfBuild(build: Int): Long = build.toLong() + 100L

@@ -687,6 +687,56 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
             },
             { s -> SettingsRow(HripsIcons.Mask, "Android", "Версия ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}", s) },
         )
+        if (Updater.available) {
+            Spacer(Modifier.height(16.dp))
+            Group(
+                { s -> UpdateRow(app, s) },
+                { s ->
+                    SwitchRow(
+                        HripsIcons.Download, "Проверять автоматически", "Раз в сутки при запуске. Запрос идёт на github.com",
+                        app.store.autoUpdate, true, s,
+                    ) { app.store.updateAutoUpdate(it) }
+                },
+            )
+            (Updater.state as? Updater.State.Available)?.info?.notes?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateRow(app: HripsApp, shape: Shape) {
+    val context = LocalContext.current
+    when (val st = Updater.state) {
+        is Updater.State.Checking -> SettingsRow(HripsIcons.Download, "Обновления", "Проверяю…", shape)
+        is Updater.State.Available -> SettingsRow(
+            HripsIcons.Download, "Доступна версия ${st.info.versionName}",
+            "Нажмите, чтобы скачать" + if (st.info.size > 0) " (${st.info.size / 1_000_000} МБ)" else "", shape,
+            onClick = { Updater.download(app, st.info) },
+        )
+        is Updater.State.Downloading -> SettingsRow(HripsIcons.Download, "Скачиваю ${st.info.versionName}", "${st.percent}%", shape)
+        is Updater.State.Ready -> SettingsRow(
+            HripsIcons.Download, "Установить ${st.info.versionName}", "Файл загружен и проверен. Нажмите, чтобы установить", shape,
+            onClick = { Updater.install(context) },
+        )
+        is Updater.State.UpToDate -> SettingsRow(
+            HripsIcons.Download, "Установлена последняя версия", "Нажмите, чтобы проверить ещё раз", shape,
+            onClick = { Updater.check(app, manual = true) },
+        )
+        is Updater.State.Failed -> SettingsRow(
+            HripsIcons.Download, st.message.ifBlank { "Не удалось проверить обновления" }, "Нажмите, чтобы повторить", shape,
+            onClick = { Updater.check(app, manual = true) },
+        )
+        else -> SettingsRow(
+            HripsIcons.Download, "Проверить обновления", null, shape,
+            onClick = { Updater.check(app, manual = true) },
+        )
     }
 }
 

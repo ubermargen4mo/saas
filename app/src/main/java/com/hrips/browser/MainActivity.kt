@@ -197,6 +197,8 @@ class MainActivity : ComponentActivity() {
         // A killed Gecko content process makes its session closed/unusable. Recover before showing it.
         browser.tabs.forEach { if (!it.isSuspended && !it.session.isOpen) it.recover() }
         browser.onForeground()
+        Updater.cleanup(this)
+        Updater.autoCheck(hrips)
     }
 
     override fun onStop() {

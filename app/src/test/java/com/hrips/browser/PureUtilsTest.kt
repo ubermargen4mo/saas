@@ -53,4 +53,13 @@ class PureUtilsTest {
         assertTrue(isSearch("погода москва"))
         assertTrue(isSearch("котики"))
     }
+
+    // ---- обновления
+    @Test fun buildTagParsing() {
+        assertEquals(42, buildFromTag("build-42"))
+        assertEquals(null, buildFromTag("v1.0"))
+        assertEquals(null, buildFromTag("build-"))
+        assertEquals(null, buildFromTag(null))
+        assertEquals(142L, versionCodeOfBuild(42))
+    }
 }

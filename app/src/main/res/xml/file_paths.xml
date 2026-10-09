@@ -2,6 +2,8 @@
 <paths>
     <!-- Скопированные в буфер картинки: временные файлы в кэше -->
     <cache-path name="copied" path="copied/" />
+    <!-- Скачанное обновление приложения -->
+    <cache-path name="updates" path="updates/" />
     <!-- Android 8-9: downloaded files are stored under app-specific external storage. -->
     <external-files-path name="downloads" path="Download/" />
 </paths>
