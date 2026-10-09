@@ -700,7 +700,7 @@ private fun TabCard(
                     val past = next < -dismissPx
                     if (past != pastThreshold) {
                         pastThreshold = past
-                        haptic.performHapticFeedback(if (past) HapticFeedbackType.GestureThresholdActivate else HapticFeedbackType.GestureThresholdDeactivate)
+                        haptic.performHapticFeedback(if (past) HapticFeedbackType.GestureThresholdActivate else HapticFeedbackType.SegmentFrequentTick)
                     }
                     scope.launch { offsetY.snapTo(next) }
                 }

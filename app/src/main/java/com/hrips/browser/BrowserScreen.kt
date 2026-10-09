@@ -257,8 +257,16 @@ fun BrowserScreen(browser: Browser) {
                 MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
                 label = "pageProgress",
             )
-            AnimatedVisibility(visible = tab.loading && !tab.home, enter = fadeIn(), exit = fadeOut()) {
-                LinearWavyProgressIndicator(progress = { shownProgress }, modifier = Modifier.fillMaxWidth().requiredHeight(10.dp))
+            val barAlpha by animateFloatAsState(
+                if (tab.loading && !tab.home) 1f else 0f,
+                MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+                label = "pageProgressAlpha",
+            )
+            if (barAlpha > 0.01f) {
+                LinearWavyProgressIndicator(
+                    progress = { shownProgress },
+                    modifier = Modifier.fillMaxWidth().requiredHeight(10.dp).graphicsLayer { alpha = barAlpha },
+                )
             }
         }
 
