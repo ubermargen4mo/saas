@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -61,3 +64,19 @@ jobs:
         with:
           name: hrips-apk
           path: app/build/outputs/apk/release/*.apk
+
+      # Релиз с APK: из него приложение берёт обновления. Тег build-<номер запуска> = versionCode - 100
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          cp "$(ls app/build/outputs/apk/release/*.apk | head -1)" "hrips-$VER.apk"
+          awk '/^## /{n++} n==1' CHANGES.md > notes.md || echo "Сборка $VER" > notes.md
+          gh release create "build-${{ github.run_number }}" "hrips-$VER.apk" --title "hrips $VER" --notes-file notes.md --latest
+
+      # Unit-тесты запускаются после сборки и не блокируют APK
+      - name: Unit tests
+        continue-on-error: true
+        run: gradle testDebugUnitTest --stacktrace
