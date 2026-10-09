@@ -392,7 +392,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                         ) {
                             val t = slide?.tab
                             if (slide == null) {
-                                Unit
+                                // Пустое место карусели: рисовать нечего
                             } else if (t == null) {
                                 EmptySlide(
                                     slide.priv, searching = q.isNotEmpty(),

@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -161,7 +164,13 @@ fun PrivateStartPage(
     val cs = MaterialTheme.colorScheme
     Box(modifier.fillMaxSize().background(cs.surface), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.widthIn(max = 560.dp).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 40.dp),
+            Modifier.widthIn(max = 560.dp).verticalScroll(rememberScrollState()).padding(
+                start = 24.dp,
+                top = 40.dp,
+                end = 24.dp,
+                // Телефон: внизу плавающая панель лежит поверх страницы
+                bottom = 40.dp + if (isWideWindow()) 0.dp else 64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(HripsIcons.Mask, null, Modifier.size(72.dp), tint = cs.primary)

@@ -25,6 +25,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.clickable
@@ -57,6 +59,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import android.text.format.Formatter
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -88,6 +91,8 @@ fun BrowserScreen(browser: Browser) {
         withTimeoutOrNull(30000) { snapshotFlow { tab.loading }.first { !it } }
         pullRefreshing = false
     }
+    // Новая страница или главная: верхняя строка снова на месте
+    LaunchedEffect(tab.id, tab.url, tab.home) { tab.chromeHidden = false }
     val store = browser.store
     val app = LocalContext.current.applicationContext as HripsApp
     // Адаптивность привязана к размеру текущего окна, а не к типу устройства/конфигурации экрана.
@@ -210,7 +215,13 @@ fun BrowserScreen(browser: Browser) {
             // низ шторки на 131dp (под ним сразу страница). Кнопки по 48dp, адресная строка 40dp.
             // На телефоне главная без верхней строки: поиск и выбор движка в строке на самой странице,
             // кнопки внизу
-            if (wide || !tab.home) Row(
+            // Телефон: при прокрутке страницы вниз строка уезжает, страница занимает освободившееся место
+            AnimatedVisibility(
+                visible = (wide || !tab.home) && (wide || !tab.chromeHidden),
+                enter = expandVertically(tween(220)) + fadeIn(tween(220)),
+                exit = shrinkVertically(tween(220)) + fadeOut(tween(220)),
+            ) {
+            Row(
                 Modifier.fillMaxWidth().padding(
                     start = if (wide) 4.dp else 12.dp,
                     end = if (wide) 4.dp else 12.dp,
@@ -260,6 +271,7 @@ fun BrowserScreen(browser: Browser) {
                     }
                     Spacer(Modifier.width(6.dp))
                 }
+            }
             }
         }
 
@@ -333,28 +345,41 @@ fun BrowserScreen(browser: Browser) {
             }
         }
 
-        // Нижняя плавающая панель только на узких экранах (телефон)
-        if (!fs && !wide) {
-            Box(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                HorizontalFloatingToolbar(expanded = true) {
-                    IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
-                        Icon(HripsIcons.Back, "Назад", Modifier.size(24.dp))
-                    }
-                    IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                        Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
-                    }
-                    IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
-                    TabCounterButton(browser.tabs.size, Modifier.originAnchor("tabs")) { requestTabs() }
-                    IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
-                    // Загрузки на телефоне живут в кнопке меню: иконка летит к ней, кольцо рисуется вокруг неё
-                    DownloadsButton(browser.downloads, onClick = { showTools = true }, icon = HripsIcons.MoreVert, description = "Инструменты")
+        if (wide && !fs) Spacer(Modifier.navigationBarsPadding())
+    }
+
+    // Нижняя панель на телефоне: плавает над страницей и места у неё не отнимает (страница на весь экран).
+    // Кнопки по 40dp, всего 6 штук: ширина 252dp
+    if (!fs && !wide) {
+        Surface(
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 8.dp,
+        ) {
+            Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home, modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
                 }
+                IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home, modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.BarForward, "Вперёд", Modifier.size(24.dp))
+                }
+                IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }, modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.Add, "Новая вкладка")
+                }
+                TabCounterButton(browser.tabs.size, Modifier.size(40.dp).originAnchor("tabs")) { requestTabs() }
+                IconButton(onClick = { showExtSheet = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp))
+                }
+                // Загрузки на телефоне живут в кнопке меню: иконка летит к ней, кольцо рисуется вокруг неё
+                DownloadsButton(
+                    browser.downloads,
+                    onClick = { showTools = true },
+                    icon = HripsIcons.BarMore,
+                    description = "Инструменты",
+                    size = 40.dp,
+                )
             }
-        } else if (wide && !fs) {
-            Spacer(Modifier.navigationBarsPadding())
         }
     }
 
@@ -437,9 +462,11 @@ fun BrowserScreen(browser: Browser) {
     if (!store.firstRunDone) FirstRunScreen(store, browser.permissions)
 
     // Меню "три точки": на планшете у правого верхнего края, на телефоне над нижней панелью
+    // (остров по центру, шириной 252dp: меню прижимаем к его правому краю)
+    val phoneMenuEnd = ((LocalConfiguration.current.screenWidthDp - 252) / 2).coerceAtLeast(8).dp
     Box(
         if (wide) Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 100.dp, end = 12.dp)
-        else Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 76.dp, end = 12.dp),
+        else Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 64.dp, end = phoneMenuEnd),
     ) {
         ToolsMenu(
             expanded = showTools,
@@ -465,7 +492,7 @@ fun BrowserScreen(browser: Browser) {
     }
 
     // Единые уведомления: выше всех оверлеев, над нижней панелью браузера
-    NoticeHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp))
+    NoticeHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = if (wide) 96.dp else 72.dp))
     }
     }
 

@@ -112,6 +112,21 @@ class Tab(
     /** Страница (например, видео) попросила полноэкранный режим */
     var fullscreen by mutableStateOf(false)
 
+    /** Телефон: верхняя строка спрятана, пока страницу листают вниз; листнули вверх или вернулись наверх - снова видна */
+    var chromeHidden by mutableStateOf(false)
+    private var lastScrollY = 0
+    private var scrollAcc = 0
+
+    private fun onPageScrolled(y: Int) {
+        val dy = y - lastScrollY
+        lastScrollY = y
+        if (y <= 0) { scrollAcc = 0; chromeHidden = false; return }
+        if (dy == 0) return
+        if ((scrollAcc > 0) != (dy > 0)) scrollAcc = 0 // сменили направление: считаем заново
+        scrollAcc += dy
+        if (scrollAcc > 64) chromeHidden = true else if (scrollAcc < -24) chromeHidden = false
+    }
+
     /** Сессию можно заменить (после падения или убийства процесса движка), поэтому это состояние. */
     var session by mutableStateOf(newSession())
         private set
@@ -268,6 +283,11 @@ class Tab(
         }
         s.permissionDelegate = permissionDelegate
         s.promptDelegate = promptDelegate
+        s.scrollDelegate = object : GeckoSession.ScrollDelegate {
+            override fun onScrollChanged(sess: GeckoSession, scrollX: Int, scrollY: Int) {
+                if (sess === session) onPageScrolled(scrollY)
+            }
+        }
         s.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(sess: GeckoSession, newTitle: String?) {
                 if (sess === session) title = newTitle.orEmpty()

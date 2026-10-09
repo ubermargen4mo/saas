@@ -72,6 +72,10 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     // (не меньше 360dp и не больше 640dp), чтобы длина совпадала на любой плотности экрана.
     val screenW = LocalConfiguration.current.screenWidthDp
     val barMax = if (wide) (screenW * 0.4375f).dp.coerceIn(360.dp, 640.dp) else 640.dp
+    // Телефон: ярлыки чуть меньше, а внизу оставляем место под плавающую панель (она лежит поверх страницы)
+    val tile = if (wide) 72.dp else 62.dp
+    val tileR = if (wide) 28.dp else 24.dp
+    val islandSpace = if (wide) 0.dp else 64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(modifier.fillMaxSize()) {
     if (wallpaper != null) {
@@ -81,9 +85,9 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Adaptive(minSize = 96.dp),
+            columns = GridCells.Adaptive(minSize = if (wide) 96.dp else 84.dp),
             modifier = Modifier.widthIn(max = 880.dp).fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 24.dp + islandSpace),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -230,14 +234,14 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     ) {
                         val (bg, fg) = tileColors(e.title)
                         Surface(
-                            shape = RoundedCornerShape(28.dp),
+                            shape = RoundedCornerShape(tileR),
                             color = bg,
                             shadowElevation = elevation,
-                            modifier = Modifier.size(72.dp),
+                            modifier = Modifier.size(tile),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Favicon(e.url, 72.dp, fill = true) {
-                                    SiteTile(e.url, e.title.ifBlank { siteKey(e.url) ?: e.url }, 72.dp, shape = RoundedCornerShape(28.dp))
+                                Favicon(e.url, tile, fill = true) {
+                                    SiteTile(e.url, e.title.ifBlank { siteKey(e.url) ?: e.url }, tile, shape = RoundedCornerShape(tileR))
                                 }
                             }
                         }
@@ -272,9 +276,9 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(28.dp),
+                        shape = RoundedCornerShape(tileR),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.size(72.dp),
+                        modifier = Modifier.size(tile),
                     ) {
                         Box(contentAlignment = Alignment.Center) { Icon(HripsIcons.Add, "Добавить") }
                     }

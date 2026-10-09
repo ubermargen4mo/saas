@@ -115,7 +115,8 @@ object HripsIcons {
             moveTo(11f, 16.5f); horizontalLineTo(13f)
         }
     }
-    val MoreVert by lazy { icon("MoreVert") { circle(12f, 5f, 1.4f); circle(12f, 12f, 1.4f); circle(12f, 19f, 1.4f) } }
+    /** Три точки везде такие же, как в верхней строке на планшете (4dp, шаг 6dp) */
+    val MoreVert by lazy { BarMore }
 
     val Pencil by lazy {
         icon("Pencil") {

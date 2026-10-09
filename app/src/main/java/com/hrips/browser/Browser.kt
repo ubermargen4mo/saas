@@ -112,6 +112,7 @@ class Browser(
      * Optional memory-pressure policy. Inspired by Chromium Android/Cobalt: background tabs are
      * expendable resources, but we only evict them when the user explicitly enables this setting.
      */
+    @Suppress("DEPRECATION")
     fun onTrimMemory(level: Int) {
         if (!store.suspendTabsOnMemoryPressure) return
         val keepLive = when {

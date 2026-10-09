@@ -77,10 +77,11 @@ object Amo {
     }
 
     /** Поле бывает строкой (когда указан язык) или словарём язык -> текст. */
-    private fun loc(o: JSONObject, key: String): String = when (val v = o.opt(key)) {
-        is String -> v
-        is JSONObject -> v.keys().asSequence().firstOrNull()?.let { v.optString(it) } ?: ""
-        else -> ""
+    private fun loc(o: JSONObject, key: String): String {
+        val v: Any? = o.opt(key)
+        if (v is String) return v
+        if (v is JSONObject) return v.keys().asSequence().firstOrNull()?.let { v.optString(it) } ?: ""
+        return ""
     }
 
     fun get(url: String): String {

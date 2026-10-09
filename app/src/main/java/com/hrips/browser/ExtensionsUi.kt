@@ -150,7 +150,7 @@ fun ExtensionsSheet(
                     Surface(
                         onClick = {
                             onClose()
-                            if (usable) action?.click() else onManage(false)
+                            if (usable && action != null) action.click() else onManage(false)
                         },
                         shape = segShape(i, list.size),
                         color = cs.surfaceContainer,

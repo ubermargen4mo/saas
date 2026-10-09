@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.hrips.browser
 
 import android.content.ClipData

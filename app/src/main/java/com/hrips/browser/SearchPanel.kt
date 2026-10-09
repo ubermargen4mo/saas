@@ -1,4 +1,5 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:Suppress("DEPRECATION")
 
 package com.hrips.browser
 
