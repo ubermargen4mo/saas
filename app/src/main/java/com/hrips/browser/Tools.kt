@@ -64,7 +64,7 @@ import kotlinx.coroutines.delay
  * Меню "три точки" в стиле Material 3 Expressive. Не список, а панель из четырёх уровней, от самого частого к редкому:
  *  1. разделы браузера (закладки, история, загрузки, настройки): у каждого своя фигура и цвет;
  *  2. переключатели («Версия для ПК», «Блокировка рекламы»): плитки, которые меняют форму и цвет, меню при этом не закрывается;
- *  3. действия страницы: сетка плиток (закладка «закрашивается» звёздой, остальное по нажатию);
+ *  3. действия страницы: список (закладка «закрашивается» звёздой, остальное по нажатию);
  *  4. две крупные кнопки: новая вкладка и приватная.
  * Плитки появляются каскадом, при нажатии «проседают» и меняют скругление. Действия, которых на этой странице
  * быть не может (перевод на стартовой, например), не серые, а скрыты. «Добавить в…» открывается на месте.
@@ -184,13 +184,9 @@ fun ToolsMenu(
                         add(MenuAction(HripsIcons.Qr, "Сканер QR") { onDismiss(); onScanQr() })
                         add(MenuAction(HripsIcons.Fullscreen, "На весь экран") { onDismiss(); onFullscreen() })
                     }
-                    actions.chunked(4).forEachIndexed { row, items ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items.forEachIndexed { i, a ->
-                                ActionTile(a.icon, a.label, a.checked, 6 + row * 4 + i, Modifier.weight(1f), a.onClick)
-                            }
-                            // Неполная последняя строка: пустые места, чтобы плитки были одной ширины
-                            repeat(4 - items.size) { Spacer(Modifier.weight(1f)) }
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        actions.forEachIndexed { i, a ->
+                            ActionRow(a.icon, a.label, a.checked, 6 + i, a.onClick)
                         }
                     }
 
@@ -350,40 +346,36 @@ private fun ToggleTile(
     }
 }
 
-/** Плитка действия. [checked] закрашивает её (закладка добавлена). Нажатая плитка заметно скругляется сильнее. */
+/** Строка списка действий. [checked] подкрашивает её (закладка добавлена). */
 @Composable
-private fun ActionTile(
+private fun ActionRow(
     icon: ImageVector,
     label: String,
     checked: Boolean,
     index: Int,
-    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val corner by animateDpAsState(if (pressed) 10.dp else if (checked) 28.dp else 20.dp, motion.fastSpatialSpec<androidx.compose.ui.unit.Dp>(), label = "actionCorner")
-    val bg by animateColorAsState(if (checked) cs.primaryContainer else cs.surfaceContainerHigh, motion.defaultEffectsSpec<Color>(), label = "actionBg")
-    val fg by animateColorAsState(if (checked) cs.onPrimaryContainer else cs.onSurfaceVariant, motion.defaultEffectsSpec<Color>(), label = "actionFg")
+    val corner by animateDpAsState(if (pressed) 10.dp else 18.dp, motion.fastSpatialSpec<androidx.compose.ui.unit.Dp>(), label = "rowCorner")
+    val bg by animateColorAsState(if (checked) cs.primaryContainer else Color.Transparent, motion.defaultEffectsSpec<Color>(), label = "rowBg")
+    val fg by animateColorAsState(if (checked) cs.onPrimaryContainer else cs.onSurfaceVariant, motion.defaultEffectsSpec<Color>(), label = "rowFg")
     Surface(
         onClick = onClick,
         interactionSource = source,
         shape = RoundedCornerShape(corner),
         color = bg,
-        modifier = modifier.height(76.dp).staggerIn(index),
+        modifier = Modifier.fillMaxWidth().staggerIn(index),
     ) {
-        Column(
-            Modifier.padding(horizontal = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+        Row(
+            Modifier.padding(horizontal = 14.dp).height(44.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(icon, null, Modifier.size(24.dp), tint = fg)
-            Text(
-                label, Modifier.padding(top = 6.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelSmall, color = cs.onSurface, textAlign = TextAlign.Center,
-            )
+            Icon(icon, null, Modifier.size(22.dp), tint = fg)
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
         }
     }
 }

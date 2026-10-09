@@ -250,8 +250,7 @@ fun BrowserScreen(browser: Browser) {
         }
 
         Box(Modifier.fillMaxWidth().height(4.dp), contentAlignment = Alignment.Center) {
-            // Прогресс приходит скачками: сглаживаем. Волна рисуется в родной высоте (10dp) и выступает
-            // из 4dp-полосы, иначе она сплющена до линии
+            // Прогресс приходит скачками: сглаживаем
             val shownProgress by animateFloatAsState(
                 tab.progress / 100f,
                 MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
@@ -263,9 +262,9 @@ fun BrowserScreen(browser: Browser) {
                 label = "pageProgressAlpha",
             )
             if (barAlpha > 0.01f) {
-                LinearWavyProgressIndicator(
+                LinearProgressIndicator(
                     progress = { shownProgress },
-                    modifier = Modifier.fillMaxWidth().requiredHeight(10.dp).graphicsLayer { alpha = barAlpha },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).graphicsLayer { alpha = barAlpha },
                 )
             }
         }

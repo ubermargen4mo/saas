@@ -215,20 +215,20 @@ private fun NoticeCard(n: Notice) {
         NoticeKind.INFO -> HripsIcons.Info to Badge.COOKIE9
     }
     val badgeContainer = when (n.kind) {
-        NoticeKind.SUCCESS -> cs.inversePrimary
-        NoticeKind.ERROR -> cs.error
-        NoticeKind.INFO -> cs.inverseOnSurface.copy(alpha = 0.16f)
+        NoticeKind.SUCCESS -> cs.primaryContainer
+        NoticeKind.ERROR -> cs.errorContainer
+        NoticeKind.INFO -> cs.secondaryContainer
     }
     val badgeContent = when (n.kind) {
-        NoticeKind.SUCCESS -> cs.inverseSurface
-        NoticeKind.ERROR -> cs.onError
-        NoticeKind.INFO -> cs.inverseOnSurface
+        NoticeKind.SUCCESS -> cs.onPrimaryContainer
+        NoticeKind.ERROR -> cs.onErrorContainer
+        NoticeKind.INFO -> cs.onSecondaryContainer
     }
 
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = cs.inverseSurface,
-        contentColor = cs.inverseOnSurface,
+        color = cs.surfaceContainerHighest,
+        contentColor = cs.onSurface,
         shadowElevation = 6.dp,
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -279,7 +279,7 @@ private fun NoticeCard(n: Notice) {
                         n.onAction?.invoke()
                     },
                     shapes = ButtonDefaults.shapes(),
-                    colors = ButtonDefaults.textButtonColors(contentColor = cs.inversePrimary),
+                    colors = ButtonDefaults.textButtonColors(contentColor = cs.primary),
                 ) { Text(n.actionLabel) }
             }
         }
