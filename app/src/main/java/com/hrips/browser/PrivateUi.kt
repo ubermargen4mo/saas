@@ -155,6 +155,8 @@ fun PrivateStartPage(
     onSearch: () -> Unit,
     onCloseAll: () -> Unit,
     modifier: Modifier = Modifier,
+    engine: SearchEngine? = null,
+    onPickEngine: ((SearchEngine) -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     Box(modifier.fillMaxSize().background(cs.surface), contentAlignment = Alignment.TopCenter) {
@@ -173,7 +175,11 @@ fun PrivateStartPage(
                 modifier = Modifier.fillMaxWidth().originAnchor("search"),
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
+                    if (engine != null && onPickEngine != null) {
+                        EnginePicker(engine, onPickEngine)
+                    } else {
+                        Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
+                    }
                     Spacer(Modifier.width(12.dp))
                     Text("Искать или задать вопрос", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
                 }

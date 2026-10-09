@@ -187,6 +187,18 @@ fun BrowserScreen(browser: Browser) {
         }
     }
 
+    // Снимки вкладок декодируем заранее, пока переключатель закрыт: он откроется сразу с картинками
+    val appCtx = LocalContext.current.applicationContext
+    LaunchedEffect(browser.tabs.size, showTabs) {
+        if (showTabs) return@LaunchedEffect
+        browser.tabs.take(12).forEach { t ->
+            if (!t.isPrivate && !t.home && t.thumbnail == null && t.url.isNotBlank()) {
+                TabThumbs.load(appCtx, t.url, small = true)
+                TabThumbs.load(appCtx, t.url, small = false)
+            }
+        }
+    }
+
     val origins = remember { OriginTracker() }
     CompositionLocalProvider(LocalOrigins provides origins) {
     Box(Modifier.fillMaxSize().trackTouches(origins)) {
@@ -196,7 +208,9 @@ fun BrowserScreen(browser: Browser) {
             if (wide) TabStrip(browser)
             // Размеры строки сняты со скриншота Оперы (плотность 2.0): центр строки на 102dp от верха экрана,
             // низ шторки на 131dp (под ним сразу страница). Кнопки по 48dp, адресная строка 40dp.
-            Row(
+            // На телефоне главная без верхней строки: поиск и выбор движка в строке на самой странице,
+            // кнопки внизу
+            if (wide || !tab.home) Row(
                 Modifier.fillMaxWidth().padding(
                     start = if (wide) 4.dp else 12.dp,
                     end = if (wide) 4.dp else 12.dp,
@@ -282,9 +296,11 @@ fun BrowserScreen(browser: Browser) {
                     screenshotsBlocked = !store.allowPrivateShots,
                     onSearch = { showSearch = true },
                     onCloseAll = { browser.closePrivateTabs() },
+                    engine = if (wide) null else shownEngine,
+                    onPickEngine = pickEngine,
                 )
             } else if (tab.home) {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true })
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine)
             } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -330,11 +346,11 @@ fun BrowserScreen(browser: Browser) {
                     IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
                         Icon(HripsIcons.Forward, "Вперёд", Modifier.size(24.dp))
                     }
-                    IconButton(onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                        Icon(if (tab.loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
-                    }
                     IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
                     TabCounterButton(browser.tabs.size, Modifier.originAnchor("tabs")) { requestTabs() }
+                    IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
+                    // Загрузки на телефоне живут в кнопке меню: иконка летит к ней, кольцо рисуется вокруг неё
+                    DownloadsButton(browser.downloads, onClick = { showTools = true }, icon = HripsIcons.MoreVert, description = "Инструменты")
                 }
             }
         } else if (wide && !fs) {
@@ -420,8 +436,11 @@ fun BrowserScreen(browser: Browser) {
     // Первый запуск: все разрешения одним заходом
     if (!store.firstRunDone) FirstRunScreen(store, browser.permissions)
 
-    // Меню "три точки" у правого верхнего края
-    Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = if (wide) 100.dp else 60.dp, end = 12.dp)) {
+    // Меню "три точки": на планшете у правого верхнего края, на телефоне над нижней панелью
+    Box(
+        if (wide) Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 100.dp, end = 12.dp)
+        else Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 76.dp, end = 12.dp),
+    ) {
         ToolsMenu(
             expanded = showTools,
             onDismiss = { showTools = false },

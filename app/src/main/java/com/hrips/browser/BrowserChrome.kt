@@ -50,12 +50,12 @@ internal fun AddressBar(
         query != null -> query
         else -> tab.url.removePrefix("https://")
     }
-    if (wide) {
-        // Планшетный вид: контурный щит слева, адрес, кнопка «Обновить» справа внутри строки
+    run {
+        // Единый вид (планшет и телефон): контурный щит слева, адрес, кнопка «Обновить» справа внутри строки
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = modifier.height(40.dp).originAnchor("search"),
+            modifier = modifier.height(if (wide) 40.dp else 44.dp).originAnchor("search"),
         ) {
             Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 if (withPicker) {
@@ -87,59 +87,6 @@ internal fun AddressBar(
                 }
                 if (showSecurity) SecurityDialog(tab) { showSecurity = false }
             }
-        }
-        return
-    }
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        // Фиксированная высота: на сайтах и на главной строка выглядит одинаково
-        modifier = modifier.height(48.dp).originAnchor("search"),
-    ) {
-        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            if (withPicker) Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-            // Нажатие на текст открывает поисковую панель (ввод, подсказки, история)
-            Row(
-                Modifier.weight(1f).fillMaxHeight().clickable(onClick = onSearch),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!withPicker) {
-                    // Иконка берётся из проверки сертификата движком, а не из того, с чего начинается адрес.
-                    // Отдельная кнопка сохраняет тот же визуальный размер значка, но даёт нормальную touch-area.
-                    val secureNow = tab.trust == Trust.SECURE
-                    IconButton(
-                        onClick = { showSecurity = true },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            if (secureNow) HripsIcons.Lock else HripsIcons.Info,
-                            "Безопасность соединения",
-                            Modifier.size(18.dp),
-                            tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Text(
-                    shown.ifEmpty { "Искать или задать вопрос" },
-                    modifier = Modifier.padding(start = if (withPicker) 8.dp else 12.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (shown.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            IconButton(modifier = Modifier.size(40.dp), onClick = { toggleBookmarkWithNotice(store, tab.url, tab.title) }, enabled = !tab.home) {
-                val saved = store.isBookmarked(tab.url)
-                Icon(
-                    if (saved) HripsIcons.StarFilled else HripsIcons.Star, "Закладка",
-                    tint = if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (showSecurity) SecurityDialog(tab) { showSecurity = false }
-            // Пазл расширений стоит прямо перед меню
-            if (showMenu) IconButton(modifier = Modifier.size(40.dp), onClick = onExtensions) { Icon(HripsIcons.Puzzle, "Расширения") }
-            // На телефоне отдельной кнопки загрузок нет: иконка летит к меню, кольцо рисуется вокруг него
-            if (showMenu) DownloadsButton(downloads, onClick = onMenu, icon = HripsIcons.MoreVert, description = "Инструменты", size = 40.dp)
         }
     }
 }

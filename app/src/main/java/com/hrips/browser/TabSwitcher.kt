@@ -742,7 +742,7 @@ private fun TabCard(
             Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
                 // Свежий снимок из памяти, иначе сохранённый на диске (после перезапуска)
                 // В сетке хватает маленькой копии: она декодируется быстрее и занимает меньше памяти
-                val fromDisk by produceState<ImageBitmap?>(null, tab.url, tab.thumbnail, compact) {
+                val fromDisk by produceState<ImageBitmap?>(TabThumbs.peek(tab.url, compact), tab.url, tab.thumbnail, compact) {
                     value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) TabThumbs.load(context, tab.url, small = compact) else null
                 }
                 val thumb = tab.thumbnail ?: fromDisk

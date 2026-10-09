@@ -33,6 +33,7 @@ object TabThumbs {
 
     /** Вызывать не из главного потока. */
     fun save(c: Context, url: String, bmp: Bitmap) {
+        cache.remove("s:$url"); cache.remove("m:$url") // файл обновился: старый снимок из памяти не отдавать
         val h = hash(url)
         val tmpM = File(dir(c), "$h.tmp")
         val tmpS = File(dir(c), "$h.s.tmp")
@@ -66,7 +67,22 @@ object TabThumbs {
     }
 
     /** [small] = true: маленькая копия для сетки; если её нет (старые файлы), берётся обычная с понижением размера. */
-    suspend fun load(c: Context, url: String, small: Boolean = false): ImageBitmap? = withContext(Dispatchers.IO) {
+    private val cache = object : android.util.LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+    }
+
+    /** Уже декодированный снимок из памяти: без обращения к диску, годится для первого кадра. */
+    fun peek(url: String, small: Boolean): ImageBitmap? = cache.get((if (small) "s:" else "m:") + url)
+
+    suspend fun load(c: Context, url: String, small: Boolean = false): ImageBitmap? {
+        val key = (if (small) "s:" else "m:") + url
+        cache.get(key)?.let { return it }
+        val bmp = loadFromDisk(c, url, small)
+        if (bmp != null) cache.put(key, bmp)
+        return bmp
+    }
+
+    private suspend fun loadFromDisk(c: Context, url: String, small: Boolean): ImageBitmap? = withContext(Dispatchers.IO) {
         val h = hash(url)
         val s = mini(c, h)
         if (small && s.exists()) return@withContext decode(mediumOrMini = s, fallbackSample = 1)?.asImageBitmap()

@@ -1,6 +1,9 @@
 package com.hrips.browser
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -103,6 +106,11 @@ fun Modifier.trackTouches(tracker: OriginTracker): Modifier = pointerInput(track
     }
 }
 
+private const val OPEN_MS = 420
+private const val CLOSE_MS = 300
+private val OpenEasing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+private val CloseEasing = CubicBezierEasing(0.3f, 0f, 0.2f, 1f)
+
 internal class RevealShape(val rect: Rect, val corner: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
         Outline.Rounded(RoundRect(rect, CornerRadius(corner)))
@@ -128,7 +136,6 @@ fun RevealHost(
     val progress = remember { Animatable(0f) }
     var origin by remember { mutableStateOf<Rect?>(null) }
     var shown by remember { mutableStateOf(false) }
-    val spatial by rememberUpdatedState(MaterialTheme.motionScheme.defaultSpatialSpec<Float>())
     val endColor = MaterialTheme.colorScheme.surface
     val fromColor = if (startColor == Color.Unspecified) endColor else startColor
 
@@ -137,14 +144,19 @@ fun RevealHost(
             // Источник определяем в момент открытия и держим до закрытия: экран сожмётся туда же, откуда вырос
             origin = tracker.resolve(group)
                 ?: tracker.lastDown.takeIf { it.isSpecified }?.let { Rect(it, with(density) { 28.dp.toPx() }) }
+            progress.snapTo(0f)
             shown = true
-            progress.animateTo(1f, spatial)
+            // Содержимое тяжёлое (карточки, список): даём ему скомпоноваться и разметиться, пока окно ещё
+            // свёрнуто в источник, чтобы анимация не рвалась на первых кадрах и не открывала пустой экран
+            withFrameNanos { }
+            withFrameNanos { }
+            progress.animateTo(1f, tween(OPEN_MS, easing = OpenEasing))
         } else if (shown) {
             if (tracker.instantClose) {
                 tracker.instantClose = false
                 progress.snapTo(0f)
             } else {
-                progress.animateTo(0f, spatial)
+                progress.animateTo(0f, tween(CLOSE_MS, easing = CloseEasing))
             }
             shown = false
         }
@@ -166,15 +178,21 @@ fun RevealHost(
                 clip = true
             }
             .drawBehind {
-                val t = (progress.value * 2f).coerceIn(0f, 1f)
+                val t = (progress.value * 3f).coerceIn(0f, 1f)
                 drawRect(lerpColor(fromColor, endColor, t))
             },
     ) {
-        // Содержимое проявляется чуть позже, чем окно начинает расти, чтобы в начале читалась форма источника
+        // Содержимое проявляется в первой трети перехода и чуть «подрастает», а не возникает после него
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = ((progress.value - 0.12f) / 0.45f).coerceIn(0f, 1f) },
+                .graphicsLayer {
+                    val p = progress.value
+                    alpha = (p / 0.3f).coerceIn(0f, 1f)
+                    val sc = 0.94f + 0.06f * p.coerceIn(0f, 1f)
+                    scaleX = sc
+                    scaleY = sc
+                },
         ) { content() }
     }
 }

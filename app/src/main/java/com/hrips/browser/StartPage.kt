@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, modifier: Modifier = Modifier) {
+fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, modifier: Modifier = Modifier, engine: SearchEngine? = null, onPickEngine: ((SearchEngine) -> Unit)? = null) {
     val wide = isWideWindow()
     // На обоях текст всегда белый, на обычном фоне цвет берётся из темы
     val textColor = if (wallpaper != null) Color.White else MaterialTheme.colorScheme.onSurface
@@ -110,12 +110,17 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         modifier = Modifier.widthIn(max = barMax).fillMaxWidth().height(56.dp).originAnchor("search"),
                     ) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                                Icon(HripsIcons.Search, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (engine != null && onPickEngine != null) {
+                                // Телефон: верхней строки нет, выбор движка прямо в строке поиска
+                                Box(Modifier.padding(start = 6.dp)) { EnginePicker(engine, onPickEngine) }
+                            } else {
+                                Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                    Icon(HripsIcons.Search, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                             Text(
                                 "Искать или задать вопрос",
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).padding(start = if (engine != null && onPickEngine != null) 10.dp else 0.dp),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -118,6 +118,7 @@ fun SearchPanel(
 
     BackHandler(onBack = onDismiss)
     LaunchedEffect(Unit) {
+        delay(170) // клавиатура не должна менять раскладку посреди раскрытия окна
         focus.requestFocus()
         keyboard?.show()
         delay(150) // буфер обмена читается только когда окно уже в фокусе
