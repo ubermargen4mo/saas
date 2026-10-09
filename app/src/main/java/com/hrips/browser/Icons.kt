@@ -404,6 +404,14 @@ object HripsIcons {
     /** Остановить загрузку: тот же размер, что у остальных значков панели. */
     val BarClose by lazy { icon("BarClose", stroke = 2f) { moveTo(19f, 5f); lineTo(5f, 19f); moveTo(5f, 5f); lineTo(19f, 19f) } }
 
+    /** Загрузки в панели: только стрелка вниз, без «платформы». Размер и «голова» как у стрелок назад/вперёд. */
+    val BarDownload by lazy {
+        icon("BarDownload", stroke = 2f) {
+            moveTo(12f, 5.15f); verticalLineTo(18.85f)
+            moveTo(5.5f, 12.35f); lineTo(12f, 18.85f); lineTo(18.5f, 12.35f)
+        }
+    }
+
     /** Три точки: круги 4dp, шаг 6dp, высота 16dp. */
     val BarMore by lazy { fillIcon("BarMore") { circle(12f, 6f, 2f); circle(12f, 12f, 2f); circle(12f, 18f, 2f) } }
 

@@ -6,6 +6,9 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.border
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.animation.core.animateFloatAsState
@@ -612,6 +615,49 @@ private fun TabPlaceholder(tab: Tab, compact: Boolean) {
     }
 }
 
+/**
+ * Миниатюра начальной страницы: настоящая главная, разложенная в размер окна и уменьшенная до ширины карточки.
+ * Касания до неё не доходят (их получает карточка), а точки перехода у неё свои, чтобы не мешать настоящей странице.
+ */
+@Composable
+private fun HomeTabPreview(modifier: Modifier = Modifier) {
+    val app = LocalContext.current.applicationContext as HripsApp
+    val cfg = LocalConfiguration.current
+    val wide = isWideWindow()
+    val cs = MaterialTheme.colorScheme
+    val noPick: (SearchEngine) -> Unit = {}
+    BoxWithConstraints(modifier.clipToBounds().background(cs.background)) {
+        val fullW = cfg.screenWidthDp.dp
+        val fullH = cfg.screenHeightDp.dp
+        val scale = maxWidth / fullW
+        Box(
+            Modifier
+                .wrapContentSize(Alignment.TopStart, unbounded = true)
+                .size(fullW, fullH)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0f)
+                },
+        ) {
+            CompositionLocalProvider(LocalOrigins provides remember { OriginTracker() }) {
+                Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                    StartPage(
+                        store = app.store,
+                        wallpaper = app.wallpaper.image,
+                        onOpen = {},
+                        onSearch = {},
+                        onScanQr = {},
+                        engine = if (wide) null else SearchEngines.current,
+                        onPickEngine = if (wide) null else noPick,
+                    )
+                    Box(Modifier.matchParentSize().pointerInput(Unit) {})
+                }
+            }
+        }
+    }
+}
+
 /** Метка группы на карточке: в карусели плашка с названием, в сетке только цветная точка. */
 @Composable
 private fun GroupMark(group: TabGroup, compact: Boolean, modifier: Modifier = Modifier) {
@@ -768,6 +814,9 @@ private fun TabCard(
                         alignment = Alignment.Center,
                         modifier = Modifier.fillMaxSize(),
                     )
+                } else if (tab.home && !tab.isPrivate) {
+                    // Начальная страница рисуется по-настоящему: плитки, поиск и обои, как на экране
+                    HomeTabPreview(Modifier.fillMaxSize())
                 } else {
                     TabPlaceholder(tab, compact)
                 }

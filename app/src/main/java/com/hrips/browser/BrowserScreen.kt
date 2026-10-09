@@ -371,14 +371,12 @@ fun BrowserScreen(browser: Browser) {
                 IconButton(onClick = { showExtSheet = true }, modifier = Modifier.size(40.dp)) {
                     Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp))
                 }
-                // Загрузки на телефоне живут в кнопке меню: иконка летит к ней, кольцо рисуется вокруг неё
-                DownloadsButton(
-                    browser.downloads,
-                    onClick = { showTools = true },
-                    icon = HripsIcons.BarMore,
-                    description = "Инструменты",
-                    size = 40.dp,
-                )
+                // Загрузки как на планшете: пока файл качается, между расширениями и меню раскрывается слот,
+                // остров растягивается, а значок файла летит ровно в то место, где появится кнопка загрузок
+                AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = 40.dp, centered = true)
+                IconButton(onClick = { showTools = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
+                }
             }
         }
     }

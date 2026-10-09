@@ -459,6 +459,11 @@ fun AnimatedDownloadsSlot(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
+    /**
+     * Слот стоит в панели, выровненной по центру экрана (остров на телефоне): при раскрытии панель растёт
+     * в обе стороны, поэтому центр слота не двигается. Кнопка стоит в его центре, значок летит в этот центр.
+     */
+    centered: Boolean = false,
 ) {
     val fx = downloads.fx
     val live = downloads.items.any { downloads.isActive(it) } || fx.flight != null
@@ -490,14 +495,15 @@ fun AnimatedDownloadsSlot(
             // при раскрытии не двигается, кнопка стоит у него. Значит, значок прилетает точно туда, где кнопка окажется.
             .onGloballyPositioned {
                 val p = it.positionInRoot()
-                val c = Offset(p.x + it.size.width - sizePx / 2f, p.y + it.size.height / 2f)
+                val c = if (centered) Offset(p.x + it.size.width / 2f, p.y + it.size.height / 2f)
+                else Offset(p.x + it.size.width - sizePx / 2f, p.y + it.size.height / 2f)
                 if (fx.target != c) fx.target = c
             }
             .clipToBounds(),
     ) {
         Box(
             Modifier
-                .wrapContentWidth(Alignment.End, unbounded = true)
+                .wrapContentWidth(if (centered) Alignment.CenterHorizontally else Alignment.End, unbounded = true)
                 .graphicsLayer {
                     val sc = 0.4f + 0.6f * appear
                     scaleX = sc
@@ -505,7 +511,7 @@ fun AnimatedDownloadsSlot(
                     alpha = appear.coerceIn(0f, 1f)
                 },
         ) {
-            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false)
+            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false, icon = HripsIcons.BarDownload)
         }
     }
 }
