@@ -2,6 +2,12 @@
 
 package com.hrips.browser
 
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.border
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -192,6 +198,10 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         }
     }
 
+    // Карточка, раскрывающаяся в страницу (после нажатия на карточку)
+    var expanding by remember { mutableStateOf<Expand?>(null) }
+    val origins = LocalOrigins.current
+
     val all = browser.tabs.toList()
     val current = browser.currentIndex
     val normalCount = all.count { !it.isPrivate }
@@ -261,7 +271,9 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     @Composable
     fun card(t: Tab, i: Int, compact: Boolean, mod: Modifier) {
         TabCard(
-            t, selected = i == current, compact = compact, onClick = { browser.currentIndex = i; onClose() }, onClose = { closeWithUndo(i) },
+            t, selected = i == current, compact = compact,
+            onClick = { rect, thumb -> if (expanding == null) expanding = Expand(rect, thumb, i) },
+            onClose = { closeWithUndo(i) },
             group = browser.groupOf(t), groups = browser.groups,
             onAssign = { g -> browser.setGroup(t, g) }, onNewGroup = { newGroupFor = t },
             modifier = mod,
@@ -366,11 +378,15 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                                 .fillMaxSize()
                                 // Центральная карточка крупнее и ярче, соседние уменьшаются и бледнеют
                                 .graphicsLayer {
-                                    val d = ((cp.currentPage - page) + cp.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
-                                    val sc = 1f - 0.08f * d
+                                    // signed > 0: карточка правее центра. Боковые поворачиваются лицом к центру, как в coverflow
+                                    val signed = ((page - cp.currentPage) - cp.currentPageOffsetFraction).coerceIn(-1.5f, 1.5f)
+                                    val d = signed.absoluteValue.coerceIn(0f, 1f)
+                                    val sc = 1f - 0.12f * d
                                     scaleX = sc
                                     scaleY = sc
-                                    alpha = 1f - 0.45f * d
+                                    alpha = 1f - 0.5f * d
+                                    rotationY = -signed.coerceIn(-1f, 1f) * 22f
+                                    cameraDistance = 14f * density
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -418,6 +434,14 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
+        expanding?.let { e ->
+            ExpandOverlay(e) {
+                browser.currentIndex = e.index
+                origins.instantClose = true
+                onClose()
+            }
+        }
+
         newGroupFor?.let { t ->
             GroupDialog(
                 "Новая группа", "", browser.groups.size % GroupColors.size, "Создать",
@@ -440,6 +464,54 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         }
         if (showClosed) {
             ClosedTabsSheet(browser, onDismiss = { showClosed = false }, onRestored = { showClosed = false; onClose() })
+        }
+    }
+}
+
+/** Нажатая карточка: где она на экране и какая на ней картинка. */
+private class Expand(val rect: androidx.compose.ui.geometry.Rect, val thumb: ImageBitmap?, val index: Int)
+
+/**
+ * Карточка вырастает до размера экрана: рамка скругления уменьшается до нуля, картинка растягивается вместе с ней.
+ * В конце вызывается [onDone]: переключатель закрывается мгновенно (его собственная анимация выхода пропускается).
+ */
+@Composable
+private fun ExpandOverlay(e: Expand, onDone: () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    val spec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val bg = MaterialTheme.colorScheme.surfaceContainerLowest
+    val startCorner = with(LocalDensity.current) { 36.dp.toPx() }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, spec)
+        onDone()
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .layout { measurable, constraints ->
+                val t = progress.value
+                val full = androidx.compose.ui.geometry.Rect(0f, 0f, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+                val r = androidx.compose.ui.geometry.lerp(e.rect, full, t)
+                val placeable = measurable.measure(
+                    androidx.compose.ui.unit.Constraints.fixed(r.width.roundToInt().coerceAtLeast(1), r.height.roundToInt().coerceAtLeast(1)),
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(r.left.roundToInt(), r.top.roundToInt()) }
+            }
+            .graphicsLayer {
+                val corner = startCorner * (1f - progress.value.coerceIn(0f, 1f))
+                shape = RoundedCornerShape(androidx.compose.foundation.shape.CornerSize(corner))
+                clip = true
+            }
+            .background(bg),
+    ) {
+        if (e.thumb != null) {
+            Image(
+                bitmap = e.thumb,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -510,18 +582,47 @@ private fun TabIcon(tab: Tab, size: androidx.compose.ui.unit.Dp) {
     }
 }
 
-/** Если превью ещё нет: большая фигура (печенье) со значком сайта. */
+/**
+ * Если превью ещё нет: вся площадь залита цветом сайта (тем же, что у плитки), по центру печенье со значком.
+ * У каждого сайта свой цвет, поэтому вкладки без снимка не сливаются в серое поле. Приватная и стартовая - цвета темы.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TabPlaceholder(tab: Tab) {
+private fun TabPlaceholder(tab: Tab, compact: Boolean) {
     val cs = MaterialTheme.colorScheme
-    Box(Modifier.size(96.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
-        when {
-            tab.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(44.dp), tint = cs.onSecondaryContainer)
-            tab.home -> Icon(HripsIcons.Home, null, Modifier.size(44.dp), tint = cs.onSecondaryContainer)
-            else -> Favicon(tab.url, 44.dp) {
-                SiteTile(tab.url, tab.label(), 44.dp)
+    val dark = cs.background.luminance() < 0.5f
+    val (bg, fg) = when {
+        tab.isPrivate -> cs.tertiaryContainer to cs.onTertiaryContainer
+        tab.home -> cs.primaryContainer to cs.onPrimaryContainer
+        else -> siteColors(tab.url, dark)
+    }
+    val cookie = if (compact) 64.dp else 104.dp
+    val icon = if (compact) 30.dp else 48.dp
+    Box(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bg, bg.copy(alpha = 0.78f).compositeOver(cs.surfaceContainerLowest)))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(cookie).background(fg.copy(alpha = 0.16f), MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+            when {
+                tab.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(icon), tint = fg)
+                tab.home -> Icon(HripsIcons.Home, null, Modifier.size(icon), tint = fg)
+                else -> Favicon(tab.url, icon) { SiteTile(tab.url, tab.label(), icon) }
             }
+        }
+    }
+}
+
+/** Метка группы на карточке: в карусели плашка с названием, в сетке только цветная точка. */
+@Composable
+private fun GroupMark(group: TabGroup, compact: Boolean, modifier: Modifier = Modifier) {
+    if (compact) {
+        Box(modifier.size(16.dp).background(group.tint, CircleShape).border(2.dp, MaterialTheme.colorScheme.surface, CircleShape))
+    } else {
+        Surface(shape = CircleShape, color = group.tint, contentColor = if (group.tint.luminance() > 0.5f) Color.Black else Color.White, modifier = modifier) {
+            Text(
+                group.name, Modifier.padding(horizontal = 12.dp, vertical = 5.dp).widthIn(max = 120.dp),
+                maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
@@ -537,7 +638,7 @@ private fun TabCard(
     tab: Tab,
     selected: Boolean,
     compact: Boolean,
-    onClick: () -> Unit,
+    onClick: (androidx.compose.ui.geometry.Rect, ImageBitmap?) -> Unit,
     onClose: () -> Unit,
     group: TabGroup?,
     groups: List<TabGroup>,
@@ -553,8 +654,8 @@ private fun TabCard(
     var menu by remember { mutableStateOf(false) }
     val dismissPx = with(LocalDensity.current) { 110.dp.toPx() }
     var pastThreshold by remember { mutableStateOf(false) }
-    val titleColor = if (selected) cs.onPrimaryContainer else cs.onSurface
-    val subColor = titleColor.copy(alpha = 0.7f)
+    var cardRect by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var shownThumb by remember { mutableStateOf<ImageBitmap?>(null) }
     val subtitle = when {
         tab.isPrivate && tab.home -> "Приватная вкладка"
         tab.home -> "Начальная страница"
@@ -564,11 +665,21 @@ private fun TabCard(
 
     Box(
         modifier
+            .onGloballyPositioned { cardRect = it.boundsInRoot() }
             .graphicsLayer {
                 translationY = offsetY.value
+                // Чем выше утащили, тем сильнее карточка сжимается и наклоняется, как отрываемый листок
+                val pull = (-offsetY.value / dismissPx).coerceIn(0f, 2f)
+                val sc = 1f - 0.07f * pull
+                scaleX = sc
+                scaleY = sc
+                rotationZ = -pull * 3f
                 alpha = 1f - (abs(offsetY.value) / (dismissPx * 2.2f)).coerceIn(0f, 0.8f)
             }
-            .pointerInput(tab) {
+            .pointerInput(tab, compact) {
+                // В сетке карточки лежат в прокручиваемом списке: смахивание вверх отнимало бы у него прокрутку.
+                // Там карточку закрывают кнопкой или удержанием
+                if (compact) return@pointerInput
                 detectVerticalDragGestures(
                     onDragEnd = {
                         pastThreshold = false
@@ -595,106 +706,135 @@ private fun TabCard(
                 }
             },
     ) {
+        // Рамка: выбранная вкладка в цвете акцента, остальные в тоне поверхности. Нажатая карточка чуть проседает
+        val frame by animateColorAsState(
+            if (selected) cs.primary else cs.surfaceContainerHigh,
+            MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
+            label = "tabFrame",
+        )
+        val source = remember { MutableInteractionSource() }
+        val pressed by source.collectIsPressedAsState()
+        val press by animateFloatAsState(if (pressed) 0.97f else 1f, MaterialTheme.motionScheme.fastSpatialSpec<Float>(), label = "tabPress")
+        val inner = RoundedCornerShape(if (compact) 23.dp else 30.dp)
+        val closeCard: () -> Unit = {
+            // Закрытие кнопкой выглядит так же, как смахивание: карточка улетает вверх, потом вкладка закрывается
+            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+            scope.launch {
+                offsetY.animateTo(-dismissPx * 5, tween(160))
+                onClose()
+            }
+        }
         Surface(
             shape = shape,
-            color = if (selected) cs.primaryContainer else cs.surfaceContainerHigh,
-            border = when {
-                group != null -> BorderStroke(2.dp, group.tint.copy(alpha = 0.85f))
-                else -> null
-            },
+            color = frame,
             shadowElevation = 0.dp,
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer { scaleX = press; scaleY = press }
                 .clip(shape)
                 .combinedClickable(
-                    onClick = onClick,
+                    interactionSource = source,
+                    indication = null,
+                    onClick = { onClick(cardRect, shownThumb) },
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
                 ),
         ) {
-            Column(Modifier.padding(if (compact) 8.dp else 12.dp)) {
-                Row(Modifier.fillMaxWidth().padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TabIcon(tab, if (compact) 24.dp else 32.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (compact && group != null) {
-                                Box(Modifier.size(8.dp).background(group.tint, CircleShape))
-                                Spacer(Modifier.width(6.dp))
-                            }
-                            Text(
-                                tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                                color = titleColor,
-                            )
-                        }
-                        if (!compact) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (group != null) {
-                                    Box(Modifier.size(8.dp).background(group.tint, CircleShape))
-                                    Spacer(Modifier.width(5.dp))
-                                    Text(
-                                        group.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelMedium, color = titleColor,
-                                        modifier = Modifier.widthIn(max = 90.dp),
-                                    )
-                                    Text(" · ", style = MaterialTheme.typography.bodySmall, color = subColor)
-                                }
-                                Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = subColor)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    Surface(
-                        onClick = onClose,
-                        shape = CircleShape,
-                        color = titleColor.copy(alpha = 0.1f),
-                        contentColor = titleColor,
-                        modifier = Modifier.size(40.dp).semantics {
-                            contentDescription = "Закрыть вкладку ${tab.label()}"
-                        },
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(HripsIcons.Close, "Закрыть вкладку", Modifier.size(if (compact) 18.dp else 20.dp))
-                        }
+            Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
+                // Свежий снимок из памяти, иначе сохранённый на диске (после перезапуска)
+                // В сетке хватает маленькой копии: она декодируется быстрее и занимает меньше памяти
+                val fromDisk by produceState<ImageBitmap?>(null, tab.url, tab.thumbnail, compact) {
+                    value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) TabThumbs.load(context, tab.url, small = compact) else null
+                }
+                val thumb = tab.thumbnail ?: fromDisk
+                LaunchedEffect(thumb) { shownThumb = thumb }
+                // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
+                val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
+                    value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
+                }
+                val pageImage = pageImageState.value
+                if (thumb != null && !tab.home) {
+                    Image(
+                        bitmap = thumb,
+                        contentDescription = "Превью страницы",
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (pageImage != null && !tab.home) {
+                    Image(
+                        bitmap = pageImage,
+                        contentDescription = "Картинка страницы",
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    TabPlaceholder(tab, compact)
+                }
+
+                // Метка группы слева сверху, кнопка закрытия справа сверху
+                if (group != null) {
+                    GroupMark(group, compact, Modifier.align(Alignment.TopStart).padding(if (compact) 8.dp else 12.dp))
+                }
+                Surface(
+                    onClick = closeCard,
+                    shape = CircleShape,
+                    color = cs.surface.copy(alpha = 0.88f),
+                    contentColor = cs.onSurface,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(if (compact) 6.dp else 10.dp)
+                        .size(if (compact) 30.dp else 38.dp)
+                        .semantics { contentDescription = "Закрыть вкладку ${tab.label()}" },
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(HripsIcons.Close, null, Modifier.size(if (compact) 16.dp else 20.dp))
                     }
                 }
-                Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
-                Box(
-                    Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(if (compact) 20.dp else 26.dp)).background(cs.surfaceContainerLowest),
-                    contentAlignment = Alignment.Center,
+
+                // Подпись плашкой снизу: значок, название, адрес. Лежит поверх снимка, поэтому читается на любой странице
+                Surface(
+                    shape = RoundedCornerShape(if (compact) 18.dp else 24.dp),
+                    color = cs.surfaceContainerHigh.copy(alpha = 0.94f),
+                    contentColor = cs.onSurface,
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(if (compact) 6.dp else 8.dp),
                 ) {
-                    // Свежий снимок из памяти, иначе сохранённый на диске (после перезапуска)
-                    // В сетке хватает маленькой копии: она декодируется быстрее и занимает меньше памяти
-                    val fromDisk by produceState<ImageBitmap?>(null, tab.url, tab.thumbnail, compact) {
-                        value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) TabThumbs.load(context, tab.url, small = compact) else null
-                    }
-                    val thumb = tab.thumbnail ?: fromDisk
-                    // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
-                    val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
-                        value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
-                    }
-                    val pageImage = pageImageState.value
-                    if (thumb != null && !tab.home) {
-                        Image(
-                            bitmap = thumb,
-                            contentDescription = "Превью страницы",
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.TopCenter,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else if (pageImage != null && !tab.home) {
-                        Image(
-                            bitmap = pageImage,
-                            contentDescription = "Картинка страницы",
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        TabPlaceholder(tab)
+                    Row(
+                        Modifier.padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TabIcon(tab, if (compact) 20.dp else 30.dp)
+                        Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
+                            )
+                            if (!compact) {
+                                Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        // Значок появляется сверху, когда карточку оттянули достаточно, чтобы она закрылась
+        if (!compact) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 14.dp)
+                    .size(44.dp)
+                    .graphicsLayer {
+                        val k = (-offsetY.value / dismissPx).coerceIn(0f, 1f)
+                        alpha = k
+                        scaleX = 0.6f + 0.4f * k
+                        scaleY = 0.6f + 0.4f * k
+                    }
+                    .background(cs.error, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Icon(HripsIcons.Close, null, Modifier.size(22.dp), tint = cs.onError) }
         }
 
         // Меню по удержанию: группы и закрытие. У приватных вкладок групп нет
@@ -723,7 +863,7 @@ private fun TabCard(
             DropdownMenuItem(
                 text = { Text("Закрыть вкладку") },
                 leadingIcon = { Icon(HripsIcons.Trash, null) },
-                onClick = { menu = false; onClose() },
+                onClick = { menu = false; closeCard() },
             )
         }
     }

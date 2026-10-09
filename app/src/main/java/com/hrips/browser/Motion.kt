@@ -57,6 +57,9 @@ class OriginTracker {
     /** Где последний раз коснулись экрана (в координатах корня Compose). */
     var lastDown: Offset = Offset.Unspecified
 
+    /** Экран уже «ушёл» своей анимацией (карточка вкладки раскрылась в страницу): закрывать мгновенно. */
+    var instantClose: Boolean = false
+
     private val anchors = HashMap<Any, Pair<String, Rect>>()
 
     fun put(id: Any, group: String, rect: Rect) {
@@ -100,7 +103,7 @@ fun Modifier.trackTouches(tracker: OriginTracker): Modifier = pointerInput(track
     }
 }
 
-private class RevealShape(val rect: Rect, val corner: Float) : Shape {
+internal class RevealShape(val rect: Rect, val corner: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
         Outline.Rounded(RoundRect(rect, CornerRadius(corner)))
 }
@@ -137,7 +140,12 @@ fun RevealHost(
             shown = true
             progress.animateTo(1f, spatial)
         } else if (shown) {
-            progress.animateTo(0f, spatial)
+            if (tracker.instantClose) {
+                tracker.instantClose = false
+                progress.snapTo(0f)
+            } else {
+                progress.animateTo(0f, spatial)
+            }
             shown = false
         }
     }

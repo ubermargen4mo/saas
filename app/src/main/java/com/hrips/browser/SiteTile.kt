@@ -59,5 +59,12 @@ fun siteHue(url: String): Float {
     return Math.floorMod(key.hashCode(), 360).toFloat()
 }
 
+/** Пара цветов сайта (фон, содержимое), те же, что у [SiteTile]: заглушки и плитки одного сайта выглядят одинаково. */
+fun siteColors(url: String, dark: Boolean): Pair<Color, Color> {
+    val hue = siteHue(url)
+    return hsv(hue, if (dark) 0.50f else 0.22f, if (dark) 0.34f else 0.96f) to
+        hsv(hue, if (dark) 0.20f else 0.75f, if (dark) 0.96f else 0.38f)
+}
+
 private fun hsv(hue: Float, saturation: Float, value: Float) =
     Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
