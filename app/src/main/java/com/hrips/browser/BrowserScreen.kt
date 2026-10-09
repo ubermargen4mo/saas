@@ -129,8 +129,8 @@ fun BrowserScreen(browser: Browser) {
     val wide = isWideWindow()
     val activity = LocalContext.current as? Activity
     var showTabs by remember { mutableStateOf(false) }
-    var showLibrary by remember { mutableStateOf(false) }
-    var libPage by remember { mutableIntStateOf(0) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSitePerms by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
@@ -140,6 +140,16 @@ fun BrowserScreen(browser: Browser) {
     var showSearch by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var showQrScan by remember { mutableStateOf(false) }
+    // Нажали на уведомление о загрузке: закрываем всё лишнее и показываем страницу загрузок
+    val downloadsRequested = browser.downloads.pageRequested
+    LaunchedEffect(downloadsRequested) {
+        if (downloadsRequested) {
+            showTabs = false; showSearch = false; showSettings = false; showTools = false
+            showQrScan = false; showHistory = false; showBookmarks = false; showExtSheet = false
+            showDownloads = true
+            browser.downloads.pageRequested = false
+        }
+    }
     var findOpen by remember { mutableStateOf(false) }
     // Разовый выбор движка с главной страницы: сбрасывается после поиска
     var oneOff by remember { mutableStateOf<SearchEngine?>(null) }
@@ -215,9 +225,9 @@ fun BrowserScreen(browser: Browser) {
     }
     // Превью обновляем сами, когда страница догрузилась: карточки в переключателе сразу с актуальной картинкой
     LaunchedEffect(tab, tab.loading, tab.url) {
-        if (!tab.loading && !tab.home && !showTabs && !showSearch && !showLibrary) {
+        if (!tab.loading && !tab.home && !showTabs && !showSearch && !showHistory && !showBookmarks) {
             kotlinx.coroutines.delay(1200)
-            if (!showTabs && !showSearch && !showLibrary) captureThumbnail(activity, viewRef[0], tab) { }
+            if (!showTabs && !showSearch && !showHistory && !showBookmarks) captureThumbnail(activity, viewRef[0], tab) { }
         }
     }
 
@@ -421,6 +431,13 @@ fun BrowserScreen(browser: Browser) {
     RevealHost(visible = showDownloads, group = null) {
         DownloadsScreen(browser.downloads, onBack = { showDownloads = false })
     }
+    // История и закладки: отдельные страницы, как загрузки
+    RevealHost(visible = showHistory, group = null) {
+        HistoryScreen(store, onOpen = { tab.load(it); showHistory = false }, onBack = { showHistory = false })
+    }
+    RevealHost(visible = showBookmarks, group = null) {
+        BookmarksScreen(store, onOpen = { tab.load(it); showBookmarks = false }, onBack = { showBookmarks = false })
+    }
     // Сканер QR-кодов поверх браузера; найденный адрес открывается в новой вкладке (в приватной, если текущая приватная)
     RevealHost(visible = showQrScan, group = null) {
         QrScannerScreen(
@@ -443,7 +460,7 @@ fun BrowserScreen(browser: Browser) {
         TabSwitcher(
             browser = browser,
             onClose = { showTabs = false },
-            onHistory = { showTabs = false; libPage = 1; showLibrary = true },
+            onHistory = { showTabs = false; showHistory = true },
         )
     }
     // Поисковая панель: разовый выбор движка, история запросов, подсказки
@@ -466,8 +483,8 @@ fun BrowserScreen(browser: Browser) {
     DownloadPrompt(browser.downloads)
     DownloadFlightOverlay(browser.downloads.fx)
 
-    if (showSitePerms) {
-        SitePermissionsSheet(browser.runtime, browser.permissions.sites) { showSitePerms = false }
+    RevealHost(visible = showSitePerms, group = null) {
+        SitePermissionsScreen(browser.runtime, browser.permissions.sites, onBack = { showSitePerms = false })
     }
 
     // Первый запуск: все разрешения одним заходом
@@ -486,7 +503,7 @@ fun BrowserScreen(browser: Browser) {
             browser = browser,
             tab = tab,
             onFind = { findOpen = true },
-            onLibrary = { page -> libPage = page; showLibrary = true },
+            onLibrary = { page -> if (page == 0) showBookmarks = true else showHistory = true },
             onDownloads = { showDownloads = true },
             onSettings = { showSettings = true },
             onScreenshot = { PageActions.screenshot(activity, viewRef[0], tab, browser.downloads) },
@@ -506,17 +523,6 @@ fun BrowserScreen(browser: Browser) {
     // Единые уведомления: выше всех оверлеев, над нижней панелью браузера
     NoticeHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = if (wide) 96.dp else 72.dp))
     }
-    }
-
-    if (showLibrary) {
-        LibrarySheet(
-            store = store,
-            page = libPage,
-            onPage = { libPage = it },
-            onOpen = { tab.load(it); showLibrary = false },
-            onDownloads = { showLibrary = false; showDownloads = true },
-            onClose = { showLibrary = false },
-        )
     }
 
     // Контекстное меню страницы (долгое нажатие / правая кнопка)

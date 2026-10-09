@@ -31,12 +31,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
@@ -76,7 +78,7 @@ fun DownloadsScreen(downloads: Downloads, onBack: () -> Unit) {
     val shown = all.filter {
         (activeFilter == null || fileKind(it) == activeFilter) && (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true))
     }
-    val running = shown.filter { downloads.isActive(it) }
+    val running = shown.filter { downloads.isOngoing(it) }
     val done = shown.filter { it.status == DlStatus.DONE }
     val failed = shown.filter { it.status == DlStatus.FAILED || it.status == DlStatus.CANCELLED }
 
@@ -92,7 +94,13 @@ fun DownloadsScreen(downloads: Downloads, onBack: () -> Unit) {
                 title = { Text("Загрузки") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HripsIcons.Back, "Назад") } },
                 actions = {
-                    if (all.any { !downloads.isActive(it) }) {
+                    if (all.any { downloads.isActive(it) && it.canPause }) {
+                        IconButton(onClick = { downloads.pauseAll() }) { Icon(HripsIcons.Pause, "Приостановить все") }
+                    }
+                    if (all.any { it.status == DlStatus.PAUSED }) {
+                        IconButton(onClick = { downloads.resumeAll() }) { Icon(HripsIcons.Play, "Продолжить все") }
+                    }
+                    if (all.any { !downloads.isOngoing(it) }) {
                         IconButton(onClick = { downloads.clearFinished() }) { Icon(HripsIcons.Trash, "Очистить список") }
                     }
                 },
@@ -264,10 +272,12 @@ private fun DownloadRow(d: DownloadItem, shape: Shape, downloads: Downloads) {
     val context = LocalContext.current
     val status = d.status
     var menu by remember { mutableStateOf(false) }
+    var confirmStop by remember { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
 
     Surface(
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cs.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().clip(shape),
         onClick = { if (status == DlStatus.DONE) downloads.open(d) },
         enabled = status == DlStatus.DONE,
@@ -277,34 +287,65 @@ private fun DownloadRow(d: DownloadItem, shape: Shape, downloads: Downloads) {
             Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 Text(d.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 when (status) {
-                    DlStatus.QUEUED, DlStatus.RUNNING -> {
+                    DlStatus.QUEUED, DlStatus.RUNNING, DlStatus.PAUSED, DlStatus.WAITING -> {
                         Spacer(Modifier.height(8.dp))
-                        if (d.total > 0) {
-                            LinearWavyProgressIndicator(progress = { (d.done.toFloat() / d.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                        } else {
-                            LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        val known = d.total > 0
+                        val fraction = if (known) (d.done.toFloat() / d.total).coerceIn(0f, 1f) else 0f
+                        when {
+                            // Идёт сохранение в «Загрузки» или размер неизвестен: полоса без процентов
+                            d.saving -> LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            status == DlStatus.RUNNING && known ->
+                                LinearWavyProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                            status == DlStatus.RUNNING || (status == DlStatus.QUEUED && !known) ->
+                                LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            // Пауза и ожидание: полоса стоит на месте, видно, сколько уже скачано
+                            else -> LinearProgressIndicator(
+                                progress = { fraction },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (status == DlStatus.PAUSED) cs.outline else cs.primary,
+                            )
                         }
                         Spacer(Modifier.height(6.dp))
-                        Text(runningLine(context, d), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(runningLine(context, d), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
                     DlStatus.DONE -> Text(
                         Formatter.formatShortFileSize(context, d.done) + " • " +
                             DateUtils.getRelativeTimeSpanString(d.finishedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = cs.onSurfaceVariant,
                     )
-                    DlStatus.FAILED -> Text(
-                        "Ошибка загрузки" + (d.error?.let { ": $it" } ?: ""),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    DlStatus.CANCELLED -> Text("Отменено", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    DlStatus.FAILED -> {
+                        Text(
+                            "Ошибка загрузки" + (d.error?.let { ": $it" } ?: ""),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = cs.error,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (d.done > 0 && d.canRetry) {
+                            Text(
+                                "Скачано ${Formatter.formatShortFileSize(context, d.done)}: продолжится с этого места",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = cs.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    DlStatus.CANCELLED -> Text("Остановлено", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 }
             }
             when (status) {
-                DlStatus.QUEUED, DlStatus.RUNNING -> IconButton(onClick = { downloads.cancel(d) }) { Icon(HripsIcons.Close, "Отменить загрузку") }
+                DlStatus.QUEUED, DlStatus.RUNNING, DlStatus.WAITING -> {
+                    if (d.canPause) {
+                        IconButton(onClick = { downloads.pause(d) }) { Icon(HripsIcons.Pause, "Приостановить") }
+                    }
+                    IconButton(onClick = { if (d.done > 0) confirmStop = true else downloads.cancel(d) }) {
+                        Icon(HripsIcons.Close, "Остановить окончательно")
+                    }
+                }
+                DlStatus.PAUSED -> {
+                    IconButton(onClick = { downloads.resume(d) }) { Icon(HripsIcons.Play, "Продолжить") }
+                    IconButton(onClick = { confirmStop = true }) { Icon(HripsIcons.Close, "Остановить окончательно") }
+                }
                 DlStatus.DONE -> Box {
                     IconButton(onClick = { menu = true }) { Icon(HripsIcons.MoreVert, "Ещё") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -330,23 +371,55 @@ private fun DownloadRow(d: DownloadItem, shape: Shape, downloads: Downloads) {
                         )
                     }
                 }
-                else -> IconButton(onClick = { downloads.remove(d, deleteFile = false) }) { Icon(HripsIcons.Close, "Убрать из списка") }
+                else -> {
+                    if (d.canRetry) {
+                        IconButton(onClick = { downloads.resume(d) }) {
+                            Icon(HripsIcons.BarRefresh, if (status == DlStatus.FAILED && d.done > 0) "Продолжить" else "Повторить")
+                        }
+                    }
+                    IconButton(onClick = { downloads.remove(d, deleteFile = false) }) { Icon(HripsIcons.Close, "Убрать из списка") }
+                }
             }
         }
+    }
+
+    if (confirmStop) {
+        HripsDialog(
+            icon = HripsIcons.Trash,
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Остановить загрузку?") },
+            text = {
+                Text(
+                    "«${d.name}» будет остановлена окончательно, уже скачанная часть " +
+                        "(${Formatter.formatShortFileSize(context, d.done)}) удалится. " +
+                        if (d.canPause) "Чтобы продолжить позже, используйте паузу." else "",
+                )
+            },
+            confirmButton = { TextButton(onClick = { confirmStop = false; downloads.cancel(d) }) { Text("Остановить") } },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Не надо") } },
+        )
     }
 }
 
 private fun runningLine(context: android.content.Context, d: DownloadItem): String {
     val done = Formatter.formatShortFileSize(context, d.done)
-    if (d.status == DlStatus.QUEUED) return "В очереди"
     val head = if (d.total > 0) "$done из ${Formatter.formatShortFileSize(context, d.total)}" else done
-    val tail = if (d.speed > 0) " • ${Formatter.formatFileSize(context, d.speed)}/с" else ""
-    return head + tail
+    return when {
+        d.saving -> "Сохранение в «Загрузки»…"
+        d.status == DlStatus.PAUSED -> "Приостановлено • $head"
+        d.status == DlStatus.WAITING -> (d.waitReason ?: "Ожидание") + " • $head"
+        d.status == DlStatus.QUEUED -> if (d.done > 0) "В очереди • $head" else "В очереди"
+        else -> {
+            val tail = if (d.speed > 0) " • ${Formatter.formatFileSize(context, d.speed)}/с" else ""
+            val left = if (d.total > 0 && d.speed > 0) " • осталось ${duration((d.total - d.done) / d.speed)}" else ""
+            head + tail + left
+        }
+    }
 }
 
 /** Справа от заголовка "Загружаются": общая скорость и сколько осталось (как в системном списке загрузок). */
 private fun runningSummary(context: android.content.Context, running: List<DownloadItem>): String? {
-    val speed = running.sumOf { it.speed }
+    val speed = running.filter { it.status == DlStatus.RUNNING }.sumOf { it.speed }
     if (speed <= 0) return null
     val left = running.filter { it.total > 0 && it.speed > 0 }.maxOfOrNull { (it.total - it.done) / it.speed }
     val s = Formatter.formatFileSize(context, speed) + "/с"

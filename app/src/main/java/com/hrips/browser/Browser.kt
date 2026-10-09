@@ -69,13 +69,23 @@ class Browser(
     /** Скачивание по адресу (из контекстного меню): запрос идёт через движок, дальше обычная плашка "Скачать файл?". */
     fun saveUrl(uri: String, referrer: String?, incognito: Boolean = false) {
         fetch(uri, referrer, incognito) { r ->
-            if (r != null && r.statusCode in 200..299) downloads.request(r, incognito) else downloads.toast("Не удалось скачать файл")
+            if (r != null && r.statusCode in 200..299) downloads.request(r, incognito, referrer) else downloads.toast("Не удалось скачать файл")
         }
     }
 
     /** Запрос через движок (с cookies и referer страницы). Поток ответа читать не в главном потоке. */
     fun fetch(uri: String, referrer: String?, incognito: Boolean = false, onDone: (WebResponse?) -> Unit) =
         engine.fetch(uri, referrer, incognito, onDone)
+
+    /** Запрос для докачки файла: с Range / If-Range. Ответ приходит в главном потоке, читать его надо в фоновом. */
+    fun fetchRange(
+        uri: String,
+        referrer: String?,
+        incognito: Boolean,
+        range: String?,
+        ifRange: String?,
+        onDone: (WebResponse?) -> Unit,
+    ) = engine.fetchRange(uri, referrer, incognito, range, ifRange, onDone)
 
     /** Очистка данных сайтов. История браузера чистится отдельно, в Store. */
     fun clearData(cookies: Boolean, cache: Boolean, onDone: () -> Unit) =

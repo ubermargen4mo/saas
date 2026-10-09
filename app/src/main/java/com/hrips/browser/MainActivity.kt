@@ -235,6 +235,11 @@ class MainActivity : ComponentActivity() {
         }
         // Повторная доставка того же intent'а при запуске из списка недавних: вкладку второй раз не открываем
         if (intent != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // Нажали на уведомление о загрузке: открываем страницу загрузок
+        if (intent?.action == Downloads.ACTION_OPEN_PAGE) {
+            hrips.downloads.pageRequested = true
+            return
+        }
         // Ссылка, локальный HTML/PDF, «Поделиться в hrips», «Искать в hrips»
         if (IncomingIntents.isLocalFile(intent)) {
             // Файл копируется в кэш: в фоне, чтобы большой PDF не вешал интерфейс

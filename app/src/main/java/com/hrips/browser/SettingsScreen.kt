@@ -640,7 +640,7 @@ private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
 private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads: () -> Unit) {
     val store = browser.store
     val downloads = browser.downloads
-    val hasFinished = downloads.items.any { !downloads.isActive(it) }
+    val hasFinished = downloads.items.any { !downloads.isOngoing(it) }
     PageScaffold("Загрузки", onBack) {
         Group(
             { s ->

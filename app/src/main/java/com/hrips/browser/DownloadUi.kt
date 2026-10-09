@@ -466,7 +466,7 @@ fun AnimatedDownloadsSlot(
     centered: Boolean = false,
 ) {
     val fx = downloads.fx
-    val live = downloads.items.any { downloads.isActive(it) } || fx.flight != null
+    val live = downloads.items.any { downloads.isOngoing(it) } || fx.flight != null
     var show by remember { mutableStateOf(false) }
     // После окончания держим кнопку ещё 1.5 с: успевает дорисоваться кольцо и мигнуть значок «готово»
     LaunchedEffect(live) {

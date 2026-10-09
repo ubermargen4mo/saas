@@ -31,6 +31,31 @@ class BrowserEngine(private val runtime: GeckoRuntime) {
         result.accept({ onDone(it) }, { onDone(null) })
     }
 
+    /**
+     * Запрос с заголовками для докачки: [range] ("bytes=1000-") и [ifRange] (ETag или дата изменения файла).
+     * Идёт через движок, поэтому cookies и referer те же, что у страницы, с которой начали загрузку.
+     */
+    fun fetchRange(
+        uri: String,
+        referrer: String?,
+        incognito: Boolean,
+        range: String?,
+        ifRange: String?,
+        onDone: (WebResponse?) -> Unit,
+    ) {
+        val request = WebRequest.Builder(uri).apply {
+            if (!referrer.isNullOrBlank()) referrer(referrer)
+            if (!range.isNullOrBlank()) header("Range", range)
+            if (!range.isNullOrBlank() && !ifRange.isNullOrBlank()) header("If-Range", ifRange)
+        }.build()
+        val flags = if (incognito) GeckoWebExecutor.FETCH_FLAGS_PRIVATE else GeckoWebExecutor.FETCH_FLAGS_NONE
+        val result = runCatching { executor.fetch(request, flags) }.getOrNull() ?: run {
+            onDone(null)
+            return
+        }
+        result.accept({ onDone(it) }, { onDone(null) })
+    }
+
     fun clearData(cookies: Boolean, cache: Boolean, onDone: () -> Unit) {
         var flags = 0L
         if (cookies) flags = flags or StorageController.ClearFlags.COOKIES or StorageController.ClearFlags.DOM_STORAGES

@@ -417,6 +417,12 @@ object HripsIcons {
 
     /** Наши значки в размерах Оперы: домой 16x17dp, щит 14x17dp, «инфо» 16dp; линия 2dp. */
     val BarHome by lazy { icon("BarHome", stroke = 2f, scale = 0.8f) { home() } }
+    val Pause by lazy {
+        icon("Pause", filled = true) { roundRect(6.5f, 5f, 3.8f, 14f, 1.4f); roundRect(13.7f, 5f, 3.8f, 14f, 1.4f) }
+    }
+    val Play by lazy {
+        icon("Play", filled = true) { moveTo(8f, 5.8f); lineTo(18.2f, 12f); lineTo(8f, 18.2f); close() }
+    }
     val BarShield by lazy { icon("BarShield", stroke = 2f, scale = 0.833f) { shield() } }
     val BarInfo by lazy { icon("BarInfo", stroke = 2f, scale = 0.75f) { info() } }
 }
