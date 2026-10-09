@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
+import androidx.compose.ui.unit.IntOffset
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -42,6 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -362,8 +366,8 @@ fun DownloadPrompt(downloads: Downloads) {
         AnimatedVisibility(
             visible = current != null,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(150)),
-            exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(200)),
+            enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()) { it } + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec<Float>()),
+            exit = slideOutVertically(MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()) { it } + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec<Float>()),
         ) {
             held.value?.let { PromptPanel(it, downloads) }
         }
@@ -429,10 +433,10 @@ private fun PromptPanel(p: PendingDownload, downloads: Downloads) {
                 modifier = Modifier.padding(start = 4.dp, top = 12.dp),
             )
             Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { downloads.decline(p) }, modifier = Modifier.weight(1f).height(56.dp)) {
+                OutlinedButton(shapes = ButtonDefaults.shapes(), onClick = { downloads.decline(p) }, modifier = Modifier.weight(1f).height(56.dp)) {
                     Text("Отмена")
                 }
-                Button(onClick = accept, modifier = Modifier.weight(1.4f).height(56.dp)) {
+                Button(shapes = ButtonDefaults.shapes(), onClick = accept, modifier = Modifier.weight(1.4f).height(56.dp)) {
                     Icon(HripsIcons.Download, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Загрузить")

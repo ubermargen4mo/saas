@@ -107,7 +107,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         onClick = onSearch,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.widthIn(max = barMax).fillMaxWidth().height(56.dp),
+                        modifier = Modifier.widthIn(max = barMax).fillMaxWidth().height(56.dp).originAnchor("search"),
                     ) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.width(56.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {

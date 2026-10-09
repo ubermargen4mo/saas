@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import androidx.compose.animation.*
@@ -53,7 +55,7 @@ internal fun AddressBar(
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = modifier.height(40.dp),
+            modifier = modifier.height(40.dp).originAnchor("search"),
         ) {
             Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 if (withPicker) {
@@ -92,7 +94,7 @@ internal fun AddressBar(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         // Фиксированная высота: на сайтах и на главной строка выглядит одинаково
-        modifier = modifier.height(48.dp),
+        modifier = modifier.height(48.dp).originAnchor("search"),
     ) {
         Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             if (withPicker) Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
@@ -126,7 +128,7 @@ internal fun AddressBar(
                     color = if (shown.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                 )
             }
-            IconButton(modifier = Modifier.size(40.dp), onClick = { store.toggleBookmark(tab.url, tab.title) }, enabled = !tab.home) {
+            IconButton(modifier = Modifier.size(40.dp), onClick = { toggleBookmarkWithNotice(store, tab.url, tab.title) }, enabled = !tab.home) {
                 val saved = store.isBookmarked(tab.url)
                 Icon(
                     if (saved) HripsIcons.StarFilled else HripsIcons.Star, "Закладка",
@@ -238,6 +240,8 @@ internal fun TabStrip(browser: Browser) {
 /** Счётчик вкладок: скруглённый квадрат-контур с числом внутри. Нажатие открывает список вкладок. */
 @Composable
 fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val scaleSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
     IconButton(
         onClick = onClick,
         modifier = modifier.semantics { contentDescription = "Вкладки: $count" },
@@ -250,7 +254,7 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> U
         ) {
             AnimatedContent(
                 targetState = count,
-                transitionSpec = { (fadeIn(tween(150)) + scaleIn(initialScale = 0.6f)) togetherWith (fadeOut(tween(100)) + scaleOut(targetScale = 0.6f)) },
+                transitionSpec = { (fadeIn(fadeSpec) + scaleIn(scaleSpec, initialScale = 0.6f)) togetherWith (fadeOut(fadeSpec) + scaleOut(scaleSpec, targetScale = 0.6f)) },
                 label = "tabCount",
             ) { n ->
                 Text(

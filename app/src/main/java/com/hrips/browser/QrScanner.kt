@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import android.Manifest
@@ -41,6 +43,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -156,7 +159,7 @@ fun QrScannerScreen(
                     textAlign = TextAlign.Center,
                 )
                 if (!failed) {
-                    Button(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Разрешить") }
+                    Button(shapes = ButtonDefaults.shapes(), onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Разрешить") }
                     TextButton(onClick = {
                         runCatching {
                             context.startActivity(
@@ -177,8 +180,8 @@ fun QrScannerScreen(
         ) {
             FilledTonalIconButton(onClick = onClose) { Icon(HripsIcons.Close, "Закрыть") }
             if (hasFlash && result == null) {
-                if (torch) Button(onClick = { torch = false }) { Text("Фонарик выкл.") }
-                else FilledTonalButton(onClick = { torch = true }) { Text("Фонарик") }
+                if (torch) Button(shapes = ButtonDefaults.shapes(), onClick = { torch = false }) { Text("Фонарик выкл.") }
+                else FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = { torch = true }) { Text("Фонарик") }
             }
         }
 
@@ -223,16 +226,16 @@ private fun ResultPanel(text: String, onOpen: (String) -> Unit, onAgain: () -> U
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(4.dp))
-            Button(
+            Button(shapes = ButtonDefaults.shapes(),
                 onClick = { onOpen(url ?: searchUrl(text)) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (url != null) "Открыть" else "Искать") }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                OutlinedButton(shapes = ButtonDefaults.shapes(),
                     onClick = {
                         context.getSystemService(ClipboardManager::class.java)
                             ?.setPrimaryClip(ClipData.newPlainText("qr", text))
-                        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        Notices.show("Текст из QR-кода скопирован")
                     },
                     modifier = Modifier.weight(1f),
                 ) { Text("Копировать") }

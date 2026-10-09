@@ -37,7 +37,7 @@ object PageActions {
         try {
             context.startActivity(Intent.createChooser(send, null))
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(context, "Нет приложения для отправки", Toast.LENGTH_SHORT).show()
+            Notices.show("Нет приложения для отправки")
         }
     }
 
@@ -48,7 +48,7 @@ object PageActions {
      */
     fun openInApp(context: Context, url: String) {
         val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
-        val none = { Toast.makeText(context, "Для этого сайта нет приложения", Toast.LENGTH_SHORT).show() }
+        val none = { Notices.show("Для этого сайта нет приложения") }
         try {
             if (Build.VERSION.SDK_INT >= 30) {
                 context.startActivity(view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER))
@@ -79,17 +79,17 @@ object PageActions {
 
     fun addToStartPage(context: Context, store: Store, tab: Tab) {
         if (store.speedDial.any { it.url == tab.url }) {
-            Toast.makeText(context, "Уже есть на начальной странице", Toast.LENGTH_SHORT).show()
+            Notices.show("Уже есть на начальной странице")
             return
         }
         store.addDial(tab.url, tab.title.ifBlank { tab.siteHost() ?: tab.url })
-        Toast.makeText(context, "Добавлено на начальную страницу", Toast.LENGTH_SHORT).show()
+        Notices.show("Добавлено на начальную страницу")
     }
 
     /** Ярлык на главный экран: круг с первой буквой сайта (цвет зависит от сайта). */
     fun addToHomeScreen(context: Context, tab: Tab) {
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
-            Toast.makeText(context, "Лаунчер не поддерживает ярлыки", Toast.LENGTH_SHORT).show()
+            Notices.show("Лаунчер не поддерживает ярлыки")
             return
         }
         val host = tab.siteHost() ?: return

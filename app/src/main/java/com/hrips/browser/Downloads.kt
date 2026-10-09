@@ -111,7 +111,7 @@ class Downloads(private val context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    fun toast(msg: String) = main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+    fun toast(msg: String) = Notices.show(msg)
 
     /** Шаг 1: страница отдала файл. Ничего не качаем, только спрашиваем (имя, размер). */
     fun request(response: WebResponse, isPrivate: Boolean = false, onDone: (() -> Unit)? = null) {
@@ -146,7 +146,10 @@ class Downloads(private val context: Context) {
             }
         } catch (e: Throwable) {
             // Любая ошибка здесь раньше молча терялась ("ничего не происходит"). Теперь видно причину.
-            toast("Загрузка не началась: ${e.message ?: e.javaClass.simpleName}")
+            run {
+                android.util.Log.w("Downloads", "download failed to start", e)
+                toast("Не удалось начать загрузку. Проверьте соединение и повторите")
+            }
             onDone?.let { main.post(it) }
         }
     }
@@ -177,7 +180,10 @@ class Downloads(private val context: Context) {
             // Это безопаснее для Android 12+ и даёт FGS пережить сворачивание приложения.
             startService()
         } catch (e: Throwable) {
-            toast("Загрузка не началась: ${e.message ?: e.javaClass.simpleName}")
+            run {
+                android.util.Log.w("Downloads", "download failed to start", e)
+                toast("Не удалось начать загрузку. Проверьте соединение и повторите")
+            }
             runCatching { p.body.close() }
             item.task = null
             item.input = null
@@ -329,11 +335,10 @@ class Downloads(private val context: Context) {
                     item.status = DlStatus.DONE
                     item.speed = 0L
                     item.finishedAt = System.currentTimeMillis()
-                    if (item.isPrivate) {
-                        toast("Приватная загрузка завершена")
-                    } else {
-                        toast("Загружено: ${item.name}")
-                    }
+                    Notices.show(
+                        if (item.isPrivate) "Приватная загрузка завершена" else "Загружено: ${item.name}",
+                        "Открыть",
+                    ) { open(item) }
                     notifyFinished(item)
                     if (item.isPrivate && !privateDownloadsVisible) items.remove(item)
                 }

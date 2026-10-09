@@ -49,7 +49,7 @@ class ExternalLinks(private val context: Context) {
         if (!start(req.intent)) {
             val fb = req.fallback?.takeIf(::isSafeFallback)
             if (fb != null) onFail(fb)
-            else Toast.makeText(context, "Приложение для этой ссылки не найдено", Toast.LENGTH_SHORT).show()
+            else Notices.show("Приложение для этой ссылки не найдено")
         }
     }
 
@@ -57,7 +57,7 @@ class ExternalLinks(private val context: Context) {
         context.startActivity(intent)
         true
     } catch (e: Exception) {
-        Toast.makeText(context, "Нет приложения для открытия ссылки", Toast.LENGTH_SHORT).show()
+        Notices.show("Нет приложения для открытия ссылки")
         false
     }
 

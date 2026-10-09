@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.IntOffset
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -43,6 +48,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -149,15 +155,18 @@ fun SettingsScreen(
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     BackHandler { if (page != null) page = null else onBack() }
 
+    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     AnimatedContent(
         targetState = page,
         transitionSpec = {
             if (targetState != null) {
-                (slideInHorizontally(tween(260)) { it / 6 } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(260)) { -it / 8 } + fadeOut(tween(160)))
+                (slideInHorizontally(spatial) { it / 6 } + fadeIn(fadeInSpec)) togetherWith
+                    (slideOutHorizontally(spatial) { -it / 8 } + fadeOut(fadeOutSpec))
             } else {
-                (slideInHorizontally(tween(260)) { -it / 8 } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(260)) { it / 6 } + fadeOut(tween(160)))
+                (slideInHorizontally(spatial) { -it / 8 } + fadeIn(fadeInSpec)) togetherWith
+                    (slideOutHorizontally(spatial) { it / 6 } + fadeOut(fadeOutSpec))
             }
         },
         label = "settings-pages",
@@ -330,7 +339,7 @@ private fun SearchPage(store: Store, onBack: () -> Unit) {
                     enabled = store.searches.isNotEmpty(),
                     onClick = {
                         store.clearSearches()
-                        Toast.makeText(context, "История поиска очищена", Toast.LENGTH_SHORT).show()
+                        Notices.show("История поиска очищена")
                     },
                 )
             },
@@ -382,7 +391,7 @@ private fun AppIconPicker() {
                     if (!isSelected) {
                         AppIcons.set(context, icon)
                         selected = icon
-                        Toast.makeText(context, "Значок изменён. На рабочем столе он может обновиться через пару секунд", Toast.LENGTH_LONG).show()
+                        Notices.show("Значок изменён. На рабочем столе он может обновиться через пару секунд")
                     }
                 },
                 shape = RoundedCornerShape(28.dp),
@@ -445,7 +454,7 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
             { s -> CheckRow("Кэш", clearCache, s, "Временные файлы сайтов") { clearCache = it } },
         )
         Spacer(Modifier.height(12.dp))
-        Button(
+        Button(shapes = ButtonDefaults.shapes(),
             enabled = clearHistory || clearCookies || clearCache,
             onClick = {
                 if (clearHistory) { store.clearHistory(); store.clearSearches() }
@@ -456,7 +465,7 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
                     browser.tabs.forEach { it.thumbnail = null }
                 }
                 browser.clearData(clearCookies, clearCache) {
-                    Toast.makeText(context, "Данные очищены", Toast.LENGTH_SHORT).show()
+                    Notices.show("Данные очищены")
                 }
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -840,10 +849,11 @@ internal fun SwitchRow(
     shape: Shape,
     onChange: (Boolean) -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     SettingsRow(
         icon, title, subtitle, shape,
         enabled = enabled,
-        onClick = { onChange(!checked) },
+        onClick = { haptic.performHapticFeedback(if (checked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onChange(!checked) },
         trailing = {
             Switch(
                 checked = checked,
@@ -859,9 +869,10 @@ internal fun SwitchRow(
 
 @Composable
 private fun CheckRow(title: String, checked: Boolean, shape: Shape, subtitle: String? = null, onChange: (Boolean) -> Unit) {
+    val haptic = LocalHapticFeedback.current
     SettingsRow(
         null, title, subtitle, shape,
-        onClick = { onChange(!checked) },
+        onClick = { haptic.performHapticFeedback(if (checked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onChange(!checked) },
         trailing = { Checkbox(checked = checked, onCheckedChange = null) },
     )
 }

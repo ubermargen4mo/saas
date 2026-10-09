@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import android.content.ClipboardManager
@@ -251,7 +253,7 @@ fun EnginePicker(current: SearchEngine, onPick: (SearchEngine) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val rotation by animateFloatAsState(
         targetValue = if (open) 180f else 0f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>(),
         label = "chevron",
     )
     Box {

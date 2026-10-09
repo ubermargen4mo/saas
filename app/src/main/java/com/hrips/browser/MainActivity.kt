@@ -55,13 +55,13 @@ class MainActivity : ComponentActivity() {
             val copied = UploadFiles.copyFiles(applicationContext, uris)
             mainHandler.post {
                 if (copied.isEmpty()) {
-                    android.widget.Toast.makeText(applicationContext, "Не удалось прочитать выбранные файлы", android.widget.Toast.LENGTH_SHORT).show()
+                    Notices.show("Не удалось прочитать выбранные файлы")
                 }
                 deliverFiles(copied)
             }
         }) {
             deliverFiles(emptyList())
-            android.widget.Toast.makeText(applicationContext, "Слишком много фоновых операций", android.widget.Toast.LENGTH_SHORT).show()
+            Notices.show("Приложение занято. Повторите через пару секунд")
         }
     }
 
@@ -78,18 +78,18 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { tree ->
         if (tree == null) { deliverFiles(emptyList()); return@registerForActivityResult }
-        android.widget.Toast.makeText(this, "Подготавливаю папку…", android.widget.Toast.LENGTH_SHORT).show()
+        Notices.show("Подготавливаю папку…")
         if (!AppExecutors.tryExecute {
             val dir = UploadFiles.copyTree(applicationContext, tree)
             mainHandler.post {
                 if (dir == null) {
-                    android.widget.Toast.makeText(applicationContext, "Не удалось прочитать папку", android.widget.Toast.LENGTH_SHORT).show()
+                    Notices.show("Не удалось прочитать папку")
                 }
                 deliverFiles(listOfNotNull(dir))
             }
         }) {
             deliverFiles(emptyList())
-            android.widget.Toast.makeText(applicationContext, "Слишком много фоновых операций", android.widget.Toast.LENGTH_SHORT).show()
+            Notices.show("Приложение занято. Повторите через пару секунд")
         }
     }
 
@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
                 pickFolderLauncher.launch(null)
             } catch (e: Exception) {
                 deliverFiles(emptyList())
-                android.widget.Toast.makeText(this, "Не удалось открыть выбор папки", android.widget.Toast.LENGTH_SHORT).show()
+                Notices.show("Не удалось открыть выбор папки")
             }
         }
         browser.permissions.requestAndroid = { perms -> permissionLauncher.launch(perms) }
@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 // Нет приложения для выбора файлов: страница не должна зависнуть в ожидании
                 deliverFiles(emptyList())
-                android.widget.Toast.makeText(this, "Не удалось открыть выбор файлов", android.widget.Toast.LENGTH_SHORT).show()
+                Notices.show("Не удалось открыть выбор файлов")
             }
         }
         if (browser.tabs.isEmpty()) browser.restore()
@@ -222,10 +222,10 @@ class MainActivity : ComponentActivity() {
                 val url = IncomingIntents.resolve(applicationContext, src)
                 mainHandler.post {
                     if (url != null) browser.newTab(url)
-                    else android.widget.Toast.makeText(applicationContext, "Не удалось открыть файл", android.widget.Toast.LENGTH_SHORT).show()
+                    else Notices.show("Не удалось открыть файл")
                 }
             }) {
-                android.widget.Toast.makeText(this, "Не удалось открыть файл сейчас", android.widget.Toast.LENGTH_SHORT).show()
+                Notices.show("Не удалось открыть файл сейчас")
             }
         } else {
             IncomingIntents.resolve(this, intent)?.let { browser.newTab(it) }

@@ -256,7 +256,7 @@ class Prompts(private val context: Context) {
                         } catch (e: Exception) {
                             // Prompt could have been cancelled by Gecko while SAF was open.
                             android.util.Log.w("Prompts", "Не удалось передать файл сайту", e)
-                            android.widget.Toast.makeText(context, "Не удалось прикрепить файл", android.widget.Toast.LENGTH_SHORT).show()
+                            Notices.show("Не удалось прикрепить файл")
                             // Если и dismiss() не удастся, исключение поймает complete()
                             prompt.dismiss()
                         }

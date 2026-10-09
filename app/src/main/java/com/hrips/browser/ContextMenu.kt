@@ -74,9 +74,9 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
         else -> "аудио" to "аудио"
     }
 
-    fun copy(text: String) {
+    fun copy(text: String, done: String = "Скопировано") {
         ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("", text))
-        Toast.makeText(ctx, "Скопировано", Toast.LENGTH_SHORT).show()
+        Notices.show(done)
     }
     fun share(text: String) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
@@ -92,7 +92,7 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
                 }
             }
             add(Act(HripsIcons.Share, "Поделиться ссылкой") { share(link) })
-            add(Act(HripsIcons.Link, "Копировать адрес ссылки") { copy(link) })
+            add(Act(HripsIcons.Link, "Копировать адрес ссылки") { copy(link, "Адрес ссылки скопирован") })
             if (isHttp(link)) add(Act(HripsIcons.Download, "Скачать по ссылке") { browser.saveUrl(link, info.baseUri, browser.current.isPrivate) })
         }
     }
@@ -109,7 +109,7 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
                 add(Act(HripsIcons.Copy, "Скопировать изображение") { copyImage(ctx.applicationContext, browser, media, info.baseUri) })
             }
             add(Act(HripsIcons.Share, "Поделиться адресом $nounOf") { share(media) })
-            add(Act(HripsIcons.Link, "Копировать адрес $nounOf") { copy(media) })
+            add(Act(HripsIcons.Link, "Копировать адрес $nounOf") { copy(media, "Адрес скопирован") })
         }
     }
 
@@ -281,7 +281,7 @@ private fun ActGroup(acts: List<Act>, onDone: () -> Unit) {
  */
 private fun copyImage(app: Context, browser: Browser, url: String, referrer: String?) {
     val main = Handler(Looper.getMainLooper())
-    fun say(msg: String) = main.post { Toast.makeText(app, msg, Toast.LENGTH_SHORT).show() }
+    fun say(msg: String) = Notices.show(msg)
     browser.fetch(url, referrer, browser.current.isPrivate) { resp ->
         val body = resp?.body
         if (resp == null || body == null || resp.statusCode !in 200..299) {
@@ -330,13 +330,13 @@ private fun copyImage(app: Context, browser: Browser, url: String, referrer: Str
                 main.post {
                     val clip = ClipData.newUri(app.contentResolver, "image", uri)
                     app.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-                    Toast.makeText(app, "Изображение скопировано", Toast.LENGTH_SHORT).show()
+                    Notices.show("Изображение скопировано")
                 }
             } catch (e: Throwable) {
                 say("Не удалось скопировать изображение")
             }
         }) {
-            say("Слишком много фоновых операций")
+            say("Приложение занято. Повторите через пару секунд")
         }
     }
 }

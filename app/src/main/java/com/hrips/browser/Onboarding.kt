@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import android.content.Intent
@@ -19,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -81,7 +84,7 @@ fun FirstRunScreen(store: Store, permissions: Permissions) {
                         PermissionRow(HripsIcons.Pin, "Местоположение", "Карты и поиск рядом с вами")
                         PermissionRow(HripsIcons.Bell, "Уведомления", "Загрузки, управление музыкой и видео, уведомления сайтов")
                         Spacer(Modifier.height(4.dp))
-                        Button(
+                        Button(shapes = ButtonDefaults.shapes(),
                             onClick = {
                                 val need = permissions.missing()
                                 if (need.isEmpty()) permissions.firstRunStage = 1
@@ -99,7 +102,7 @@ fun FirstRunScreen(store: Store, permissions: Permissions) {
                             "Нужна, только если вы скачиваете файлы .apk. Откроется страница настроек Android: включите переключатель для hrips.",
                         )
                         Spacer(Modifier.height(4.dp))
-                        Button(
+                        Button(shapes = ButtonDefaults.shapes(),
                             onClick = {
                                 val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
                                 try {

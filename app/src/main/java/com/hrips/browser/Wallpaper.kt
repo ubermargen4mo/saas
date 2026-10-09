@@ -45,7 +45,7 @@ class Wallpaper(private val context: Context) {
         if (!AppExecutors.tryExecute {
             val bmp = try { decode(uri) } catch (e: Exception) { null }
             if (bmp == null) {
-                main.post { if (generation.get() == token) Toast.makeText(context, "Не удалось открыть изображение", Toast.LENGTH_SHORT).show() }
+                main.post { if (generation.get() == token) Notices.show("Не удалось открыть изображение") }
             } else {
                 synchronized(fileLock) {
                     runCatching {
@@ -57,7 +57,7 @@ class Wallpaper(private val context: Context) {
                 main.post { if (generation.get() == token) image = bmp.asImageBitmap() }
             }
         }) {
-            Toast.makeText(context, "Слишком много фоновых операций", Toast.LENGTH_SHORT).show()
+            Notices.show("Приложение занято. Повторите через пару секунд")
         }
     }
 

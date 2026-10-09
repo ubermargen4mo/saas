@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -76,7 +81,14 @@ import kotlin.math.roundToInt
  * (GeckoView рисует в SurfaceView, обычный drawToBitmap дал бы чёрный квадрат).
  * [done] вызывается всегда, с картинкой или без: после него можно открывать переключатель.
  */
-fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Unit) {
+fun captureThumbnail(
+    activity: Activity?,
+    view: View?,
+    tab: Tab,
+    allowPixelCopy: Boolean = true,
+    timeoutMs: Long = 1500,
+    done: () -> Unit,
+) {
     val gv = view as? org.mozilla.geckoview.GeckoView
     if (activity == null || gv == null || tab.home ||
         gv.width == 0 || gv.height == 0 || !gv.isShown ||
@@ -94,7 +106,7 @@ fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Uni
     val finish: () -> Unit = {
         if (!finished) { finished = true; done() }
     }
-    main.postDelayed({ finish() }, 1500)
+    main.postDelayed({ finish() }, timeoutMs)
 
     fun store(bmp: Bitmap) {
         tab.thumbnail = bmp.asImageBitmap()
@@ -108,7 +120,7 @@ fun captureThumbnail(activity: Activity?, view: View?, tab: Tab, done: () -> Uni
 
     // Запасной способ: PixelCopy окна (работает, пока страница на экране)
     fun viaPixelCopy() {
-        if (finished || Build.VERSION.SDK_INT < 26) { finish(); return }
+        if (finished || !allowPixelCopy || Build.VERSION.SDK_INT < 26) { finish(); return }
         try {
             val loc = IntArray(2)
             gv.getLocationInWindow(loc)
@@ -167,7 +179,6 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     var newGroupFor by remember { mutableStateOf<Tab?>(null) }
     var editGroup by remember { mutableStateOf<TabGroup?>(null) }
     var showClosed by remember { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(browser.groups.size) {
         browser.pruneGroups()
         if (filter != null && browser.groups.none { it.id == filter }) filter = null
@@ -177,11 +188,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         val before = browser.closedTabs.firstOrNull()
         browser.closeTab(i)
         if (browser.closedTabs.firstOrNull() !== before) {
-            scope.launch {
-                snackbar.currentSnackbarData?.dismiss()
-                val r = snackbar.showSnackbar("Вкладка закрыта", actionLabel = "Вернуть", duration = SnackbarDuration.Short)
-                if (r == SnackbarResult.ActionPerformed) browser.reopenLast()
-            }
+            Notices.show("Вкладка закрыта", "Вернуть") { browser.reopenLast() }
         }
     }
 
@@ -394,15 +401,22 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             onDone = onClose,
             privatePage = mode == 1,
             onCloseAll = {
-                if (mode == 1) browser.closePrivateTabs()
-                else browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it) }
+                if (mode == 1) {
+                    browser.closePrivateTabs()
+                } else {
+                    val toClose = browser.tabs.count { !it.isPrivate }
+                    browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it) }
+                    // История закрытых хранит 15 вкладок: вернуть можно не больше
+                    val undoable = minOf(toClose, browser.closedTabs.size)
+                    if (undoable > 0) {
+                        Notices.show("Закрыто вкладок: $toClose", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
+                    }
+                }
             },
             closedCount = browser.closedTabs.size,
             onClosed = { showClosed = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
-
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 96.dp))
 
         newGroupFor?.let { t ->
             GroupDialog(
@@ -538,6 +552,7 @@ private fun TabCard(
     val offsetY = remember { Animatable(0f) }
     var menu by remember { mutableStateOf(false) }
     val dismissPx = with(LocalDensity.current) { 110.dp.toPx() }
+    var pastThreshold by remember { mutableStateOf(false) }
     val titleColor = if (selected) cs.onPrimaryContainer else cs.onSurface
     val subColor = titleColor.copy(alpha = 0.7f)
     val subtitle = when {
@@ -556,6 +571,7 @@ private fun TabCard(
             .pointerInput(tab) {
                 detectVerticalDragGestures(
                     onDragEnd = {
+                        pastThreshold = false
                         scope.launch {
                             if (offsetY.value < -dismissPx) {
                                 offsetY.animateTo(-dismissPx * 5, tween(160))
@@ -568,7 +584,14 @@ private fun TabCard(
                     onDragCancel = { scope.launch { offsetY.animateTo(0f, spring()) } },
                 ) { change, dy ->
                     change.consume()
-                    scope.launch { offsetY.snapTo((offsetY.value + dy).coerceAtMost(0f)) }
+                    val next = (offsetY.value + dy).coerceAtMost(0f)
+                    // Короткий отклик, когда карточку оттянули достаточно, чтобы она закрылась при отпускании
+                    val past = next < -dismissPx
+                    if (past != pastThreshold) {
+                        pastThreshold = past
+                        haptic.performHapticFeedback(if (past) HapticFeedbackType.GestureThresholdActivate else HapticFeedbackType.GestureThresholdDeactivate)
+                    }
+                    scope.launch { offsetY.snapTo(next) }
                 }
             },
     ) {
@@ -735,7 +758,7 @@ private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modi
             badge = if (priv) Badge.CLOVER else Badge.COOKIE9,
         )
         if (!searching) {
-            FilledTonalButton(onClick = onNew) { Text(if (priv) "Приватная вкладка" else "Новая вкладка") }
+            FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = onNew) { Text(if (priv) "Приватная вкладка" else "Новая вкладка") }
         }
     }
 }
@@ -787,12 +810,20 @@ private fun SwitcherBar(
                     }
                 }
             }
+            // Печенье живое: при нажатии сжимается, после нажатия делает четверть оборота (плюс при этом остаётся плюсом)
+            val fabSource = remember { MutableInteractionSource() }
+            val fabPressed by fabSource.collectIsPressedAsState()
+            var fabTurns by remember { mutableIntStateOf(0) }
+            val fabHaptic = LocalHapticFeedback.current
+            val fabRotation by animateFloatAsState(fabTurns * 90f, MaterialTheme.motionScheme.slowSpatialSpec<Float>(), label = "fabTurn")
+            val fabScale by animateFloatAsState(if (fabPressed) 0.88f else 1f, MaterialTheme.motionScheme.fastSpatialSpec<Float>(), label = "fabPress")
             FloatingActionButton(
-                onClick = onNew,
+                onClick = { fabHaptic.performHapticFeedback(HapticFeedbackType.Confirm); fabTurns++; onNew() },
                 shape = MaterialShapes.Cookie9Sided.toShape(),
                 containerColor = fabBg,
                 contentColor = fabFg,
-                modifier = Modifier.size(68.dp),
+                interactionSource = fabSource,
+                modifier = Modifier.size(68.dp).graphicsLayer { rotationZ = fabRotation; scaleX = fabScale; scaleY = fabScale },
             ) {
                 Icon(HripsIcons.Add, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", Modifier.size(30.dp))
             }

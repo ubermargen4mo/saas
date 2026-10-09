@@ -39,6 +39,11 @@ class HripsApp : Application() {
     val browser: Browser
         get() = browserDelegate.value
 
+    override fun onCreate() {
+        super.onCreate()
+        Notices.init(this)
+    }
+
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (browserDelegate.isInitialized()) browser.onTrimMemory(level)

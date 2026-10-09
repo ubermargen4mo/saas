@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -168,7 +169,16 @@ fun BrowserScreen(browser: Browser) {
 
     // Ссылка на GeckoView нужна, чтобы снять превью страницы перед открытием переключателя вкладок
     val viewRef = remember { arrayOfNulls<GeckoView>(1) }
-    val requestTabs: () -> Unit = { captureThumbnail(activity, viewRef[0], tab) { showTabs = true } }
+    val requestTabs: () -> Unit = {
+        // Есть прошлый снимок: открываем сразу, свежий подтянется в уже открытый переключатель.
+        // Системный PixelCopy тут не годится (он бы снял сам переключатель), поэтому только снимок движка.
+        if (tab.thumbnail != null || tab.home) {
+            showTabs = true
+            captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false) { }
+        } else {
+            captureThumbnail(activity, viewRef[0], tab, timeoutMs = 350) { showTabs = true }
+        }
+    }
     // Превью обновляем сами, когда страница догрузилась: карточки в переключателе сразу с актуальной картинкой
     LaunchedEffect(tab, tab.loading, tab.url) {
         if (!tab.loading && !tab.home && !showTabs && !showSearch && !showLibrary) {
@@ -177,7 +187,9 @@ fun BrowserScreen(browser: Browser) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val origins = remember { OriginTracker() }
+    CompositionLocalProvider(LocalOrigins provides origins) {
+    Box(Modifier.fillMaxSize().trackTouches(origins)) {
     Column(Modifier.fillMaxSize().imePadding()) {
         if (!fs) {
         Column(Modifier.fillMaxWidth().statusBarsPadding()) {
@@ -222,7 +234,7 @@ fun BrowserScreen(browser: Browser) {
                 }
                 if (wide) {
                     // Справа: вкладки, расширения, [загрузки: только пока идут], меню
-                    TabCounterButton(browser.tabs.size) { requestTabs() }
+                    TabCounterButton(browser.tabs.size, Modifier.originAnchor("tabs")) { requestTabs() }
                     IconButton(onClick = { showExtSheet = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
                     AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true })
                     // Три точки как в Опере: центр на 28dp от правого края экрана, от значка расширений 42dp.
@@ -237,9 +249,16 @@ fun BrowserScreen(browser: Browser) {
             }
         }
 
-        Box(Modifier.fillMaxWidth().height(4.dp)) {
-            if (tab.loading && !tab.home) {
-                LinearWavyProgressIndicator(progress = { tab.progress / 100f }, modifier = Modifier.fillMaxWidth())
+        Box(Modifier.fillMaxWidth().height(4.dp), contentAlignment = Alignment.Center) {
+            // Прогресс приходит скачками: сглаживаем. Волна рисуется в родной высоте (10dp) и выступает
+            // из 4dp-полосы, иначе она сплющена до линии
+            val shownProgress by animateFloatAsState(
+                tab.progress / 100f,
+                MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+                label = "pageProgress",
+            )
+            AnimatedVisibility(visible = tab.loading && !tab.home, enter = fadeIn(), exit = fadeOut()) {
+                LinearWavyProgressIndicator(progress = { shownProgress }, modifier = Modifier.fillMaxWidth().requiredHeight(10.dp))
             }
         }
 
@@ -308,7 +327,7 @@ fun BrowserScreen(browser: Browser) {
                         Icon(if (tab.loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
                     }
                     IconButton(onClick = { browser.newTab(incognito = tab.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
-                    TabCounterButton(browser.tabs.size) { requestTabs() }
+                    TabCounterButton(browser.tabs.size, Modifier.originAnchor("tabs")) { requestTabs() }
                 }
             }
         } else if (wide && !fs) {
@@ -325,11 +344,7 @@ fun BrowserScreen(browser: Browser) {
             onClose = { showExtSheet = false },
         )
     }
-    AnimatedVisibility(
-        visible = showExtManager,
-        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
-        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
-    ) {
+    RevealHost(visible = showExtManager, group = null) {
         ExtensionsScreen(browser.extensions, extStoreFirst, onBack = { showExtManager = false })
     }
     browser.extensions.prompt?.let { p ->
@@ -343,30 +358,18 @@ fun BrowserScreen(browser: Browser) {
     }
 
     // Страница загрузок поверх браузера
-    AnimatedVisibility(
-        visible = showDownloads,
-        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
-        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
-    ) {
+    RevealHost(visible = showDownloads, group = null) {
         DownloadsScreen(browser.downloads, onBack = { showDownloads = false })
     }
     // Сканер QR-кодов поверх браузера; найденный адрес открывается в новой вкладке (в приватной, если текущая приватная)
-    AnimatedVisibility(
-        visible = showQrScan,
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(160)),
-    ) {
+    RevealHost(visible = showQrScan, group = null) {
         QrScannerScreen(
             onOpen = { url -> showQrScan = false; browser.newTab(url, incognito = tab.isPrivate) },
             onClose = { showQrScan = false },
         )
     }
     // Настройки: отдельная страница, как загрузки
-    AnimatedVisibility(
-        visible = showSettings,
-        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
-        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
-    ) {
+    RevealHost(visible = showSettings, group = null) {
         SettingsScreen(
             browser = browser,
             app = app,
@@ -376,11 +379,7 @@ fun BrowserScreen(browser: Browser) {
         )
     }
     // Переключатель вкладок: "Вкладки / Приватный", карусель карточек с превью
-    AnimatedVisibility(
-        visible = showTabs,
-        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.92f),
-        exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.96f),
-    ) {
+    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer) {
         TabSwitcher(
             browser = browser,
             onClose = { showTabs = false },
@@ -388,11 +387,7 @@ fun BrowserScreen(browser: Browser) {
         )
     }
     // Поисковая панель: разовый выбор движка, история запросов, подсказки
-    AnimatedVisibility(
-        visible = showSearch,
-        enter = fadeIn(tween(160)) + scaleIn(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.96f),
-        exit = fadeOut(tween(120)),
-    ) {
+    RevealHost(visible = showSearch, group = "search", startColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
         SearchPanel(
             store = store,
             initial = if (tab.home) "" else parsed?.second ?: tab.url,
@@ -441,6 +436,10 @@ fun BrowserScreen(browser: Browser) {
             onClick = { immersive = false },
             modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp).size(40.dp).alpha(0.7f),
         ) { Icon(HripsIcons.Close, "Выйти из полноэкранного режима") }
+    }
+
+    // Единые уведомления: выше всех оверлеев, над нижней панелью браузера
+    NoticeHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 96.dp))
     }
     }
 
@@ -527,5 +526,5 @@ fun openAutofillSettings(context: android.content.Context) {
             // пробуем следующий вариант
         }
     }
-    Toast.makeText(context, "Откройте: Настройки → Пароли и аккаунты → Автозаполнение", Toast.LENGTH_LONG).show()
+    Notices.show("Откройте: Настройки → Пароли и аккаунты → Автозаполнение")
 }

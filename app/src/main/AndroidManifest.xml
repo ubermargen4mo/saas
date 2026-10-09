@@ -20,6 +20,7 @@
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
     <application
+        android:enableOnBackInvokedCallback="true"
         android:name=".HripsApp"
         android:label="hrips"
         android:icon="@mipmap/ic_launcher"

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import androidx.compose.animation.AnimatedVisibility
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -119,7 +122,7 @@ fun ExtensionsSheet(
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Расширения", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                FilledTonalButton(onClick = { onClose(); onManage(false) }) { Text("Управление") }
+                FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = { onClose(); onManage(false) }) { Text("Управление") }
             }
             Spacer8()
             if (list.none { !it.isBuiltIn }) {
@@ -127,7 +130,7 @@ fun ExtensionsSheet(
                     HripsIcons.Puzzle, "Расширений пока нет",
                     "Ставьте расширения из каталога Mozilla: блокировщики, менеджеры паролей, тёмные темы и другие.",
                 )
-                Button(onClick = { onClose(); onManage(true) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Button(shapes = ButtonDefaults.shapes(), onClick = { onClose(); onManage(true) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text("Открыть каталог")
                 }
                 Spacer8()
@@ -217,7 +220,7 @@ private fun ColumnScope.InstalledList(extensions: Extensions, onRemove: (WebExte
     var expanded by remember { mutableStateOf<String?>(null) }
     if (list.isEmpty()) {
         EmptyState(HripsIcons.Puzzle, "Расширений пока нет", "Откройте каталог и установите первое одним нажатием.")
-        Button(onClick = onStore) { Text("Открыть каталог") }
+        Button(shapes = ButtonDefaults.shapes(), onClick = onStore) { Text("Открыть каталог") }
         return
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -330,7 +333,7 @@ private fun ColumnScope.StoreList(extensions: Extensions) {
         }
         failed -> {
             EmptyState(HripsIcons.Puzzle, "Каталог недоступен", "Проверьте соединение и попробуйте ещё раз.")
-            FilledTonalButton(onClick = { reload++ }) { Text("Повторить") }
+            FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = { reload++ }) { Text("Повторить") }
         }
         results.isEmpty() -> EmptyState(HripsIcons.Search, "Ничего не найдено", "Попробуйте другой запрос.")
         else -> {
@@ -366,9 +369,9 @@ private fun ColumnScope.StoreList(extensions: Extensions) {
                                 }
                             }
                             when {
-                                a.guid in have -> FilledTonalButton(onClick = {}, enabled = false) { Text("Установлено") }
+                                a.guid in have -> FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = {}, enabled = false) { Text("Установлено") }
                                 a.guid in extensions.installing -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
-                                a.xpiUrl != null -> Button(onClick = { extensions.install(a.guid, a.xpiUrl) }) { Text("Установить") }
+                                a.xpiUrl != null -> Button(shapes = ButtonDefaults.shapes(), onClick = { extensions.install(a.guid, a.xpiUrl) }) { Text("Установить") }
                             }
                         }
                     }

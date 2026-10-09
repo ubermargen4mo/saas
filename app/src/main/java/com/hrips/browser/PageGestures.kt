@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
+import androidx.compose.material3.LoadingIndicator
 import android.app.Activity
 import android.view.MenuItem
 import androidx.compose.animation.animateColorAsState
@@ -90,7 +93,7 @@ fun PullIndicator(pullPx: Float, thresholdPx: Float, refreshing: Boolean, modifi
 
     val density = LocalDensity.current
     val cs = MaterialTheme.colorScheme
-    val size = 40.dp
+    val size = 44.dp
     val sizePx = with(density) { size.toPx() }
     val progress = (pullPx / thresholdPx).coerceIn(0f, 1f)
 
@@ -105,17 +108,10 @@ fun PullIndicator(pullPx: Float, thresholdPx: Float, refreshing: Boolean, modifi
     val y by animateFloatAsState(
         targetY,
         // За пальцем - без задержки, отпустили - пружинкой
-        if (pullPx > 0f && !refreshing) snap() else spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow),
+        if (pullPx > 0f && !refreshing) snap() else MaterialTheme.motionScheme.defaultSpatialSpec<Float>(),
         label = "pullY",
     )
 
-    val spin = rememberInfiniteTransition(label = "pullSpin")
-    val spinAngle by spin.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "pullSpinAngle",
-    )
-    val angle = if (refreshing) spinAngle else progress * 270f
     val tint by animateColorAsState(
         if (armed || refreshing) cs.primary else cs.onSurfaceVariant,
         tween(150),
@@ -134,7 +130,12 @@ fun PullIndicator(pullPx: Float, thresholdPx: Float, refreshing: Boolean, modifi
             .graphicsLayer { this.alpha = alpha; scaleX = grow; scaleY = grow },
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(HripsIcons.BarRefresh, null, Modifier.size(24.dp).rotate(angle), tint = tint)
+            // Пока тянем, фигура морфится вслед за пальцем; при обновлении крутится и меняет формы сама
+            if (refreshing) {
+                LoadingIndicator(Modifier.size(32.dp), color = tint)
+            } else {
+                LoadingIndicator(progress = { progress }, modifier = Modifier.size(32.dp), color = tint)
+            }
         }
     }
 }

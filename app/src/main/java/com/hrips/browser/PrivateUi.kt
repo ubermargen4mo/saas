@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.hrips.browser
 
 import android.app.Activity
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -167,7 +170,7 @@ fun PrivateStartPage(
                 onClick = onSearch,
                 shape = CircleShape,
                 color = cs.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().originAnchor("search"),
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
@@ -199,7 +202,7 @@ fun PrivateStartPage(
 
             if (privateCount > 0) {
                 Spacer(Modifier.height(28.dp))
-                FilledTonalButton(onClick = onCloseAll) { Text("Закрыть приватные вкладки ($privateCount)") }
+                FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = onCloseAll) { Text("Закрыть приватные вкладки ($privateCount)") }
             }
         }
     }
