@@ -96,3 +96,16 @@ Global Privacy Control (включён по умолчанию) и удален�
 
 ## Сборка и тесты
 Release-сборка идёт через R8 (`app/proguard-rules.pro`), baseline profile лежит в `app/src/main/baseline-prof.txt`. Unit-тесты: `gradle testDebugUnitTest`.
+
+## Загрузки
+`Downloads.kt` (логика), `DownloadService.kt` (foreground-сервис и уведомления), `DownloadsScreen.kt` (страница).
+Первый кусок файла читается из потока GeckoView, всё остальное (после паузы, обрыва, перезапуска) докачивается запросом
+`Range` через `BrowserEngine.fetchRange`. Недокачанная часть лежит в `files/partial/<id>.part`, с какого байта продолжать,
+определяет размер этого файла. Статусы: `QUEUED, RUNNING, PAUSED` (пользователь), `WAITING` (обрыв: сеть или ошибка сервера,
+продолжится само), `DONE, FAILED, CANCELLED`. Сеть отслеживает `registerDefaultNetworkCallback`, зависшее соединение закрывает
+watchdog (30 с без данных). Список без приватных загрузок хранится в `files/downloads.json`. Нажатие на уведомление шлёт
+`Downloads.ACTION_OPEN_PAGE` в `MainActivity`, `BrowserScreen` открывает страницу загрузок.
+
+## Страницы
+История, закладки, загрузки, разрешения сайтов, расширения и настройки: полноэкранные страницы через `RevealHost`.
+Общий каркас списков: `ListPage` в `LibraryPages.kt` (большой заголовок, центр до 720dp, сегментированные карточки).
