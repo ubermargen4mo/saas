@@ -308,11 +308,15 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().graphicsLayer { alpha = chromeAlpha() }) {
             // Шапка: переключатель «Вкладки / Приватные» и поиск по вкладкам
+            // Спеки берём до AnimatedContent: transitionSpec не @Composable
+            val headerFadeIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+            val headerFadeOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            val headerScale = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
             AnimatedContent(
                 targetState = searching,
                 transitionSpec = {
-                    (fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec(), initialScale = 0.96f)) togetherWith
-                        fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) using SizeTransform(clip = false) { _, _ -> snap() }
+                    (fadeIn(headerFadeIn) + scaleIn(headerScale, initialScale = 0.96f)) togetherWith
+                        fadeOut(headerFadeOut) using SizeTransform(clip = false) { _, _ -> snap() }
                 },
                 label = "switcherHeader",
             ) { isSearching ->
