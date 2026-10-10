@@ -110,11 +110,13 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     Spacer(Modifier.height(24.dp))
                     // Вид строки снят со скриншота Оперы (плотность 2.0): высота 56dp, края скруглены полностью,
                     // значки по центру «ячеек» 56dp слева и справа, текст начинается на 56dp от левого края.
+                    // Высота растёт с крупным шрифтом; именно height, а не heightIn(min): внутри fillMaxSize/fillMaxHeight
+                    val searchHeight = 56.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
                     Surface(
                         onClick = onSearch,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.widthIn(max = barMax).fillMaxWidth().heightIn(min = 56.dp).originAnchor("search"),
+                        modifier = Modifier.widthIn(max = barMax).fillMaxWidth().height(searchHeight).originAnchor("search"),
                     ) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                             if (engine != null && onPickEngine != null) {

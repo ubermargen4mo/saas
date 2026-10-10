@@ -256,7 +256,8 @@ fun RevealHost(
                 } else {
                     val corner = max(lerpFloat(startCorner, 0f, p.coerceIn(0f, 1f)), b * 32.dp.toPx())
                     shape = RevealShape(lerpRect(start, full, p), corner)
-                    clip = true
+                    // Раскрылось на весь экран: обрезка больше не нужна, содержимое рисуется без неё
+                    clip = p < 1f || b > 0f
                 }
             }
             .drawBehind {

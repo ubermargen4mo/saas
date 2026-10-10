@@ -35,7 +35,12 @@ class TabGroup(val id: String, name: String, color: Int) {
 }
 
 /** Закрытая вкладка: снимок (адрес, заголовок, история страницы) и группа, в которой она была. */
-class ClosedTab(val snap: TabSnap, val group: TabGroup?)
+class ClosedTab(private val parts: TabSaveParts, val group: TabGroup?) {
+    val url: String get() = parts.url
+    val title: String get() = parts.title
+    /** Строка состояния сериализуется только здесь, при возврате вкладки, а не в момент закрытия. */
+    fun snap(): TabSnap = parts.build()
+}
 
 private fun hostOf(url: String) = runCatching { Uri.parse(url).host }.getOrNull()?.removePrefix("www.") ?: url
 
@@ -156,7 +161,7 @@ fun ClosedTabsSheet(browser: Browser, onDismiss: () -> Unit, onRestored: () -> U
             } else {
                 LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(list) { c ->
-                        val label = c.snap.title.ifBlank { hostOf(c.snap.url) }
+                        val label = c.title.ifBlank { hostOf(c.url) }
                         Surface(
                             onClick = { browser.reopen(c); onRestored() },
                             shape = HripsShapes.M,
@@ -165,7 +170,7 @@ fun ClosedTabsSheet(browser: Browser, onDismiss: () -> Unit, onRestored: () -> U
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Favicon(c.snap.url, 32.dp) {
+                                Favicon(c.url, 32.dp) {
                                     Surface(shape = CircleShape, color = cs.surfaceVariant, modifier = Modifier.size(32.dp)) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(label.firstOrNull()?.uppercase() ?: "", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
@@ -175,7 +180,7 @@ fun ClosedTabsSheet(browser: Browser, onDismiss: () -> Unit, onRestored: () -> U
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                                    Text(hostOf(c.snap.url), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                    Text(hostOf(c.url), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                                 }
                                 c.group?.let { g ->
                                     Spacer(Modifier.width(8.dp))

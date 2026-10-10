@@ -89,7 +89,7 @@ class Store(context: Context) {
     private val io: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "hrips-store").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
     }
-    private data class TabSaveJob(val list: List<TabSnap>, val index: Int, val groups: List<TabGroup>)
+    private class TabSaveJob(val build: () -> List<TabSnap>, val index: Int, val groups: List<TabGroup>)
     private val pendingTabSave = AtomicReference<TabSaveJob?>(null)
     private val tabSaveWorkerRunning = AtomicBoolean(false)
     private val entrySaveLock = Any()
@@ -431,8 +431,16 @@ class Store(context: Context) {
     fun saveTabSnapsAsync(list: List<TabSnap>, index: Int, groups: List<TabGroup> = emptyList()) {
         // Копии нужны: Compose-backed lists могут измениться сразу после onStop().
         val safeList = list.map { TabSnap(it.url, it.title, it.state, it.group, it.id) }
+        saveTabSnapsDeferred({ safeList }, index, groups)
+    }
+
+    /**
+     * Как [saveTabSnapsAsync], но список собирает [build] уже в потоке записи: так тяжёлая сериализация состояний
+     * вкладок не занимает главный поток. [build] должен обращаться только к данным, снятым заранее.
+     */
+    fun saveTabSnapsDeferred(build: () -> List<TabSnap>, index: Int, groups: List<TabGroup> = emptyList()) {
         val safeGroups = groups.map { TabGroup(it.id, it.name, it.color) }
-        pendingTabSave.set(TabSaveJob(safeList, index, safeGroups))
+        pendingTabSave.set(TabSaveJob(build, index, safeGroups))
         if (tabSaveWorkerRunning.compareAndSet(false, true)) {
             io.execute { drainTabSaves() }
         }
@@ -442,7 +450,7 @@ class Store(context: Context) {
         try {
             while (true) {
                 val job = pendingTabSave.getAndSet(null) ?: return
-                writeTabSnaps(job.list, job.index, job.groups)
+                writeTabSnaps(job.build(), job.index, job.groups)
             }
         } finally {
             tabSaveWorkerRunning.set(false)

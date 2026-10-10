@@ -22,6 +22,47 @@ private val ISSUER_CN = Regex("(?:^|,)CN=([^,]+)")
 /** Как показывать защиту страницы в адресной строке. */
 enum class Trust { NONE, SECURE, WARNING }
 
+/** Кэш строки состояния вкладки: пока движок не прислал новое состояние, повторно не сериализуем. Потокобезопасен. */
+class StateCache {
+    private var text: String? = null
+    private var owner: GeckoSession.SessionState? = null
+    private var version = -1
+
+    fun serialize(st: GeckoSession.SessionState, v: Int): String {
+        synchronized(this) {
+            val cached = text
+            if (cached != null && owner === st && version == v) return cached
+        }
+        val result = st.toString()
+        synchronized(this) {
+            text = result
+            owner = st
+            version = v
+        }
+        return result
+    }
+}
+
+/**
+ * Данные вкладки для записи на диск или для списка закрытых. Собираются в главном потоке без дорогих вызовов,
+ * а сериализация состояния движка (SessionState.toString(), десятки миллисекунд на длинной истории) происходит
+ * в [build], который вызывается вне главного потока. Объект не держит саму вкладку и её сессию, поэтому закрытые
+ * вкладки не удерживают движок в памяти.
+ */
+class TabSaveParts internal constructor(
+    val url: String,
+    val title: String,
+    private val group: String?,
+    private val id: String,
+    private val raw: String?,
+    private val state: GeckoSession.SessionState?,
+    private val version: Int,
+    private val cache: StateCache,
+) {
+    /** Можно звать из любого потока. */
+    fun build(): TabSnap = TabSnap(url, title, raw ?: state?.let { cache.serialize(it, version) }, group, id)
+}
+
 /** Одна вкладка = одна GeckoSession + наблюдаемое состояние для Compose. */
 class Tab(
     private val runtime: GeckoRuntime,
@@ -123,9 +164,7 @@ class Tab(
             lazyStateParsed = value
         }
     /** Кэш сериализованного состояния для [snapshot]: toString() у SessionState дорогой и вызывался для каждой вкладки при каждом сохранении. */
-    private var cachedStateText: String? = null
-    private var cachedStateVersion = -1
-    private var cachedStateOwner: GeckoSession.SessionState? = null
+    private val stateCache = StateCache()
     private var lastRecover = 0L
     private var recoverStreak = 0
     private var recovering = false
@@ -212,29 +251,21 @@ class Tab(
         fresh.setPriorityHint(if (visible && focused) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
     }
 
-    /** Что сохранить о вкладке на диск. */
-    fun snapshot(): TabSnap = TabSnap(
-        if (home) "" else url,
-        title,
-        if (home) null else stateText(),
-        group,
-        id,
-    )
+    /** Что сохранить о вкладке на диск (синхронно: сериализует состояние движка прямо здесь, поэтому не для частых вызовов в главном потоке). */
+    fun snapshot(): TabSnap = saveParts().build()
 
-    /** Строка состояния для записи на диск. Не пересобирается, пока движок не прислал новое состояние. */
-    private fun stateText(): String? {
+    /**
+     * Данные для записи вкладки, собранные в главном потоке без дорогих вызовов. Сериализация состояния движка
+     * (SessionState.toString(), заметные десятки миллисекунд на длинной истории) делается в [SaveParts.build] и
+     * должна вызываться вне главного потока: раньше она шла в главном потоке при каждом сохранении (через 400 мс
+     * после любого события движка) и при закрытии вкладки, это и давало подвисания в переключателе вкладок.
+     */
+    fun saveParts(): TabSaveParts {
         val live = sessionState
-        if (live == null) {
-            // Вкладка ещё не открывалась в этом запуске: отдаём сохранённую строку как есть, без разбора и повторной сериализации
-            savedStateRaw?.let { return it }
-        }
-        val st = live ?: lazyStateParsed ?: return null
-        if (cachedStateText == null || cachedStateOwner !== st || cachedStateVersion != sessionStateVersion) {
-            cachedStateText = st.toString()
-            cachedStateOwner = st
-            cachedStateVersion = sessionStateVersion
-        }
-        return cachedStateText
+        // Вкладка ещё не открывалась в этом запуске: отдаём сохранённую строку как есть, без разбора и повторной сериализации
+        val raw = if (!home && live == null) savedStateRaw else null
+        val st = if (home || raw != null) null else (live ?: lazyStateParsed)
+        return TabSaveParts(if (home) "" else url, title, group, id, raw, st, sessionStateVersion, stateCache)
     }
 
     private fun uaMode(desktop: Boolean) =

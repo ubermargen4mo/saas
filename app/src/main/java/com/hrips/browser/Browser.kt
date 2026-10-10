@@ -324,7 +324,7 @@ class Browser(
         // вкладка группы остаётся первой в «Недавно закрытых». При этом lifecycle обновляем один раз.
         doomed.asReversed().forEach { tab ->
             if (!tab.isPrivate && !tab.home && tab.url.isNotBlank()) {
-                closedTabs.add(0, ClosedTab(tab.snapshot(), groupOf(tab)))
+                closedTabs.add(0, ClosedTab(tab.saveParts(), groupOf(tab)))
             }
             tab.close()
         }
@@ -340,7 +340,8 @@ class Browser(
     /** Возвращает закрытую вкладку вместе с историей страницы и группой (если группы уже нет, она создаётся заново). */
     fun reopen(c: ClosedTab) {
         closedTabs.remove(c)
-        val tab = create(c.snap.url, savedState = c.snap.state, savedTitle = c.snap.title, tabId = c.snap.id)
+        val snap = c.snap()
+        val tab = create(snap.url, savedState = snap.state, savedTitle = snap.title, tabId = snap.id)
         c.group?.let { g ->
             if (groups.none { it.id == g.id }) groups.add(g)
             tab.group = g.id
@@ -377,7 +378,7 @@ class Browser(
     fun closeTab(index: Int) {
         val closed = tabs.getOrNull(index) ?: return
         if (!closed.isPrivate && !closed.home && closed.url.isNotBlank()) {
-            closedTabs.add(0, ClosedTab(closed.snapshot(), groupOf(closed)))
+            closedTabs.add(0, ClosedTab(closed.saveParts(), groupOf(closed)))
             while (closedTabs.size > 15) closedTabs.removeAt(closedTabs.lastIndex)
         }
         closed.close()
@@ -440,6 +441,8 @@ class Browser(
         val cur = tabs.getOrNull(currentIndex)
         val idx = regular.indexOf(cur).takeIf { it >= 0 } ?: regular.lastIndex.coerceAtLeast(0)
         pruneGroups()
-        store.saveTabSnapsAsync(regular.map { it.snapshot() }, idx, groups.toList())
+        // В главном потоке только собираем данные; сериализация состояний вкладок идёт в потоке записи
+        val parts = regular.map { it.saveParts() }
+        store.saveTabSnapsDeferred({ parts.map { it.build() } }, idx, groups.toList())
     }
 }

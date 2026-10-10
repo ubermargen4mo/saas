@@ -57,11 +57,14 @@ internal fun AddressBar(
     val fxOut = motion.fastEffectsSpec<Float>()
     val popIn = motion.fastSpatialSpec<Float>()
     run {
+        // Высота растёт вместе с крупным шрифтом системы. Именно height, а не heightIn(min): внутри стоят fillMaxHeight,
+        // и при одном min они растягивали строку на всё свободное место (на экране была огромная таблетка)
+        val barHeight = (if (wide) 40.dp else 44.dp) * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
         // Единый вид (планшет и телефон): контурный щит слева, адрес, кнопка «Обновить» справа внутри строки
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = modifier.heightIn(min = if (wide) 40.dp else 44.dp).originAnchor("search"),
+            modifier = modifier.height(barHeight).originAnchor("search"),
         ) {
             Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 // Логотип движка <-> замок: плавная смена при переходе между главной/выдачей и сайтом

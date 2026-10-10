@@ -152,6 +152,21 @@ fun captureThumbnail(
         }
     }
 
+    // Снимок движка в полный размер экрана (на планшете это ~2400x1500): уменьшаем его не в главном потоке,
+    // иначе кадр открытия переключателя вкладок, на который приходится снимок, подвисал
+    fun scaleAndStore(full: Bitmap) {
+        val w = 720
+        val h = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
+        val ran = AppExecutors.tryExecute {
+            val scaled = if (full.width > w) Bitmap.createScaledBitmap(full, w, h, true) else full
+            main.post {
+                store(scaled)
+                finish()
+            }
+        }
+        if (!ran) finish()
+    }
+
     // Запасной способ: PixelCopy окна (работает, пока страница на экране)
     fun viaPixelCopy() {
         if (finished || !allowPixelCopy || Build.VERSION.SDK_INT < 26) { finish(); return }
@@ -177,11 +192,7 @@ fun captureThumbnail(
             if (full == null || full.width <= 0 || full.height <= 0) {
                 viaPixelCopy()
             } else {
-                val w = 720
-                val h = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
-                val scaled = if (full.width > w) Bitmap.createScaledBitmap(full, w, h, true) else full
-                store(scaled)
-                finish()
+                scaleAndStore(full)
             }
         }, { viaPixelCopy() })
     } catch (e: Throwable) {
@@ -220,7 +231,9 @@ private class CardEnv {
     var onNewGroup: (Tab) -> Unit = {}
 }
 
-private fun Tab.matches(q: String) = matchesQuery(label(), url, q)
+// Пустой запрос: ничего не читаем. Иначе список зависел бы от заголовка и адреса каждой вкладки и пересчитывался
+// (с компиляцией Regex на каждую вкладку) всякий раз, когда любая вкладка в фоне меняла заголовок
+private fun Tab.matches(q: String) = q.isEmpty() || matchesQuery(label(), url, q)
 
 /**
  * Переключатель вкладок на весь экран в стиле Material 3 Expressive: переключатель «Вкладки / Приватные»
@@ -1022,6 +1035,10 @@ private fun TabCard(
                 alpha = 1f - (abs(y) / (swipe.dismissPx * 2.2f)).coerceIn(0f, 1f)
                 shape = cardShape
                 clip = true
+                // Карточка один раз рисуется в отдельную текстуру (скругления, текст, картинка), а дальше на каждом кадре
+                // двигается и наклоняется как готовая картинка. Без этого родительский 3D-наклон заставлял видеокарту
+                // каждый кадр заново рисовать содержимое с двумя скруглёнными обрезками в перспективе, это самое дорогое место.
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
             }
             .drawBehind { drawRect(frame.value) }
             .swipeToClose(swipe, enabled = !compact)
