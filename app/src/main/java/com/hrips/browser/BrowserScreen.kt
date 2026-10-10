@@ -166,9 +166,18 @@ fun BrowserScreen(browser: Browser) {
     }
 
     val canReturnToPage = tab.home && tab.url.isNotBlank()
-    BackHandler(enabled = canReturnToPage || tab.canGoBack) {
-        if (canReturnToPage) tab.home = false else tab.goBack()
+    // Нет истории внутри вкладки, но её открыли из другой: «назад» закрывает её и возвращает на прежнюю
+    val opener = browser.openerOf(tab)
+    // Одно действие для жеста «назад» и для стрелки в панели
+    val goBack: () -> Unit = {
+        when {
+            canReturnToPage -> tab.home = false
+            tab.canGoBack -> tab.goBack()
+            else -> browser.returnToOpener(tab)
+        }
     }
+    val backEnabled = !tab.home && (tab.canGoBack || opener != null)
+    BackHandler(enabled = canReturnToPage || tab.canGoBack || opener != null) { goBack() }
 
     DisposableEffect(tab.id) {
         tab.ensureLoaded() // вкладка с прошлого запуска грузится, когда её открыли
@@ -291,7 +300,7 @@ fun BrowserScreen(browser: Browser) {
             ) {
                 if (wide) {
                     // Слева: назад, вперёд, домой. «Обновить» теперь внутри адресной строки
-                    IconButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home) {
+                    IconButton(onClick = goBack, enabled = backEnabled) {
                         Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
                     }
                     IconButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
@@ -343,7 +352,9 @@ fun BrowserScreen(browser: Browser) {
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (tab.home && tab.isPrivate) key(tab.id) { FadeInBox {
+            // Ключ по виду страницы, а не по вкладке: при повторном «+» на главной страница остаётся на месте и не мигает
+            // (раньше для каждой новой вкладки она создавалась заново и проявлялась из прозрачности)
+            if (tab.home && tab.isPrivate) key("private-start") { FadeInBox {
                 PrivateStartPage(
                     privateCount = browser.privateCount,
                     screenshotsBlocked = !store.allowPrivateShots,
@@ -352,7 +363,7 @@ fun BrowserScreen(browser: Browser) {
                     engine = if (wide) null else shownEngine,
                     onPickEngine = pickEngine,
                 )
-            } } else if (tab.home) key(tab.id) { FadeInBox {
+            } } else if (tab.home) key("start") { FadeInBox {
                 StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine)
             } } else {
                 AndroidView(
@@ -408,7 +419,7 @@ fun BrowserScreen(browser: Browser) {
             shadowElevation = 8.dp,
         ) {
             Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                BarButton(onClick = { tab.goBack() }, enabled = tab.canGoBack && !tab.home, modifier = Modifier.size(barButton)) {
+                BarButton(onClick = goBack, enabled = backEnabled, modifier = Modifier.size(barButton)) {
                     Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
                 }
                 BarButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home, modifier = Modifier.size(barButton)) {

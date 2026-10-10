@@ -248,14 +248,14 @@ class MainActivity : ComponentActivity() {
             if (!AppExecutors.tryExecute {
                 val url = IncomingIntents.resolve(applicationContext, src)
                 mainHandler.post {
-                    if (url != null) browser.newTab(url)
+                    if (url != null) browser.newTab(url, returnToPrevious = false)
                     else Notices.show("Не удалось открыть файл")
                 }
             }) {
                 Notices.show("Не удалось открыть файл сейчас")
             }
         } else {
-            IncomingIntents.resolve(this, intent)?.let { browser.newTab(it) }
+            IncomingIntents.resolve(this, intent)?.let { browser.newTab(it, returnToPrevious = false) }
         }
     }
 }

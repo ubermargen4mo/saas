@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -379,7 +380,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                     val priv = page == 1
                     val list = if (priv) privList else normalList
                     if (list.isEmpty()) {
-                        EmptyTabs(priv, searching = q.isNotEmpty(), onNew = { browser.newTab(incognito = priv); onClose() })
+                        EmptyTabs(priv, searching = q.isNotEmpty(), onNew = { browser.newTab(incognito = priv, returnToPrevious = false); onClose() })
                     } else {
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(minSize = 170.dp),
@@ -434,7 +435,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                             } else if (t == null) {
                                 EmptySlide(
                                     slide.priv, searching = q.isNotEmpty(),
-                                    onNew = { browser.newTab(incognito = slide.priv); onClose() },
+                                    onNew = { browser.newTab(incognito = slide.priv, returnToPrevious = false); onClose() },
                                     modifier = Modifier.width(cardW).height(cardH),
                                 )
                             } else {
@@ -451,7 +452,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             count = browser.tabs.size,
             onToggleGrid = { grid = !grid },
             onHistory = onHistory,
-            onNew = { browser.newTab(incognito = mode == 1); onClose() },
+            onNew = { browser.newTab(incognito = mode == 1, returnToPrevious = false); onClose() },
             onDone = onClose,
             privatePage = mode == 1,
             onCloseAll = {
@@ -748,9 +749,11 @@ private fun TabCard(
     var dragging by remember { mutableStateOf(false) }
     val curY: () -> Float = { if (dragging) liveY else offsetY.value }
     var menu by remember { mutableStateOf(false) }
-    val dismissPx = with(LocalDensity.current) { 110.dp.toPx() }
+    // Порог закрытия. Раньше 110 dp: карточку приходилось тащить почти до верха. Теперь хватает короткого движения
+    val dismissPx = with(LocalDensity.current) { 64.dp.toPx() }
     // Быстрый бросок вверх закрывает карточку, даже если палец прошёл меньше порога (px/с)
-    val flickPx = with(LocalDensity.current) { 900.dp.toPx() }
+    val flickPx = with(LocalDensity.current) { 380.dp.toPx() }
+    val flickMinPx = with(LocalDensity.current) { 10.dp.toPx() }
     var pastThreshold by remember { mutableStateOf(false) }
     // Обычная ссылка, не состояние: onGloballyPositioned срабатывает на каждом кадре прокрутки карусели,
     // и запись в state вызывала бы лишние перерисовки всех карточек
@@ -788,7 +791,8 @@ private fun TabCard(
                     val velocity = VelocityTracker()
                     velocity.addPosition(down.uptimeMillis, down.position)
                     fun moveBy(dy: Float) {
-                        liveY = (liveY + dy).coerceAtMost(0f)
+                        // Вверх карточка идёт чуть быстрее пальца (1.25x): жест ощущается лёгким. Вниз возвращается 1 к 1
+                        liveY = (liveY + if (dy < 0f) dy * 1.25f else dy).coerceAtMost(0f)
                         // Короткий отклик, когда карточку оттянули достаточно, чтобы она закрылась при отпускании
                         val past = liveY < -dismissPx
                         if (past != pastThreshold) {
@@ -814,7 +818,7 @@ private fun TabCard(
                     scope.launch {
                         offsetY.snapTo(start)
                         dragging = false
-                        val flick = finished && vy < -flickPx && start < -dismissPx * 0.25f
+                        val flick = finished && vy < -flickPx && start < -flickMinPx
                         if (finished && (start < -dismissPx || flick)) {
                             // Улетает с той скоростью, с какой бросили
                             offsetY.animateTo(-dismissPx * 5, HripsMotion.fling(), initialVelocity = vy.coerceAtMost(0f))
@@ -866,7 +870,11 @@ private fun TabCard(
                     value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) TabThumbs.load(context, tab.url, small = compact) else null
                 }
                 val thumb = tab.thumbnail ?: fromDisk
-                LaunchedEffect(thumb) { shownThumb = thumb }
+                LaunchedEffect(thumb) {
+                    shownThumb = thumb
+                    // Заранее отдаём снимок на загрузку в GPU: иначе он грузится в момент первого показа и кадр рвётся
+                    runCatching { thumb?.asAndroidBitmap()?.prepareToDraw() }
+                }
                 // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
                 val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
                     value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null

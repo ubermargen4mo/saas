@@ -246,9 +246,15 @@ class Browser(
     /** Применяет HTTPS-only, DoH, GPC и удаление tracking-параметров из настроек; новые значения действуют на следующие загрузки. */
     fun applyPrivacy() = PrivacyEngine.apply(runtime, store)
 
-    fun newTab(url: String = "", incognito: Boolean = false) {
+    /**
+     * [returnToPrevious]: «назад» на первой странице новой вкладки закрывает её и возвращает на ту, откуда открыли.
+     * Выключено там, где вкладку создали не из страницы (переключатель вкладок, внешняя ссылка).
+     */
+    fun newTab(url: String = "", incognito: Boolean = false, returnToPrevious: Boolean = true) {
         val previous = tabManager.current
         val tab = create(url, isPrivate = incognito)
+        // Пустую вкладку («+») не привязываем: возврат нужен, когда ссылку открыли из другой вкладки
+        if (returnToPrevious && url.isNotBlank()) tab.returnTo = previous
         tabManager.add(tab)
         if (appVisible) {
             previous?.let { setTabActive(it, false, false) }
@@ -349,6 +355,23 @@ class Browser(
 
     fun reopenLast() {
         closedTabs.firstOrNull()?.let { reopen(it) }
+    }
+
+    /** Откуда открыта вкладка (если та ещё жива и режим тот же: из приватной в обычную не возвращаем). */
+    fun openerOf(tab: Tab): Tab? =
+        (tab.returnTo ?: tab.parent)?.takeIf { it !== tab && it.isPrivate == tab.isPrivate && tabs.contains(it) }
+
+    /** Жест «назад» на первой странице вкладки: закрыть её и вернуться на вкладку, из которой её открыли. */
+    fun returnToOpener(tab: Tab) {
+        val opener = openerOf(tab) ?: return
+        val index = tabs.indexOf(tab)
+        if (index < 0) return
+        closeTab(index)
+        val back = tabs.indexOf(opener)
+        if (back >= 0) {
+            currentIndex = back
+            if (appVisible) onForeground()
+        }
     }
 
     fun closeTab(index: Int) {
