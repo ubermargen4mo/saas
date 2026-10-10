@@ -88,6 +88,7 @@ fun FindBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = Modifier) {
                                 "Найти на странице",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             )
                         }
                         inner()

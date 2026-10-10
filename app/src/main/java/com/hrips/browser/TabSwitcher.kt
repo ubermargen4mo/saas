@@ -329,7 +329,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                         Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
                             Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 16.dp)) {
-                                if (query.isEmpty()) Text("Поиск по вкладкам", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+                                if (query.isEmpty()) Text("Поиск по вкладкам", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 BasicTextField(
                                     value = query,
                                     onValueChange = { query = it },
@@ -420,6 +420,9 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                                     scaleX = sc
                                     scaleY = sc
                                     alpha = 1f - 0.3f * d
+                                    // Без этого каждая боковая карточка целиком рисуется в отдельный буфер на каждом кадре
+                                    // (дорого на большом экране планшета): прозрачность применяется прямо при рисовании
+                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
                                     rotationY = -signed.coerceIn(-1f, 1f) * 22f
                                     cameraDistance = 14f * density
                                 },
@@ -504,6 +507,8 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     }
 }
 
+private class RectHolder { var v: androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect.Zero }
+
 /** Нажатая карточка: где она на экране и какая на ней картинка. */
 private class Expand(val rect: androidx.compose.ui.geometry.Rect, val thumb: ImageBitmap?, val index: Int)
 
@@ -565,7 +570,10 @@ private fun Tab.matches(q: String) = matchesQuery(label(), url, q)
 @Composable
 private fun ModeToggle(progress: () -> Float, normal: Int, priv: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    val p = progress().coerceIn(0f, 1f)
+    // Раньше p читался прямо в композиции: весь переключатель пересоздавался на каждом кадре смахивания.
+    // Теперь ползунок и его цвет читают progress только при рисовании, а цвет текста обновляется шагами по 1/16
+    val progressState by rememberUpdatedState(progress)
+    val p by remember { derivedStateOf { (progressState().coerceIn(0f, 1f) * 16f).roundToInt() / 16f } }
     BoxWithConstraints(modifier.height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(4.dp)) {
         val half = maxWidth / 2
         Box(
@@ -574,7 +582,7 @@ private fun ModeToggle(progress: () -> Float, normal: Int, priv: Int, onSelect: 
                 .width(half)
                 .fillMaxHeight()
                 .clip(CircleShape)
-                .background(lerp(cs.primary, cs.tertiary, p)),
+                .drawBehind { drawRect(lerp(cs.primary, cs.tertiary, progress().coerceIn(0f, 1f))) },
         )
         Row(Modifier.fillMaxSize()) {
             ModeSegment(HripsIcons.Grid, "Вкладки", normal, lerp(cs.onPrimary, cs.onSurfaceVariant, p), Modifier.weight(1f)) { onSelect(0) }
@@ -744,7 +752,9 @@ private fun TabCard(
     // Быстрый бросок вверх закрывает карточку, даже если палец прошёл меньше порога (px/с)
     val flickPx = with(LocalDensity.current) { 900.dp.toPx() }
     var pastThreshold by remember { mutableStateOf(false) }
-    var cardRect by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    // Обычная ссылка, не состояние: onGloballyPositioned срабатывает на каждом кадре прокрутки карусели,
+    // и запись в state вызывала бы лишние перерисовки всех карточек
+    val cardRectRef = remember { RectHolder() }
     var shownThumb by remember { mutableStateOf<ImageBitmap?>(null) }
     val subtitle = when {
         // Название таких вкладок уже «Приватная вкладка» / «Начальная страница»: подпись говорит другое, а не повторяет его
@@ -756,7 +766,7 @@ private fun TabCard(
 
     Box(
         modifier
-            .onGloballyPositioned { cardRect = it.boundsInRoot(); onRect(cardRect) }
+            .onGloballyPositioned { cardRectRef.v = it.boundsInRoot(); onRect(cardRectRef.v) }
             .graphicsLayer {
                 val y = curY()
                 translationY = y
@@ -845,7 +855,7 @@ private fun TabCard(
                 .combinedClickable(
                     interactionSource = source,
                     indication = null,
-                    onClick = { onClick(cardRect, shownThumb) },
+                    onClick = { onClick(cardRectRef.v, shownThumb) },
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
                 ),
         ) {

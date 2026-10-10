@@ -134,7 +134,7 @@ fun ToolsMenu(
                         onDismiss(); PageActions.addToStartPage(context, store, tab)
                     }
                     if (hasSite && ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
-                        WideRow(HripsIcons.Grid, "На главный экран", "Ярлык рядом с приложениями", Badge.CLOVER, 1) {
+                        WideRow(HripsIcons.Phone, "На главный экран", "Ярлык рядом с приложениями", Badge.CLOVER, 1) {
                             onDismiss(); PageActions.addToHomeScreen(context, tab)
                         }
                     }
@@ -176,7 +176,7 @@ fun ToolsMenu(
                                 onDismiss(); toggleBookmarkWithNotice(store, tab.url, tab.title)
                             })
                             add(MenuAction(HripsIcons.Share, "Поделиться") { onDismiss(); PageActions.share(context, tab) })
-                            add(MenuAction(HripsIcons.Search, "Найти на странице") { onDismiss(); onFind() })
+                            add(MenuAction(HripsIcons.FindInPage, "Найти на странице") { onDismiss(); onFind() })
                             add(MenuAction(HripsIcons.Qr, "QR этой страницы") { onDismiss(); showQr = true })
                             if (hasSite && !PageActions.isTranslated(tab)) {
                                 add(MenuAction(HripsIcons.Translate, "Перевести") { onDismiss(); PageActions.translate(tab) })
@@ -186,7 +186,7 @@ fun ToolsMenu(
                             add(MenuAction(HripsIcons.Capture, "Снимок") { onDismiss(); onScreenshot() })
                             add(MenuAction(HripsIcons.PlusCircle, "Добавить в…") { sub = true })
                         }
-                        add(MenuAction(HripsIcons.Qr, "Сканер QR") { onDismiss(); onScanQr() })
+                        add(MenuAction(HripsIcons.QrScan, "Сканер QR") { onDismiss(); onScanQr() })
                         add(MenuAction(HripsIcons.Fullscreen, "На весь экран") { onDismiss(); onFullscreen() })
                     }
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {

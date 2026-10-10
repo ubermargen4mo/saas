@@ -102,7 +102,7 @@ internal fun PageSearchField(hint: String, query: String, onChange: (String) -> 
                 decorationBox = { inner ->
                     Box {
                         if (query.isEmpty()) {
-                            Text(hint, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(hint, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         inner()
                     }

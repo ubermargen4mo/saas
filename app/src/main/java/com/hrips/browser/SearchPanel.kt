@@ -171,9 +171,13 @@ fun SearchPanel(
                             keyboardActions = KeyboardActions(onSearch = { submit(value.text) }),
                             modifier = Modifier.weight(1f).padding(horizontal = 12.dp).focusRequester(focus),
                             decorationBox = { inner ->
-                                Box {
+                                // fillMaxWidth: касание в любом месте строки ставит курсор, а не только поверх уже набранного текста
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                                     if (value.text.isEmpty()) {
-                                        Text("Искать или задать вопрос", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            "Искать или задать вопрос", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                     inner()
                                 }

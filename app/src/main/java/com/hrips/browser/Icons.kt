@@ -86,11 +86,179 @@ object HripsIcons {
     val Alert by lazy { icon("Alert") { circle(12f, 12f, 9.5f); moveTo(12f, 7.5f); verticalLineTo(12.5f); moveTo(12f, 16.2f); horizontalLineToRelative(0.01f) } }
     val History by lazy { icon("History") { circle(12f, 12f, 9.5f); moveTo(12f, 7f); verticalLineToRelative(5f); lineToRelative(3f, 2f) } }
 
-    /** Настройки: два ползунка (шестерёнка из линий получается слишком мелкой). */
+    /** Настройки: шестерёнка (8 зубцов) с отверстием. */
     val Settings by lazy {
         icon("Settings") {
-            moveTo(4f, 7f); horizontalLineTo(10f); moveTo(16f, 7f); horizontalLineTo(20f); circle(13f, 7f, 3f)
-            moveTo(4f, 17f); horizontalLineTo(8f); moveTo(14f, 17f); horizontalLineTo(20f); circle(11f, 17f, 3f)
+            moveTo(10.27f, 4.80f); lineTo(10.72f, 2.49f); lineTo(13.28f, 2.49f); lineTo(13.73f, 4.80f); lineTo(15.87f, 5.69f); lineTo(17.82f, 4.37f); lineTo(19.63f, 6.18f); lineTo(18.31f, 8.13f); lineTo(19.20f, 10.27f); lineTo(21.51f, 10.72f); lineTo(21.51f, 13.28f); lineTo(19.20f, 13.73f); lineTo(18.31f, 15.87f); lineTo(19.63f, 17.82f); lineTo(17.82f, 19.63f); lineTo(15.87f, 18.31f); lineTo(13.73f, 19.20f); lineTo(13.28f, 21.51f); lineTo(10.72f, 21.51f); lineTo(10.27f, 19.20f); lineTo(8.13f, 18.31f); lineTo(6.18f, 19.63f); lineTo(4.37f, 17.82f); lineTo(5.69f, 15.87f); lineTo(4.80f, 13.73f); lineTo(2.49f, 13.28f); lineTo(2.49f, 10.72f); lineTo(4.80f, 10.27f); lineTo(5.69f, 8.13f); lineTo(4.37f, 6.18f); lineTo(6.18f, 4.37f); lineTo(8.13f, 5.69f); close(); circle(12f, 12f, 3.2f)
+        }
+    }
+
+    // Значки разделов настроек и меню: у каждого пункта свой, без повторов
+    /** Внешний вид: палитра. */
+    val Palette by lazy {
+        icon("Palette") {
+            moveTo(12f, 3f); arcToRelative(9f, 9f, 0f, true, false, 0f, 18f)
+            curveToRelative(1.1f, 0f, 1.8f, -0.9f, 1.8f, -1.8f)
+            curveToRelative(0f, -0.5f, -0.2f, -0.9f, -0.5f, -1.3f)
+            curveToRelative(-0.3f, -0.4f, -0.5f, -0.8f, -0.5f, -1.3f)
+            curveToRelative(0f, -1f, 0.8f, -1.8f, 1.8f, -1.8f)
+            horizontalLineTo(17f)
+            arcToRelative(4f, 4f, 0f, false, false, 4f, -4f)
+            curveToRelative(0f, -4.4f, -4f, -7.8f, -9f, -7.8f)
+            close()
+            moveTo(13.5f, 6.5f); horizontalLineToRelative(0.01f)
+            moveTo(17.5f, 10.5f); horizontalLineToRelative(0.01f)
+            moveTo(8.5f, 7.5f); horizontalLineToRelative(0.01f)
+            moveTo(6.5f, 12.5f); horizontalLineToRelative(0.01f)
+        }
+    }
+
+    /** Конфиденциальность: перечёркнутый глаз. */
+    val EyeOff by lazy {
+        icon("EyeOff") {
+            moveTo(2.5f, 12f)
+            curveTo(5f, 7.5f, 8.3f, 5.5f, 12f, 5.5f)
+            curveTo(15.7f, 5.5f, 19f, 7.5f, 21.5f, 12f)
+            curveTo(19f, 16.5f, 15.7f, 18.5f, 12f, 18.5f)
+            curveTo(8.3f, 18.5f, 5f, 16.5f, 2.5f, 12f)
+            close()
+            circle(12f, 12f, 3f)
+            moveTo(4f, 4f); lineTo(20f, 20f)
+        }
+    }
+
+    /** Разрешения: щит с галочкой. */
+    val ShieldCheck by lazy { icon("ShieldCheck") { shield() } }
+
+    /** Сигнал (Global Privacy Control): точка и расходящиеся дуги. */
+    val Signal by lazy {
+        icon("Signal") {
+            circle(12f, 12f, 1.3f)
+            moveTo(8.46f, 8.46f); arcTo(5f, 5f, 0f, false, false, 8.46f, 15.54f)
+            moveTo(15.54f, 8.46f); arcTo(5f, 5f, 0f, false, true, 15.54f, 15.54f)
+            moveTo(5.64f, 5.64f); arcTo(9f, 9f, 0f, false, false, 5.64f, 18.36f)
+            moveTo(18.36f, 5.64f); arcTo(9f, 9f, 0f, false, true, 18.36f, 18.36f)
+        }
+    }
+
+    /** Ссылка с чертой: удаление отслеживающих параметров. */
+    val LinkOff by lazy {
+        icon("LinkOff") {
+            moveTo(10f, 14f); lineToRelative(4f, -4f)
+            moveTo(8.5f, 11.5f); lineToRelative(-2f, 2f)
+            arcToRelative(3.5f, 3.5f, 0f, false, false, 5f, 5f)
+            lineToRelative(2f, -2f)
+            moveTo(15.5f, 12.5f); lineToRelative(2f, -2f)
+            arcToRelative(3.5f, 3.5f, 0f, false, false, -5f, -5f)
+            lineToRelative(-2f, 2f)
+            moveTo(3.5f, 3.5f); lineTo(20.5f, 20.5f)
+        }
+    }
+
+    /** Браузер по умолчанию: компас. */
+    val Compass by lazy {
+        icon("Compass") {
+            circle(12f, 12f, 9.5f)
+            moveTo(15.8f, 8.2f); lineTo(13.6f, 13.6f); lineTo(8.2f, 15.8f); lineTo(10.4f, 10.4f); close()
+        }
+    }
+
+    /** Сайты: глобус. */
+    val Globe by lazy {
+        icon("Globe") {
+            circle(12f, 12f, 9.5f)
+            moveTo(2.5f, 12f); horizontalLineTo(21.5f)
+            moveTo(12f, 2.5f)
+            curveTo(15f, 5.5f, 16f, 8.8f, 16f, 12f)
+            curveTo(16f, 15.2f, 15f, 18.5f, 12f, 21.5f)
+            curveTo(9f, 18.5f, 8f, 15.2f, 8f, 12f)
+            curveTo(8f, 8.8f, 9f, 5.5f, 12f, 2.5f)
+        }
+    }
+
+    /** Медиа: круг с треугольником. */
+    val PlayCircle by lazy { icon("PlayCircle") { circle(12f, 12f, 9.5f); moveTo(10f, 8.5f); lineTo(15.5f, 12f); lineTo(10f, 15.5f); close() } }
+
+    /** Картинка в картинке. */
+    val Pip by lazy { icon("Pip") { roundRect(3f, 5f, 18f, 14f, 2.5f); roundRect(12.5f, 11.5f, 5.5f, 4.5f, 1.2f) } }
+
+    /** Оживление миниатюр: искры. */
+    val Sparkles by lazy {
+        icon("Sparkles") {
+            moveTo(12f, 3f); lineTo(14f, 10f); lineTo(21f, 12f); lineTo(14f, 14f); lineTo(12f, 21f); lineTo(10f, 14f); lineTo(3f, 12f); lineTo(10f, 10f); close()
+        }
+    }
+
+    /** Производительность: спидометр. */
+    val Gauge by lazy {
+        icon("Gauge") {
+            moveTo(5.64f, 19.36f); arcTo(9f, 9f, 0f, true, true, 18.36f, 19.36f)
+            moveTo(12f, 13f); lineTo(16f, 8f)
+        }
+    }
+
+    /** Экономия памяти: слои (вкладки в памяти). */
+    val Layers by lazy {
+        icon("Layers") {
+            moveTo(12f, 3.5f); lineTo(21f, 8.5f); lineTo(12f, 13.5f); lineTo(3f, 8.5f); close()
+            moveTo(3f, 12.5f); lineTo(12f, 17.5f); lineTo(21f, 12.5f)
+            moveTo(3f, 16.5f); lineTo(12f, 21.5f); lineTo(21f, 16.5f)
+        }
+    }
+
+    /** Вопрос перед загрузкой. */
+    val HelpCircle by lazy {
+        icon("HelpCircle") {
+            circle(12f, 12f, 9.5f)
+            moveTo(9.5f, 9.5f)
+            curveTo(9.5f, 8.2f, 10.6f, 7.3f, 12f, 7.3f)
+            curveTo(13.4f, 7.3f, 14.5f, 8.2f, 14.5f, 9.5f)
+            curveTo(14.5f, 11.3f, 12f, 11.2f, 12f, 13.3f)
+            moveTo(12f, 16.6f); horizontalLineToRelative(0.01f)
+        }
+    }
+
+    /** Движок: микросхема. */
+    val Chip by lazy {
+        icon("Chip") {
+            roundRect(6f, 6f, 12f, 12f, 2f); roundRect(9.5f, 9.5f, 5f, 5f, 1f)
+            moveTo(9f, 3f); verticalLineTo(6f); moveTo(15f, 3f); verticalLineTo(6f)
+            moveTo(9f, 18f); verticalLineTo(21f); moveTo(15f, 18f); verticalLineTo(21f)
+            moveTo(3f, 9f); horizontalLineTo(6f); moveTo(3f, 15f); horizontalLineTo(6f)
+            moveTo(18f, 9f); horizontalLineTo(21f); moveTo(18f, 15f); horizontalLineTo(21f)
+        }
+    }
+
+    /** Версия приложения: ярлык. */
+    val Tag by lazy {
+        icon("Tag") {
+            moveTo(3f, 3f); horizontalLineTo(12f); lineTo(21f, 12f); lineTo(12f, 21f); lineTo(3f, 12f); close()
+            circle(7.5f, 7.5f, 1f)
+        }
+    }
+
+    /** Телефон: Android и ярлык на главный экран. */
+    val Phone by lazy { icon("Phone") { roundRect(7f, 2.5f, 10f, 19f, 2.5f); moveTo(11f, 18.5f); horizontalLineToRelative(2f) } }
+
+    /** Найти на странице: строки текста и лупа. */
+    val FindInPage by lazy {
+        icon("FindInPage") {
+            moveTo(3f, 6f); horizontalLineTo(21f)
+            moveTo(3f, 12f); horizontalLineTo(8f)
+            moveTo(3f, 18f); horizontalLineTo(8f)
+            circle(15.5f, 14.5f, 3.5f)
+            moveTo(21f, 20f); lineToRelative(-3f, -3f)
+        }
+    }
+
+    /** Сканер QR: уголки видоискателя и линия. */
+    val QrScan by lazy {
+        icon("QrScan") {
+            moveTo(3f, 8f); verticalLineTo(6f); arcToRelative(2f, 2f, 0f, false, true, 2f, -2f); horizontalLineTo(8f)
+            moveTo(16f, 4f); horizontalLineTo(19f); arcToRelative(2f, 2f, 0f, false, true, 2f, 2f); verticalLineTo(8f)
+            moveTo(21f, 16f); verticalLineTo(18f); arcToRelative(2f, 2f, 0f, false, true, -2f, 2f); horizontalLineTo(16f)
+            moveTo(8f, 20f); horizontalLineTo(5f); arcToRelative(2f, 2f, 0f, false, true, -2f, -2f); verticalLineTo(16f)
+            moveTo(7f, 12f); horizontalLineTo(17f)
         }
     }
 
@@ -352,7 +520,7 @@ object HripsIcons {
         }
     }
 
-    val Shield by lazy { icon("Shield") { shield() } }
+    val Shield by lazy { icon("Shield") { shield(withCheck = false) } }
 
     val Block by lazy {
         icon("Block") {
@@ -494,12 +662,12 @@ private fun PathBuilder.home() {
     close()
 }
 
-private fun PathBuilder.shield() {
+private fun PathBuilder.shield(withCheck: Boolean = true) {
     moveTo(12f, 3f); lineToRelative(7f, 3f); verticalLineToRelative(5.5f)
     curveToRelative(0f, 4.4f, -3f, 7.6f, -7f, 9.5f)
     curveToRelative(-4f, -1.9f, -7f, -5.1f, -7f, -9.5f)
     verticalLineTo(6f); close()
-    moveTo(9f, 12f); lineToRelative(2f, 2f); lineToRelative(4f, -4f)
+    if (withCheck) { moveTo(9f, 12f); lineToRelative(2f, 2f); lineToRelative(4f, -4f) }
 }
 
 private fun PathBuilder.info() {

@@ -45,14 +45,14 @@ internal fun NetworkPrivacySection(browser: Browser) {
     Group(
         { s ->
             SwitchRow(
-                HripsIcons.Shield, "Сигнал Global Privacy Control",
+                HripsIcons.Signal, "Сигнал Global Privacy Control",
                 "Сайты получают просьбу не продавать и не передавать данные о вас",
                 store.gpc, true, s,
             ) { store.updateGpc(it); browser.applyPrivacy() }
         },
         { s ->
             SwitchRow(
-                HripsIcons.Block, "Удалять tracking-параметры",
+                HripsIcons.LinkOff, "Удалять tracking-параметры",
                 "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
                 store.stripTrackingParams, true, s,
             ) { store.updateStripTrackingParams(it); browser.applyPrivacy() }

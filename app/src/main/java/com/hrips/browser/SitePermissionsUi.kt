@@ -103,7 +103,7 @@ fun SitePermissionsScreen(runtime: GeckoRuntime, sites: SitePermissions, onBack:
         if (rows.isEmpty()) {
             item(key = "empty") {
                 EmptyState(
-                    HripsIcons.Shield,
+                    HripsIcons.ShieldCheck,
                     if (loaded) "Пока ничего не сохранено" else "Загрузка…",
                     "Когда вы разрешите или запретите сайту камеру, микрофон, местоположение или уведомления, решение появится здесь.",
                     Modifier.padding(top = 40.dp),

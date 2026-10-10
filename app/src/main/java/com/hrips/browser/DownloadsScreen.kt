@@ -218,7 +218,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
                 decorationBox = { inner ->
                     Box {
                         if (query.isEmpty()) {
-                            Text("Поиск в загрузках", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Поиск в загрузках", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         inner()
                     }
