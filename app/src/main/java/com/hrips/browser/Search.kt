@@ -24,6 +24,8 @@ object SearchEngines {
         SearchEngine("Ecosia", "https://www.ecosia.org/search?q=", "https://ac.ecosia.org/autocomplete?type=list&q=", "www.ecosia.org", 0xFF3F8F3B),
         SearchEngine("Qwant", "https://www.qwant.com/?q=", "https://api.qwant.com/api/suggest/?client=opensearch&q=", "www.qwant.com", 0xFF2B5BE0),
         SearchEngine("Startpage", "https://www.startpage.com/do/search?q=", "https://www.startpage.com/osuggestions?q=", "www.startpage.com", 0xFF4A5CE8),
+        // Подсказок у Ответов нет (suggest пустой), запрос идёт в путь адреса, а не в параметр
+        SearchEngine("Ответы Mail.ru", "https://otvet.mail.ru/search/", "", "otvet.mail.ru", 0xFF005FF9),
         SearchEngine("Википедия", "https://ru.wikipedia.org/w/index.php?search=", "https://ru.wikipedia.org/w/api.php?action=opensearch&limit=8&search=", "ru.wikipedia.org", 0xFF5F6368),
     )
     var current by mutableStateOf(all[0])
@@ -37,6 +39,12 @@ fun parseSearch(url: String): Pair<SearchEngine, String>? {
     for (e in SearchEngines.all) {
         val base = Uri.parse(e.template).host.orEmpty().split('.').takeLast(2).joinToString(".")
         if (host != base && !host.endsWith(".$base")) continue
+        // Ответы Mail.ru: запрос лежит в пути, /search/<запрос>
+        if (e.host == "otvet.mail.ru") {
+            val seg = uri.pathSegments
+            if (host == "otvet.mail.ru" && seg.size >= 2 && seg[0] == "search" && seg[1].isNotBlank()) return e to seg[1]
+            continue
+        }
         val q = listOf("text", "q", "query", "search").firstNotNullOfOrNull { p ->
             uri.getQueryParameter(p)?.takeIf { it.isNotBlank() }
         } ?: continue

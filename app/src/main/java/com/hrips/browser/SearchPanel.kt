@@ -57,6 +57,7 @@ import java.net.URL
 /** Подсказки поисковика. Формат ответа у всех движков одинаковый (OpenSearch): [запрос, [подсказки]]. */
 object Suggestions {
     suspend fun fetch(engine: SearchEngine, query: String): List<String> = withContext(Dispatchers.IO) {
+        if (engine.suggest.isBlank()) return@withContext emptyList<String>()
         val c = try { URL(engine.suggest + Uri.encode(query)).openConnection() as HttpURLConnection } catch (_: Exception) { return@withContext emptyList() }
         try {
             c.connectTimeout = 3000
