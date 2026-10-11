@@ -49,7 +49,7 @@ fun ClosedTabsSheet(browser: Browser, onDismiss: () -> Unit, onRestored: () -> U
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Favicon(c.url, 32.dp) { SiteTile(c.url, label, 32.dp, shape = CircleShape) }
+                                Favicon(c.url, 32.dp, fill = true, shape = CircleShape) { SiteTile(c.url, label, 32.dp, shape = CircleShape) }
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)

@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.pm.ShortcutManagerCompat
 import kotlinx.coroutines.delay
 
@@ -300,9 +301,13 @@ private fun SectionTile(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ShapeBadge(icon, 52.dp, badge = badge, container = container, content = content)
+            // Подпись не режем: если не помещается в плитку (узкая панель, крупный шрифт), шрифт уменьшается
+            var labelSp by remember { mutableStateOf(12f) }
             Text(
-                label, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
+                label, Modifier.padding(top = 6.dp), maxLines = 1, softWrap = false,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = labelSp.sp, letterSpacing = 0.sp),
+                color = MaterialTheme.colorScheme.onSurface,
+                onTextLayout = { if (it.hasVisualOverflow && labelSp > 8f) labelSp -= 0.5f },
             )
         }
     }

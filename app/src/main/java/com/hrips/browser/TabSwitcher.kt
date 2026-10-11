@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
@@ -360,6 +361,14 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             a + (b - a) * f
         }
     }
+    // Смена режима «карусель / сетка» проявляется плавно, а не подменой за один кадр
+    val modeFadeIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val modeFadeOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val modeScale = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    // Закрытие карточки в карусели: пейджер сам ничего не анимирует, и соседние карточки встали бы на новые места
+    // за один кадр. Запоминаем, что куда сдвинулось, и рисуем сдвиг обратно, плавно сводя его к нулю
+    val shiftInfo = remember { arrayOfNulls<PagerShift>(1) }
+    val shift = remember { Animatable(0f) }
     val bgNormal = cs.surface
     val bgPrivate = lerp(cs.surface, cs.tertiaryContainer, 0.55f)
 
@@ -383,6 +392,21 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             slides.getOrNull(si - 1)?.let { it.priv == s0.priv && it.tab != null } == true &&
             slides.getOrNull(si + 1)?.priv != s0.priv
         ) si - 1 else null
+        if (!grid && s0 != null && si >= 0) {
+            val n = slides.size
+            val c = cp.currentPage
+            // Пейджер держит на месте первую видимую карточку по ключу: центр остаётся тем же, если убрали не его
+            val c2 = when {
+                si < c -> c - 1
+                si > c -> c
+                else -> minOf(c, n - 2).coerceAtLeast(0)
+            }
+            shiftInfo[0] = PagerShift(n, si, c, c2)
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                shift.snapTo(1f)
+                shift.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
+            }
+        }
         closeWithUndo(i)
         if (back != null) cp.requestScrollToPage(back)
     }
@@ -444,9 +468,18 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 onSelect = select,
             )
 
-            if (grid) {
+            AnimatedContent(
+                targetState = grid,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                transitionSpec = {
+                    (fadeIn(modeFadeIn) + scaleIn(modeScale, initialScale = 0.94f)) togetherWith
+                        fadeOut(modeFadeOut) using SizeTransform(clip = false) { _, _ -> snap() }
+                },
+                label = "switcherMode",
+            ) { isGrid ->
+            if (isGrid) {
                 // Сетка: два раздела, между ними переключаемся обычным смахиванием (вертикальная прокрутка не мешает)
-                HorizontalPager(state = gp, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
+                HorizontalPager(state = gp, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                     val priv = page == 1
                     val list = if (priv) privList else normalList
                     if (list.isEmpty()) {
@@ -466,7 +499,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                     }
                 }
             } else {
-                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(bottom = 104.dp)) {
+                BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
                     val cardW = minOf(maxWidth * 0.78f, 400.dp)
                     val cardH = minOf(cardW * (if (maxWidth > 600.dp) 1.0f else 1.4f), maxHeight - 16.dp)
                     HorizontalPager(
@@ -486,7 +519,14 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                                 // Всё читается при рисовании: кадр смахивания не вызывает перерисовку страниц
                                 .graphicsLayer {
                                     // signed > 0: карточка правее центра. Боковые поворачиваются лицом к центру, как в coverflow
-                                    val signed = ((page - cp.currentPage) - cp.currentPageOffsetFraction).coerceIn(-1.5f, 1.5f)
+                                    val sh = shiftInfo[0]
+                                    val extra = if (sh != null && slides.size == sh.n - 1) {
+                                        // Где карточка стояла до закрытия соседней, минус где стоит теперь (в карточках)
+                                        val old = if (page < sh.si) page else page + 1
+                                        ((old - sh.c) - (page - sh.c2)).toFloat() * shift.value
+                                    } else 0f
+                                    translationX = extra * (cardW.toPx() + 14.dp.toPx())
+                                    val signed = ((page - cp.currentPage) - cp.currentPageOffsetFraction + extra).coerceIn(-1.5f, 1.5f)
                                     val d = signed.absoluteValue.coerceIn(0f, 1f)
                                     val sc = 1f - 0.12f * d
                                     scaleX = sc
@@ -514,6 +554,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                         }
                     }
                 }
+            }
             }
         }
 
@@ -861,6 +902,9 @@ private fun rememberTabThumb(tab: Tab, compact: Boolean): ImageBitmap? {
  * Состояние жеста «смахнуть карточку вверх». Положение под пальцем и анимированное положение читаются только при
  * рисовании ([y]), поэтому кадр жеста не вызывает перерисовку.
  */
+/** Закрытие карточки в карусели: было карточек [n], убрана [si], центр был [c], станет [c2]. */
+private class PagerShift(val n: Int, val si: Int, val c: Int, val c2: Int)
+
 @Stable
 private class SwipeState(
     val scope: CoroutineScope,

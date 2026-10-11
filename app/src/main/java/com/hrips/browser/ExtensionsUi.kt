@@ -3,6 +3,7 @@
 package com.hrips.browser
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,7 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,9 +28,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -41,6 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -56,6 +61,7 @@ import kotlinx.coroutines.delay
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebExtension
 import java.util.Locale
+import kotlin.math.abs
 
 /** Значок расширения: берём иконку кнопки, если у неё своя, иначе иконку самого расширения. */
 @Composable
@@ -150,13 +156,7 @@ fun ExtensionsScreen(
     ListPage(title = "Расширения", onBack = onBack) {
         item(key = "tabs") {
             Box(Modifier.widthIn(max = HripsLayout.PageMaxWidth).fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("Установленные (${installed.size})", "Каталог").forEachIndexed { i, label ->
-                        SegmentedButton(selected = tab == i, onClick = { tab = i }, shape = SegmentedButtonDefaults.itemShape(i, 2)) {
-                            Text(label, maxLines = 1)
-                        }
-                    }
-                }
+                PillTabs(listOf("Установленные (${installed.size})", "Каталог"), tab, { tab = it })
             }
         }
         if (tab == 0) {
@@ -193,6 +193,42 @@ fun ExtensionsScreen(
             confirmButton = { HripsTextButton(onClick = { extensions.uninstall(ext); toRemove = null }) { Text("Удалить") } },
             dismissButton = { HripsTextButton(onClick = { toRemove = null }) { Text("Отмена") } },
         )
+    }
+}
+
+/**
+ * Переключатель-таблетка, как «Вкладки / Приватные» в переключателе вкладок: цветной ползунок плавно
+ * едет к выбранному пункту, цвет текста перетекает вместе с ним.
+ */
+@Composable
+private fun PillTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val pos by animateFloatAsState(selected.toFloat(), MaterialTheme.motionScheme.defaultSpatialSpec<Float>(), label = "pillTabs")
+    Box(modifier.fillMaxWidth().height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(4.dp)) {
+        Box(
+            Modifier
+                .fillMaxWidth(1f / labels.size)
+                .fillMaxHeight()
+                .graphicsLayer {
+                    translationX = pos * size.width
+                    shape = CircleShape
+                    clip = true
+                }
+                .drawBehind { drawRect(cs.primary) },
+        )
+        Row(Modifier.fillMaxSize()) {
+            labels.forEachIndexed { i, label ->
+                val c = lerp(cs.onSurfaceVariant, cs.onPrimary, (1f - abs(pos - i)).coerceIn(0f, 1f))
+                Surface(
+                    onClick = { onSelect(i) }, shape = CircleShape, color = Color.Transparent, contentColor = c,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                ) {
+                    Box(Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+                        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
     }
 }
 

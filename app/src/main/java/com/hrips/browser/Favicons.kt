@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -119,16 +120,31 @@ object Favicons {
         candidates.add(URL(URL(base), "/favicon.ico").toString())
         candidates.add(URL(URL(base), "/apple-touch-icon.png").toString())
 
+        // Первая найденная иконка - запасная. Если она круглая или с прозрачными углами, ищем дальше квадратную
+        // версию (обычно apple-touch-icon 180px): на плитках она заполняет всё место без подложки
+        var best: Bitmap? = null
         for (u in candidates.distinct().take(6)) {
             val data = download(u, 1_000_000) ?: continue
             val bmp = decodeIcon(data) ?: continue
-            val scaled = if (bmp.width > 96) Bitmap.createScaledBitmap(bmp, 96, (96f * bmp.height / bmp.width).toInt().coerceAtLeast(1), true) else bmp
-            runCatching {
-                File(dir(context), "$host.png").outputStream().use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (best == null) best = bmp
+            if (hasOpaqueCorners(bmp) && (bmp === best || bmp.width >= 120)) {
+                best = bmp
+                break
             }
-            return scaled
         }
-        return null
+        val bmp = best ?: return null
+        val scaled = if (bmp.width > 96) Bitmap.createScaledBitmap(bmp, 96, (96f * bmp.height / bmp.width).toInt().coerceAtLeast(1), true) else bmp
+        runCatching {
+            File(dir(context), "$host.png").outputStream().use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        return scaled
+    }
+
+    /** Углы иконки непрозрачные: она квадратная и сама закрывает всю плитку. */
+    private fun hasOpaqueCorners(b: Bitmap): Boolean {
+        val w = b.width - 1
+        val h = b.height - 1
+        return listOf(0 to 0, w to 0, 0 to h, w to h).all { (x, y) -> android.graphics.Color.alpha(b.getPixel(x, y)) >= 200 }
     }
 
 
@@ -195,9 +211,11 @@ object Favicons {
 /**
  * Показывает иконку сайта, а пока она грузится (или её нет), запасной вариант [fallback].
  * fill = true: иконка растягивается на весь квадрат, а фон под ней берётся из цвета её угла.
+ * [shape]: форма, по которой обрезается иконка (круг во вкладках). Некруглая иконка обращается до этой формы,
+ * круглая заполняет её целиком.
  */
 @Composable
-fun Favicon(url: String, size: Dp, fill: Boolean = false, fallback: @Composable () -> Unit) {
+fun Favicon(url: String, size: Dp, fill: Boolean = false, shape: Shape? = null, fallback: @Composable () -> Unit) {
     val context = LocalContext.current.applicationContext
     val host = remember(url) { if (url.isBlank()) null else Uri.parse(url).host }
     val bitmap by produceState<ImageBitmap?>(null, host) {
@@ -207,20 +225,47 @@ fun Favicon(url: String, size: Dp, fill: Boolean = false, fallback: @Composable 
     val b = bitmap
     if (b != null && fill) {
         val bg = remember(b, neutral) { cornerColor(b) ?: neutral }
-        Box(Modifier.size(size).background(bg)) {
+        Box(Modifier.size(size).then(if (shape != null) Modifier.clip(shape) else Modifier).background(bg)) {
             Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
     } else if (b != null) {
-        Image(b, null, Modifier.size(size).clip(RoundedCornerShape(size / 5)))
+        Image(b, null, Modifier.size(size).clip(shape ?: RoundedCornerShape(size / 5)))
     } else {
         fallback()
     }
 }
 
+/**
+ * Цвет подложки под иконкой на плитке. Углы непрозрачные: берём цвет угла. Иконка круглая или с прозрачными углами
+ * (Discord, GitHub): берём её основной цвет, чтобы плитка заполнялась целиком, без серых углов и кольца.
+ * Если иконка занимает мало места (силуэт на прозрачном фоне), основной цвет был бы цветом самого рисунка, тогда null.
+ */
 private fun cornerColor(img: ImageBitmap): Color? = try {
     val bmp = img.asAndroidBitmap()
-    val px = bmp.getPixel(minOf(1, bmp.width - 1), minOf(1, bmp.height - 1))
-    if (android.graphics.Color.alpha(px) >= 200) Color(px) else null
+    val corner = bmp.getPixel(minOf(1, bmp.width - 1), minOf(1, bmp.height - 1))
+    if (android.graphics.Color.alpha(corner) >= 200) Color(corner) else dominantColor(bmp)
 } catch (e: Exception) {
     null
+}
+
+private fun dominantColor(bmp: Bitmap): Color? {
+    val w = bmp.width
+    val h = bmp.height
+    val px = IntArray(w * h)
+    bmp.getPixels(px, 0, w, 0, 0, w, h)
+    // Группы по 4 бита на канал: [число, сумма R, G, B]
+    val buckets = HashMap<Int, IntArray>()
+    var opaque = 0
+    for (c in px) {
+        if (android.graphics.Color.alpha(c) < 200) continue
+        opaque++
+        val r = android.graphics.Color.red(c)
+        val g = android.graphics.Color.green(c)
+        val b = android.graphics.Color.blue(c)
+        val e = buckets.getOrPut(((r shr 4) shl 8) or ((g shr 4) shl 4) or (b shr 4)) { IntArray(4) }
+        e[0]++; e[1] += r; e[2] += g; e[3] += b
+    }
+    if (opaque < px.size * 0.6) return null
+    val top = buckets.values.maxByOrNull { it[0] } ?: return null
+    return Color(top[1] / top[0], top[2] / top[0], top[3] / top[0])
 }

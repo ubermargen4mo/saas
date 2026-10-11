@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -80,7 +81,8 @@ fun GlobeIcon(size: Dp, modifier: Modifier = Modifier) {
  */
 @Composable
 fun TabSiteIcon(tab: Tab, size: Dp, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(size / 4)) {
-    Favicon(tab.url, size) {
+    // Круг (полоса вкладок): иконка заполняет его целиком, некруглая обрезается по кругу
+    Favicon(tab.url, size, fill = shape == CircleShape, shape = shape) {
         if (tab.loading && tab.title.isBlank()) GlobeIcon(size, modifier)
         else SiteTile(tab.url, tab.label(), size, modifier, shape)
     }
