@@ -17,33 +17,34 @@ import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PageSize
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -59,16 +60,17 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Rect as UiRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.compositeOver
@@ -90,8 +92,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -105,17 +107,16 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 /**
  * Снимок страницы для карточки вкладки. Делается через PixelCopy, пока страница ещё на экране
@@ -207,9 +208,23 @@ fun captureThumbnail(
     }
 }
 
+// =====================================================================================================================
+// Переключатель вкладок. Устройство (переписано с нуля ради плавности):
+//
+// 1. Карусель - собственный Layout, а не HorizontalPager. Все карточки одного размера и стоят в одной точке; положение,
+//    наклон, масштаб и прозрачность каждой задаёт блок слоя (placeWithLayer), который читает состояние только на этапе
+//    рисования. Кадр прокрутки или смахивания не вызывает ни перекомпоновку, ни измерение, ни даже перезапись карточки:
+//    двигается готовая текстура.
+// 2. Положение камеры - одно число [CarouselState.pos] в «номерах карточек». Пальцем его двигает один обработчик на всю
+//    карусель, доводку делает одна пружина.
+// 3. Закрытие: карточка улетает вверх, а соседи плавно сдвигаются в освободившееся место (раньше после удаления вкладки
+//    пейджер перескакивал). Вкладка из списка убирается, только когда карточка уже невидима и место схлопнулось.
+// 4. Начальная страница рисуется один раз в общий слой и после этого убирается из композиции: стоимость в покое - ноль.
+// =====================================================================================================================
+
 private fun tabKey(t: Tab) = t.id
 
-/** Элемент карусели: вкладка или карточка-заглушка пустого раздела. Сравнивается по содержимому, чтобы список не считался новым без причины. */
+/** Элемент карусели: вкладка или карточка-заглушка пустого раздела. */
 private data class Slide(val tab: Tab?, val index: Int, val priv: Boolean) {
     val key: Any get() = tab?.let { tabKey(it) } ?: if (priv) "empty-private" else "empty-normal"
 }
@@ -217,55 +232,774 @@ private data class Slide(val tab: Tab?, val index: Int, val priv: Boolean) {
 /** Нажатая карточка: где она на экране и какая на ней картинка. */
 private class Expand(val rect: UiRect, val thumb: ImageBitmap?, val index: Int)
 
-/** Координаты карточки. Обычная ссылка, а не состояние: запись в состояние на каждом кадре прокрутки перерисовывала бы лишнее. */
+/** Координаты карточки. Обычная ссылка, а не состояние: запись в состояние на каждом кадре перерисовывала бы лишнее. */
 private class CoordsHolder {
     var c: LayoutCoordinates? = null
     fun rect(): UiRect = c?.takeIf { it.isAttached }?.boundsInRoot() ?: UiRect.Zero
 }
 
-/**
- * Всё, что нужно карточкам от переключателя, в одном стабильном объекте. Раньше каждой карточке передавалось по семь
- * лямбд, которые пересоздавались при любой перерисовке переключателя, и все видимые карточки перерисовывались вместе с ним.
- * Теперь поля меняются на месте, а карточка получает только свои данные и ссылку на этот объект.
- */
+/** Всё, что нужно карточкам от переключателя, в одном стабильном объекте. */
 @Stable
 private class CardEnv {
     lateinit var browser: Browser
     lateinit var homeLayer: GraphicsLayer
+
+    /** Начальная страница записана в [homeLayer]: до этого карточки показывают заглушку и плавно меняют её на превью */
+    var homeReady by mutableStateOf(false)
     var currentHolder: CoordsHolder? = null
     var onOpen: (Int, UiRect, ImageBitmap?) -> Unit = { _, _, _ -> }
-    var onClose: (Int) -> Unit = {}
+    var onClose: (Tab) -> Unit = {}
 
-    /** Сколько карточек сейчас тянут пальцем или они улетают. Читает только отложенное закрытие сессий: ждёт нуля */
+    /** Сколько карточек сейчас тянут пальцем или они улетают. Отложенное закрытие сессий ждёт нуля */
     var busy by mutableIntStateOf(0)
 }
 
 /** Во сколько порогов закрытия карточка оттянута, когда её прозрачность дошла до нуля: дальше она не видна */
 private const val SWIPE_GONE = 2.2f
+private const val SIDE_SCALE = 0.12f
+private const val SIDE_ALPHA = 0.28f
+private const val SIDE_TURN = 18f
 
-// Пустой запрос: ничего не читаем. Иначе список зависел бы от заголовка и адреса каждой вкладки и пересчитывался
-// (с компиляцией Regex на каждую вкладку) всякий раз, когда любая вкладка в фоне меняла заголовок
+// Пустой запрос: ничего не читаем. Иначе список зависел бы от заголовка и адреса каждой вкладки
 private fun Tab.matches(q: String) = q.isEmpty() || matchesQuery(label(), url, q)
 
+/** Всё, что меняется у одной карточки на каждом кадре. Читается только в блоках слоя, поэтому перекомпоновок не вызывает. */
+@Stable
+private class CardMotion(enterFrom: Float) {
+    /** Смещение вверх при смахивании (px, <= 0) */
+    var y by mutableFloatStateOf(0f)
+
+    /** Сколько места карточка занимает в карусели: 1 - всё, 0 - схлопнулась, соседи сомкнулись */
+    var slot by mutableFloatStateOf(1f)
+
+    /** Сетка: прогресс закрытия кнопкой */
+    var leave by mutableFloatStateOf(0f)
+    val press = Animatable(1f)
+
+    /** Появление новой карточки */
+    val enter = Animatable(enterFrom)
+    var job: Job? = null
+    var leaving = false
+    var hapticFired = false
+}
+
 /**
- * Переключатель вкладок на весь экран в стиле Material 3 Expressive: переключатель «Вкладки / Приватные»
- * со сменой формы кнопок, карусель крупных карточек с живым превью страницы (центральная крупнее, соседние
- * уменьшаются и бледнеют) или сетка, плавающая панель с большой кнопкой «+». Карточку можно смахнуть вверх, чтобы закрыть.
+ * Состояние карусели.
  *
- * Что сделано ради плавности:
- * - списки и счётчики считаются через derivedStateOf: переключатель перерисовывается, только когда результат изменился,
- *   а не при каждой смене заголовка или адреса любой вкладки;
- * - всё, что меняется на каждом кадре (смахивание, нажатие, прозрачность соседних карточек, ползунок), читается
- *   только на этапе рисования и не вызывает перерисовку;
- * - превью начальной страницы рисуется один раз в общий слой и копируется во все такие карточки;
- * - положение карточки для анимации открытия запрашивается по требованию, а не на каждом кадре прокрутки.
+ * [pos] - положение камеры в номерах карточек (2.0 - вторая карточка точно по центру, 2.5 - между второй и третьей).
+ * Пока карточка схлопывается ([collapsing]), места за ней становится меньше: положение карточки на экране считает [xAt],
+ * линейно «забирая» у камеры освободившееся место, поэтому камера остаётся на той же карточке, а не уезжает на соседнюю.
+ */
+@Stable
+private class CarouselState(
+    private val scope: CoroutineScope,
+    private val haptic: HapticFeedback,
+    initialPos: Float,
+) {
+    lateinit var slidesState: State<List<Slide>>
+    lateinit var env: CardEnv
+    val slides: List<Slide> get() = slidesState.value
+
+    var pos by mutableFloatStateOf(initialPos)
+
+    /** Идёт жест или доводка: пока true, отложенное закрытие сессий движка ждёт */
+    var moving by mutableStateOf(false)
+
+    /** Карточки, у которых место схлопывается. Читается в блоках слоя, поэтому состояние */
+    val collapsing = mutableStateMapOf<Any, CardMotion>()
+    var fadeMode by mutableIntStateOf(-1)
+    val fade = Animatable(1f)
+
+    /** После первого кадра: карточки, созданные позже (вошли в окно, появились после закрытия), плавно проявляются */
+    var ready = false
+    var onSettled: () -> Unit = {}
+
+    // Размеры, ставит Layout при измерении
+    var step = 1f
+    var cardW = 1f
+    var cardH = 1f
+    var viewW = 1f
+    var viewH = 1f
+    var dismissPx = 1f
+    var flickPx = 1f
+    var flickMinPx = 1f
+    var cardShape: Shape = HripsShapes.XXL
+
+    private val motions = HashMap<Any, CardMotion>()
+    private var camJob: Job? = null
+    private var camTarget = 0f
+    private var camVel = 0f
+
+    // ---- карточки ----
+
+    fun motion(key: Any): CardMotion = motions.getOrPut(key) { CardMotion(if (ready) 0f else 1f) }
+
+    fun prune() {
+        val keys = HashSet<Any>()
+        slides.forEach { keys.add(it.key) }
+        motions.keys.retainAll { it in keys || collapsing.containsKey(it) }
+    }
+
+    private fun maxPos() = (slides.size - 1).coerceAtLeast(0).toFloat()
+
+    // ---- геометрия ----
+
+    /** Сколько места «потеряно» левее точки [t]: схлопывающаяся карточка j отдаёт его по мере того, как камера её проходит */
+    private fun lostAt(t: Float, list: List<Slide>): Float {
+        if (collapsing.isEmpty()) return 0f
+        var lost = 0f
+        for ((k, m) in collapsing) {
+            val j = list.indexOfFirst { it.key == k }
+            if (j >= 0) lost += (1f - m.slot) * (t - j).coerceIn(0f, 1f)
+        }
+        return lost
+    }
+
+    private fun xAt(t: Float, list: List<Slide>) = t - lostAt(t, list)
+
+    /** Блок слоя карточки: всё, что видно глазу. Выполняется при рисовании, не при композиции */
+    fun applyLayer(s: GraphicsLayerScope, key: Any) {
+        val list = slides
+        val i = list.indexOfFirst { it.key == key }
+        val m = motions[key]
+        if (i < 0 || m == null) {
+            s.alpha = 0f
+            return
+        }
+        val e = pos.coerceIn(0f, (list.size - 1).coerceAtLeast(0).toFloat())
+        val d = xAt(i.toFloat(), list) - xAt(e, list)
+        val ad = abs(d).coerceIn(0f, 1f)
+        val y = m.y
+        // Чем выше утащили, тем сильнее карточка сжимается и наклоняется, как отрываемый листок
+        val pull = (-y / dismissPx).coerceIn(0f, 2f)
+        val en = m.enter.value
+        val sc = (1f - SIDE_SCALE * ad) * (1f - 0.07f * pull) * m.press.value * (0.92f + 0.08f * en)
+        s.translationX = d * step
+        s.translationY = y
+        s.scaleX = sc
+        s.scaleY = sc
+        s.rotationZ = -pull * 3f
+        // Боковые поворачиваются лицом к центру, как в coverflow
+        s.rotationY = -d.coerceIn(-1f, 1f) * SIDE_TURN
+        s.cameraDistance = 14f * s.density
+        var a = (1f - SIDE_ALPHA * ad) * (1f - abs(y) / (dismissPx * SWIPE_GONE)).coerceIn(0f, 1f) * en
+        if (fadeMode >= 0 && list[i].priv == (fadeMode == 1)) a *= fade.value
+        s.alpha = a
+        s.shape = cardShape
+        s.clip = true
+        // Прозрачность на каждую команду рисования, без отдельного буфера размером с карточку
+        s.compositingStrategy = CompositingStrategy.ModulateAlpha
+    }
+
+    /** Карточка под точкой [p] (в координатах карусели) или null */
+    fun slideAt(p: Offset): Slide? {
+        val list = slides
+        if (list.isEmpty() || abs(p.y - viewH / 2f) > cardH / 2f) return null
+        val e = pos.coerceIn(0f, maxPos())
+        val xe = xAt(e, list)
+        val c = e.roundToInt()
+        var best: Slide? = null
+        var bestDist = Float.MAX_VALUE
+        for (i in (c - 2).coerceAtLeast(0)..(c + 2).coerceAtMost(list.lastIndex)) {
+            val d = xAt(i.toFloat(), list) - xe
+            val sc = 1f - SIDE_SCALE * abs(d).coerceIn(0f, 1f)
+            val dist = abs(p.x - (viewW / 2f + d * step))
+            if (dist <= cardW * sc / 2f && dist < bestDist) {
+                best = list[i]
+                bestDist = dist
+            }
+        }
+        return best
+    }
+
+    // ---- камера ----
+
+    fun beginDrag() {
+        camJob?.cancel()
+        camJob = null
+        moving = true
+    }
+
+    fun dragBy(dxPx: Float) {
+        pos = (pos - dxPx / step).coerceIn(0f, maxPos())
+    }
+
+    /** Палец отпущен: доводим до ближайшей карточки, бросок переносит максимум на одну. [vu] - скорость в карточках/с */
+    fun settle(vu: Float) {
+        val n = slides.size
+        if (n == 0) {
+            moving = false
+            return
+        }
+        val base = pos.roundToInt().coerceIn(0, n - 1)
+        val t = (pos + vu * 0.12f).roundToInt().coerceIn(base - 1, base + 1).coerceIn(0, n - 1)
+        animateCamera(t.toFloat(), vu)
+    }
+
+    fun endDrag(vxPx: Float) = settle(-vxPx / step)
+
+    /** Доводка камеры к [target] пружиной без перелёта; подхватывает скорость жеста */
+    fun animateCamera(target: Float, velocity: Float = 0f) {
+        camJob?.cancel()
+        camTarget = target
+        moving = true
+        camJob = scope.launch {
+            if (abs(pos - target) > 0.001f || abs(velocity) > 0.01f) {
+                animate(pos, target, velocity, spring(dampingRatio = 0.9f, stiffness = 500f, visibilityThreshold = 0.002f)) { v, vel ->
+                    camVel = vel
+                    pos = v.coerceIn(0f, maxPos())
+                }
+            }
+            pos = target.coerceIn(0f, maxPos())
+            camVel = 0f
+            moving = false
+            onSettled()
+        }
+    }
+
+    /** К карточке номер [idx] (переключатель «Вкладки / Приватные»). Дальний переход начинаем рядом, чтобы не мелькало полсписка */
+    fun scrollTo(idx: Int) {
+        val t = idx.toFloat()
+        if (abs(t - pos) > 2.5f) pos = t - sign(t - pos) * 1.2f
+        animateCamera(t)
+    }
+
+    // ---- смахивание вверх ----
+
+    fun busyOn() {
+        env.busy += 1
+    }
+
+    fun busyOff() {
+        env.busy = (env.busy - 1).coerceAtLeast(0)
+    }
+
+    /** Вибро-отклик вне главного потока: на ряде устройств он занимает заметное время и обрывал плавность жеста */
+    fun tick(type: HapticFeedbackType) {
+        scope.launch(Dispatchers.Default) { runCatching { haptic.performHapticFeedback(type) } }
+    }
+
+    fun verticalStart(m: CardMotion) {
+        m.job?.cancel()
+        m.job = null
+        m.hapticFired = false
+        busyOn()
+    }
+
+    fun verticalBy(m: CardMotion, dy: Float) {
+        // Вверх карточка идёт чуть быстрее пальца (1.25x): жест ощущается лёгким. Вниз возвращается 1 к 1
+        m.y = (m.y + if (dy < 0f) dy * 1.25f else dy).coerceAtMost(0f)
+        // Короткий отклик один раз за жест, когда карточку оттянули достаточно для закрытия
+        if (m.y < -dismissPx && !m.hapticFired) {
+            m.hapticFired = true
+            tick(HapticFeedbackType.GestureThresholdActivate)
+        }
+    }
+
+    fun verticalEnd(slide: Slide, m: CardMotion, vy: Float, finished: Boolean) {
+        val flick = finished && vy < -flickPx && m.y < -flickMinPx
+        if (finished && (m.y < -dismissPx || flick)) {
+            dismiss(slide, vy, busyHeld = true)
+        } else {
+            m.job = scope.launch {
+                try {
+                    animate(m.y, 0f, vy, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow)) { v, _ -> m.y = v.coerceAtMost(0f) }
+                } finally {
+                    busyOff()
+                }
+            }
+        }
+    }
+
+    /**
+     * Улёт вверх и закрытие. Пока карточка летит, её место схлопывается, и соседи плавно сдвигаются. Вкладка убирается из
+     * списка, когда карточка уже невидима и место сомкнулось: список меняется без скачка.
+     * Единственная карточка раздела не схлопывается: на её месте появится заглушка.
+     */
+    fun dismiss(slide: Slide, velocity: Float, busyHeld: Boolean) {
+        val tab = slide.tab
+        val m = tab?.let { motion(slide.key) }
+        if (tab == null || m == null || m.leaving) {
+            if (busyHeld) busyOff()
+            return
+        }
+        m.leaving = true
+        if (!busyHeld) busyOn()
+        val list = slides
+        val j = list.indexOfFirst { it.key == slide.key }
+        val canCollapse = list.any { it.tab != null && it.priv == slide.priv && it.key != slide.key && !collapsing.containsKey(it.key) }
+        // Закрыли центральную карточку, последнюю в своём разделе: камера идёт к предыдущей, а не в соседний раздел
+        val next = list.getOrNull(j + 1)
+        val hasNextSame = next != null && next.tab != null && next.priv == slide.priv
+        val goBack = canCollapse && j > 0 && abs(pos - j) < 0.5f && !hasNextSame
+        val goneAt = dismissPx * 1.1f
+        m.job?.cancel()
+        m.job = scope.launch {
+            var removed = false
+            try {
+                val fly = launch {
+                    animate(m.y, -dismissPx * (SWIPE_GONE + 0.4f), velocity.coerceAtMost(0f), HripsMotion.fling<Float>()) { v, _ -> m.y = v }
+                }
+                if (canCollapse) {
+                    snapshotFlow { m.y }.first { it <= -goneAt }
+                    collapsing[slide.key] = m
+                    if (goBack) animateCamera((j - 1).toFloat())
+                    animate(1f, 0f, 0f, tween(300, easing = FastOutSlowInEasing)) { v, _ -> m.slot = v }
+                } else {
+                    snapshotFlow { m.y }.first { it <= -dismissPx * SWIPE_GONE }
+                }
+                fly.cancel()
+                removeNow(slide.key, tab)
+                removed = true
+            } finally {
+                busyOff()
+                // Переключатель закрыли посреди улёта: карточка уже невидима, вкладку всё равно закрываем
+                if (!removed && m.y <= -dismissPx * SWIPE_GONE) removeNow(slide.key, tab)
+            }
+        }
+    }
+
+    /** Убирает вкладку из списка и подстраивает камеру так, чтобы на экране ничего не сдвинулось */
+    private fun removeNow(key: Any, tab: Tab) {
+        val list = slides
+        val j = list.indexOfFirst { it.key == key }
+        val running = camJob?.isActive == true
+        if (j >= 0) {
+            pos = (pos - (pos - j).coerceIn(0f, 1f)).coerceAtLeast(0f)
+            camTarget -= (camTarget - j).coerceIn(0f, 1f)
+        }
+        collapsing.remove(key)
+        motions.remove(key)
+        env.onClose(tab)
+        // Идёт доводка: она целилась в старый номер. Продолжаем с той же скоростью, но к сдвинутой цели
+        if (running) animateCamera(camTarget.coerceIn(0f, maxPos()), camVel)
+    }
+
+    // ---- «Закрыть все» ----
+
+    suspend fun fadeOutSection(priv: Boolean) {
+        fadeMode = if (priv) 1 else 0
+        fade.snapTo(1f)
+        fade.animateTo(0f, tween(180))
+    }
+
+    suspend fun resetFade() {
+        fadeMode = -1
+        fade.snapTo(1f)
+    }
+}
+
+/**
+ * Один обработчик касаний на всю карусель. По первому смещению за порог выбираем ось: по горизонтали листаем,
+ * по вертикали (если палец на карточке) смахиваем эту карточку. Нажатия без смещения достаются самим карточкам.
+ */
+private fun Modifier.carouselGestures(st: CarouselState): Modifier = pointerInput(st) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val vt = VelocityTracker()
+        vt.addPosition(down.uptimeMillis, down.position)
+        var axis = 0
+        var hit: Slide? = null
+        val first = awaitTouchSlopOrCancellation(down.id) { change, over ->
+            if (abs(over.x) > abs(over.y)) {
+                axis = 1
+            } else {
+                hit = st.slideAt(down.position)?.takeIf { it.tab != null }
+                if (hit != null) axis = 2
+            }
+            if (axis != 0) change.consume()
+        } ?: return@awaitEachGesture
+        if (axis == 1) {
+            st.beginDrag()
+            vt.addPosition(first.uptimeMillis, first.position)
+            val ok = drag(first.id) { c ->
+                vt.addPosition(c.uptimeMillis, c.position)
+                st.dragBy(c.positionChange().x)
+                c.consume()
+            }
+            st.endDrag(if (ok) vt.calculateVelocity().x else 0f)
+        } else if (axis == 2) {
+            val slide = hit ?: return@awaitEachGesture
+            val m = st.motion(slide.key)
+            if (m.leaving) return@awaitEachGesture
+            st.verticalStart(m)
+            vt.addPosition(first.uptimeMillis, first.position)
+            val ok = drag(first.id) { c ->
+                vt.addPosition(c.uptimeMillis, c.position)
+                st.verticalBy(m, c.positionChange().y)
+                c.consume()
+            }
+            st.verticalEnd(slide, m, if (ok) vt.calculateVelocity().y else 0f, ok)
+        }
+    }
+}
+
+/**
+ * Карусель: окно из пяти карточек вокруг камеры. Остальные не компонуются. Все карточки одного размера и стоят в центре;
+ * на место их ставит блок слоя ([CarouselState.applyLayer]).
+ */
+@Composable
+private fun TabCarousel(
+    st: CarouselState,
+    env: CardEnv,
+    current: Int,
+    searching: Boolean,
+    onNew: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val slides = st.slides
+    val range by remember(st) {
+        derivedStateOf {
+            val list = st.slides
+            val c = st.pos.roundToInt().coerceIn(0, (list.size - 1).coerceAtLeast(0))
+            (c - 2).coerceAtLeast(0)..(c + 2).coerceAtMost(list.lastIndex)
+        }
+    }
+    Layout(
+        content = {
+            for (i in range) {
+                val s = slides.getOrNull(i) ?: continue
+                key(s.key) {
+                    CarouselCard(s, selected = s.tab != null && s.index == current, st = st, env = env, searching = searching, onNew = onNew)
+                }
+            }
+        },
+        modifier = modifier.carouselGestures(st),
+    ) { measurables, constraints ->
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        val cw = minOf(w * 0.78f, 400.dp.toPx()).roundToInt().coerceAtLeast(1)
+        val ratio = if (w > 600.dp.toPx()) 1.0f else 1.4f
+        val ch = minOf((cw * ratio).roundToInt(), h - 16.dp.roundToPx()).coerceAtLeast(1)
+        st.cardW = cw.toFloat()
+        st.cardH = ch.toFloat()
+        st.viewW = w.toFloat()
+        st.viewH = h.toFloat()
+        st.step = cw + 14.dp.toPx()
+        st.dismissPx = 64.dp.toPx()
+        st.flickPx = 380.dp.toPx()
+        st.flickMinPx = 10.dp.toPx()
+        val fixed = Constraints.fixed(cw, ch)
+        val placed = measurables.map { it.layoutId to it.measure(fixed) }
+        layout(w, h) {
+            val x0 = (w - cw) / 2
+            val y0 = (h - ch) / 2
+            for ((key, p) in placed) {
+                if (key != null) p.placeWithLayer(x0, y0) { st.applyLayer(this, key) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CarouselCard(
+    slide: Slide,
+    selected: Boolean,
+    st: CarouselState,
+    env: CardEnv,
+    searching: Boolean,
+    onNew: (Boolean) -> Unit,
+) {
+    val m = remember { st.motion(slide.key) }
+    LaunchedEffect(m) {
+        if (m.enter.value < 1f) m.enter.animateTo(1f, tween(240, easing = FastOutSlowInEasing))
+    }
+    val tab = slide.tab
+    Box(Modifier.layoutId(slide.key)) {
+        if (tab == null) {
+            EmptySlide(slide.priv, searching = searching, onNew = { onNew(slide.priv) }, modifier = Modifier.fillMaxSize())
+        } else {
+            val holder = remember { CoordsHolder() }
+            if (selected) SideEffect { env.currentHolder = holder }
+            TabCardBody(
+                tab = tab,
+                index = slide.index,
+                selected = selected,
+                compact = false,
+                env = env,
+                m = m,
+                holder = holder,
+                onClose = { st.dismiss(slide, 0f, busyHeld = false) },
+                modifier = Modifier.fillMaxSize().onPlaced { holder.c = it },
+            )
+        }
+    }
+}
+
+/**
+ * Карточка вкладки: значок, название и адрес, кнопка закрытия и крупное превью страницы (снимок экрана).
+ * Выбранная выделена цветом и рамкой. Нажатие открывает. Положение, наклон и прозрачность карточке не принадлежат:
+ * их задаёт слой снаружи (карусель или сетка), поэтому содержимое во время жестов не перерисовывается.
+ */
+@Composable
+private fun TabCardBody(
+    tab: Tab,
+    index: Int,
+    selected: Boolean,
+    compact: Boolean,
+    env: CardEnv,
+    m: CardMotion,
+    holder: CoordsHolder,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val dismissPx = with(LocalDensity.current) { 64.dp.toPx() }
+    val thumb = rememberTabThumb(tab, compact)
+    val subtitle = when {
+        // Название таких вкладок уже «Приватная вкладка» / «Начальная страница»: подпись говорит другое, а не повторяет его
+        tab.isPrivate && tab.home -> "История не сохраняется"
+        tab.home -> "Новая вкладка"
+        else -> runCatching { Uri.parse(tab.url).host }.getOrNull()?.removePrefix("www.") ?: tab.url
+    }
+    val inner = RoundedCornerShape(if (compact) 23.dp else 30.dp)
+
+    // Рамка: выбранная вкладка в цвете акцента, остальные в тоне поверхности. Цвет читается при рисовании
+    val frame = animateColorAsState(
+        if (selected) cs.primary else cs.surfaceContainerHigh,
+        MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
+        label = "tabFrame",
+    )
+    // Нажатая карточка чуть проседает: число лежит в m.press и читается слоем снаружи
+    val source = remember { MutableInteractionSource() }
+    val pressSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    LaunchedEffect(source) {
+        source.interactions.collect { i ->
+            when (i) {
+                is PressInteraction.Press -> launch { m.press.animateTo(0.97f, pressSpec) }
+                is PressInteraction.Release, is PressInteraction.Cancel -> launch { m.press.animateTo(1f, pressSpec) }
+                else -> Unit
+            }
+        }
+    }
+
+    Box(
+        modifier
+            .drawBehind { drawRect(frame.value) }
+            // Только нажатие: карточку закрывают смахиванием вверх или крестиком
+            .clickable(interactionSource = source, indication = null, onClick = { env.onOpen(index, holder.rect(), thumb) }),
+    ) {
+        Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
+            // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
+            val context = LocalContext.current.applicationContext
+            val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
+                value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
+            }
+            val pageImage = pageImageState.value
+            if (thumb != null && !tab.home) {
+                Image(
+                    bitmap = thumb,
+                    contentDescription = "Превью страницы",
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (pageImage != null && !tab.home) {
+                Image(
+                    bitmap = pageImage,
+                    contentDescription = "Картинка страницы",
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (tab.home && !tab.isPrivate) {
+                HomeCardContent(tab, compact, env)
+            } else {
+                TabPlaceholder(tab, compact)
+            }
+
+            // Кнопка закрытия справа сверху
+            Surface(
+                onClick = {
+                    scope.launch(Dispatchers.Default) { runCatching { haptic.performHapticFeedback(HapticFeedbackType.Confirm) } }
+                    onClose()
+                },
+                shape = CircleShape,
+                color = cs.surface.copy(alpha = 0.88f),
+                contentColor = cs.onSurface,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(if (compact) 6.dp else 10.dp)
+                    .size(if (compact) 30.dp else 38.dp)
+                    .semantics { contentDescription = "Закрыть вкладку ${tab.label()}" },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(HripsIcons.Close, null, Modifier.size(if (compact) 16.dp else 20.dp))
+                }
+            }
+
+            // Подпись плашкой снизу: значок, название, адрес. Лежит поверх снимка, поэтому читается на любой странице
+            CompositionLocalProvider(LocalContentColor provides cs.onSurface) {
+                Row(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(if (compact) 6.dp else 8.dp)
+                        .background(cs.surfaceContainerHigh.copy(alpha = 0.94f), RoundedCornerShape(if (compact) 18.dp else 24.dp))
+                        .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TabIcon(tab, if (compact) 20.dp else 30.dp)
+                    Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
+                        )
+                        if (!compact) {
+                            Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Красный значок сверху: появляется, когда карточку оттянули достаточно, чтобы она закрылась. У него свой слой,
+        // поэтому его проявление на каждом кадре жеста не перезаписывает остальную карточку
+        if (!compact) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 14.dp)
+                    .size(44.dp)
+                    .graphicsLayer {
+                        val k = (-m.y / dismissPx).coerceIn(0f, 1f)
+                        alpha = k
+                        scaleX = 0.6f + 0.4f * k
+                        scaleY = 0.6f + 0.4f * k
+                    }
+                    .background(cs.error, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Icon(HripsIcons.Close, null, Modifier.size(22.dp), tint = cs.onError) }
+        }
+    }
+}
+
+/** Начальная страница в карточке: сначала заглушка, когда настоящая записана в общий слой, превью проявляется поверх неё */
+@Composable
+private fun HomeCardContent(tab: Tab, compact: Boolean, env: CardEnv) {
+    val a = animateFloatAsState(if (env.homeReady) 1f else 0f, tween(220), label = "homeFade")
+    Box(Modifier.fillMaxSize()) {
+        TabPlaceholder(tab, compact)
+        HomeTabPreview(env.homeLayer, Modifier.fillMaxSize().graphicsLayer { alpha = a.value })
+    }
+}
+
+/** Карточка сетки. Закрытие кнопкой: карточка уменьшается и гаснет, потом вкладка уходит, соседей сдвигает сетка */
+@Composable
+private fun GridCard(tab: Tab, index: Int, selected: Boolean, env: CardEnv, modifier: Modifier = Modifier) {
+    val m = remember { CardMotion(1f) }
+    val holder = remember { CoordsHolder() }
+    if (selected) SideEffect { env.currentHolder = holder }
+    val scope = rememberCoroutineScope()
+    TabCardBody(
+        tab = tab,
+        index = index,
+        selected = selected,
+        compact = true,
+        env = env,
+        m = m,
+        holder = holder,
+        onClose = {
+            if (!m.leaving) {
+                m.leaving = true
+                scope.launch {
+                    animate(0f, 1f, 0f, tween(170, easing = FastOutSlowInEasing)) { v, _ -> m.leave = v }
+                    env.onClose(tab)
+                }
+            }
+        },
+        modifier = modifier
+            .onPlaced { holder.c = it }
+            .graphicsLayer {
+                val s = m.press.value * (1f - 0.1f * m.leave)
+                scaleX = s
+                scaleY = s
+                alpha = 1f - m.leave
+                shape = HripsShapes.L
+                clip = true
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
+    )
+}
+
+/**
+ * Сетка: один раздел за раз; между «Вкладки» и «Приватные» переключаемся кнопкой в шапке или смахиванием по горизонтали
+ * (вертикальная прокрутка списка не мешает). Раньше обе сетки стояли в пейджере и жили одновременно.
+ */
+@Composable
+private fun TabGrid(
+    mode: Int,
+    onMode: (Int) -> Unit,
+    normal: List<Pair<Int, Tab>>,
+    priv: List<Pair<Int, Tab>>,
+    current: Int,
+    searching: Boolean,
+    env: CardEnv,
+    onNew: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val slideSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val threshold = with(LocalDensity.current) { 72.dp.toPx() }
+    AnimatedContent(
+        targetState = mode,
+        modifier = modifier.pointerInput(mode) {
+            var total = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { total = 0f },
+                onDragEnd = {
+                    if (total < -threshold && mode == 0) onMode(1) else if (total > threshold && mode == 1) onMode(0)
+                },
+                onHorizontalDrag = { _, dx -> total += dx },
+            )
+        },
+        transitionSpec = {
+            val dir = if (targetState > initialState) 1 else -1
+            (slideInHorizontally(slideSpec) { it / 6 * dir } + fadeIn(fadeInSpec)) togetherWith
+                (slideOutHorizontally(slideSpec) { -it / 6 * dir } + fadeOut(fadeOutSpec))
+        },
+        label = "tabGrid",
+    ) { m ->
+        val isPriv = m == 1
+        val list = if (isPriv) priv else normal
+        if (list.isEmpty()) {
+            EmptyTabs(isPriv, searching = searching, onNew = { onNew(isPriv) })
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 170.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                gridItems(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
+                    GridCard(t, i, selected = i == current, env = env, modifier = Modifier.fillMaxWidth().aspectRatio(0.78f).animateItem())
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Переключатель вкладок на весь экран в стиле Material 3 Expressive: переключатель «Вкладки / Приватные»,
+ * карусель крупных карточек с живым превью страницы (центральная крупнее, соседние уменьшаются, бледнеют и поворачиваются)
+ * или сетка, плавающая панель с большой кнопкой «+». Карточку можно смахнуть вверх, чтобы закрыть.
+ * Устройство описано в комментарии выше ([CarouselState]).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     var grid by remember { mutableStateOf(false) }
+    // Разворот видов (карусель <-> сетка) проявляется, а первый показ нет: его уже показывает открытие экрана
+    val toggled = remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
@@ -275,7 +1009,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     // Растёт при каждом закрытии: по нему отложенно отпускаются сессии закрытых вкладок (см. LaunchedEffect ниже)
     var closeTick by remember { mutableIntStateOf(0) }
     // Закрытие карточки с возможностью сразу вернуть вкладку. Движок при этом не трогаем: убираем вкладку только из
-    // списка, сессию закроем, когда всё затихнет (иначе закрытие сессии и поднятие соседней вкладки рвали анимацию)
+    // списка, сессию закроем, когда всё затихнет
     val closeWithUndo: (Int) -> Unit = { i ->
         val before = browser.closedTabs.firstOrNull()
         browser.closeTab(i, deferEngine = true)
@@ -287,34 +1021,37 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
 
     // Карточка, раскрывающаяся в страницу (после нажатия на карточку)
     var expanding by remember { mutableStateOf<Expand?>(null) }
-    // 0..1: насколько карточка раскрылась в страницу. По нему гаснут шапка, список и нижняя панель, чтобы не исчезать щелчком в конце
+    // 0..1: насколько карточка раскрылась в страницу. По нему гаснут шапка, список и нижняя панель
     val expandP = remember { Animatable(0f) }
     val chromeAlpha: () -> Float = { 1f - (expandP.value / 0.6f).coerceIn(0f, 1f) }
     val origins = LocalOrigins.current
 
     val current = browser.currentIndex
     val q = query.trim()
+    val qState = rememberUpdatedState(q)
 
     val normalCount by remember(browser) { derivedStateOf { browser.tabs.count { !it.isPrivate } } }
     val privateCount by remember(browser) { derivedStateOf { browser.tabs.size - normalCount } }
     val hasHome by remember(browser) { derivedStateOf { browser.tabs.any { it.home && !it.isPrivate } } }
 
-    // Списки вкладок с учётом поиска (пары «номер в общем списке, вкладка»)
-    val normalList by remember(browser, q) {
+    // Списки вкладок с учётом поиска (пары «номер в общем списке, вкладка»). Запрос читаем через состояние, а не через
+    // значение: иначе список, созданный один раз, навсегда запомнил бы первый запрос
+    val normalList by remember(browser) {
         derivedStateOf {
-            browser.tabs.mapIndexedNotNull { i, t ->
-                if (!t.isPrivate && t.matches(q)) i to t else null
-            }
+            val qq = qState.value
+            browser.tabs.mapIndexedNotNull { i, t -> if (!t.isPrivate && t.matches(qq)) i to t else null }
         }
     }
-    val privList by remember(browser, q) {
-        derivedStateOf { browser.tabs.mapIndexedNotNull { i, t -> if (t.isPrivate && t.matches(q)) i to t else null } }
+    val privList by remember(browser) {
+        derivedStateOf {
+            val qq = qState.value
+            browser.tabs.mapIndexedNotNull { i, t -> if (t.isPrivate && t.matches(qq)) i to t else null }
+        }
     }
 
-    // Карусель одна на все вкладки: сначала обычные, потом приватные. Поэтому к приватным
-    // можно перейти одним обычным смахиванием, без отдельного «перелистывания страницы».
+    // Карусель одна на все вкладки: сначала обычные, потом приватные. К приватным можно перейти обычным смахиванием.
     // Пустой раздел представлен одной карточкой-заглушкой.
-    val slides by remember {
+    val slidesState = remember(browser) {
         derivedStateOf {
             buildList {
                 normalList.forEach { add(Slide(it.second, it.first, false)) }
@@ -324,91 +1061,74 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             }
         }
     }
-
-    // 0 = обычные, 1 = приватные. Источник правды для шапки, фона и нижней панели
-    var mode by remember { mutableIntStateOf(if (browser.current.isPrivate) 1 else 0) }
-    val firstSlide = { m: Int ->
-        slides.indexOfFirst { it.index == current && it.priv == (m == 1) }
-            .takeIf { it >= 0 } ?: slides.indexOfFirst { it.priv == (m == 1) }.coerceAtLeast(0)
-    }
-    val cp = rememberPagerState(initialPage = firstSlide(mode)) { slides.size }
-    val gp = rememberPagerState(initialPage = mode) { 2 }
-
-    LaunchedEffect(grid) {
-        if (grid) gp.scrollToPage(mode) else cp.scrollToPage(firstSlide(mode))
-    }
-    LaunchedEffect(cp) {
-        snapshotFlow { cp.currentPage }.collect { p ->
-            if (!grid) slides.getOrNull(p)?.let { mode = if (it.priv) 1 else 0 }
+    val firstPriv by remember(browser) {
+        derivedStateOf {
+            val list = slidesState.value
+            list.indexOfFirst { it.priv }.let { if (it < 0) list.size else it }
         }
     }
-    LaunchedEffect(gp) {
-        snapshotFlow { gp.currentPage }.collect { if (grid) mode = it }
+    val firstSlide = { m: Int ->
+        val list = slidesState.value
+        list.indexOfFirst { it.tab != null && it.index == current && it.priv == (m == 1) }
+            .takeIf { it >= 0 } ?: list.indexOfFirst { it.priv == (m == 1) }.coerceAtLeast(0)
     }
+
+    var gridMode by remember { mutableIntStateOf(if (browser.current.isPrivate) 1 else 0) }
+
+    val env = remember { CardEnv() }
+    env.browser = browser
+    // Общий слой с превью начальной страницы: рисуется один раз, а не по экземпляру страницы на каждую карточку
+    val homeLayer = rememberGraphicsLayer()
+    env.homeLayer = homeLayer
+
+    val st = remember { CarouselState(scope, haptic, firstSlide(gridMode).toFloat()) }
+    st.slidesState = slidesState
+    st.env = env
+    LaunchedEffect(st) {
+        repeat(2) { withFrameNanos { } }
+        st.ready = true
+    }
+    LaunchedEffect(slidesState.value) { st.prune() }
+    // Список изменился (поиск, закрыли все): камера могла остаться между карточками или за краем
+    LaunchedEffect(slidesState.value.size) {
+        if (!st.moving && st.collapsing.isEmpty()) st.settle(0f)
+    }
+
+    // 0 = обычные, 1 = приватные. Источник правды для нижней панели
+    val carouselMode by remember(st) {
+        derivedStateOf { if (st.slides.getOrNull(st.pos.roundToInt())?.priv == true) 1 else 0 }
+    }
+    val mode = if (grid) gridMode else carouselMode
 
     // Положение между «обычными» (0) и «приватными» (1), плавно следует за пальцем. Читается только при рисовании
+    val gridP = animateFloatAsState(gridMode.toFloat(), MaterialTheme.motionScheme.defaultSpatialSpec<Float>(), label = "gridMode")
     val progress: () -> Float = {
-        if (grid) {
-            (gp.currentPage + gp.currentPageOffsetFraction).coerceIn(0f, 1f)
-        } else {
-            val list = slides
-            val pos = (cp.currentPage + cp.currentPageOffsetFraction).coerceIn(0f, list.lastIndex.toFloat())
-            val lo = pos.toInt()
-            val hi = (lo + 1).coerceAtMost(list.lastIndex)
-            val f = pos - lo
-            val a = if (list[lo].priv) 1f else 0f
-            val b = if (list[hi].priv) 1f else 0f
-            a + (b - a) * f
-        }
+        if (grid) gridP.value.coerceIn(0f, 1f) else (st.pos - (firstPriv - 1)).coerceIn(0f, 1f)
     }
-    // Смена режима «карусель / сетка» проявляется плавно, а не подменой за один кадр
-    val modeFadeIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    val modeFadeOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val modeScale = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    // Закрытие карточки в карусели: пейджер сам ничего не анимирует, и соседние карточки встали бы на новые места
-    // за один кадр. Запоминаем, что куда сдвинулось, и рисуем сдвиг обратно, плавно сводя его к нулю
-    val shiftInfo = remember { arrayOfNulls<PagerShift>(1) }
-    val shift = remember { Animatable(0f) }
     val bgNormal = cs.surface
     val bgPrivate = lerp(cs.surface, cs.tertiaryContainer, 0.55f)
 
     val select: (Int) -> Unit = { m ->
-        scope.launch { if (grid) gp.animateScrollToPage(m) else cp.animateScrollToPage(firstSlide(m)) }
+        if (grid) gridMode = m else st.scrollTo(firstSlide(m))
     }
 
-    // Общий слой с превью начальной страницы: рисуется один раз, а не по экземпляру страницы на каждую карточку
-    val homeLayer = rememberGraphicsLayer()
-
-    val env = remember { CardEnv() }
-    env.browser = browser
-    env.homeLayer = homeLayer
     env.onOpen = { i, rect, thumb -> if (expanding == null) expanding = Expand(rect, thumb, i) }
-    env.onClose = { i ->
-        // Закрыли центральную карточку, которая последняя в своём разделе: карусель общая, и пейджер остался бы на том же
-        // номере, то есть уехал бы в соседний раздел (из обычных в приватные). Идём к предыдущей карточке этого раздела
-        val si = slides.indexOfFirst { it.index == i }
-        val s0 = slides.getOrNull(si)
-        val back = if (!grid && si > 0 && si == cp.currentPage && s0 != null &&
-            slides.getOrNull(si - 1)?.let { it.priv == s0.priv && it.tab != null } == true &&
-            slides.getOrNull(si + 1)?.priv != s0.priv
-        ) si - 1 else null
-        if (!grid && s0 != null && si >= 0) {
-            val n = slides.size
-            val c = cp.currentPage
-            // Пейджер держит на месте первую видимую карточку по ключу: центр остаётся тем же, если убрали не его
-            val c2 = when {
-                si < c -> c - 1
-                si > c -> c
-                else -> minOf(c, n - 2).coerceAtLeast(0)
-            }
-            shiftInfo[0] = PagerShift(n, si, c, c2)
-            scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                shift.snapTo(1f)
-                shift.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
-            }
-        }
-        closeWithUndo(i)
-        if (back != null) cp.requestScrollToPage(back)
+    env.onClose = { tab ->
+        val i = browser.tabs.indexOf(tab)
+        if (i >= 0) closeWithUndo(i)
+    }
+
+    // Начальная страница: настоящая главная записывается в слой один раз и после этого убирается из композиции. Начинаем
+    // после того как переключатель открылся (пока он растёт, кадры нужны анимации), а до этого карточки показывают заглушку
+    var homePhase by remember { mutableIntStateOf(0) } // 0 - ждём, 1 - записываем, 2 - готово
+    LaunchedEffect(hasHome) {
+        if (!hasHome) return@LaunchedEffect
+        delay(480)
+        homePhase = 1
+        delay(450)
+        env.homeReady = true
+        withFrameNanos { }
+        homePhase = 2
     }
 
     // Сессии закрытых карточек отпускаем, когда прошло время без новых закрытий, листание стоит и карточки не тянут.
@@ -417,26 +1137,30 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         if (closeTick == 0) return@LaunchedEffect
         delay(1200)
         withTimeoutOrNull(3000) {
-            snapshotFlow { cp.isScrollInProgress || gp.isScrollInProgress || env.busy > 0 }.first { !it }
+            snapshotFlow { st.moving || env.busy > 0 }.first { !it }
         }
         browser.flushPendingClose()
     }
     DisposableEffect(browser) { onDispose { browser.flushPendingClose() } }
 
     // Положение текущей карточки нужно анимации «страница сжимается в карточку» (PageSwap). Сообщаем его не на каждом
-    // кадре, а когда карточка встала на место: после открытия, смены вкладки, переключения вида и когда прокрутка остановилась
+    // кадре, а когда карточка встала на место: после открытия, смены вкладки, переключения вида и после доводки камеры
     val reportRect = {
         if (expanding == null) {
             env.currentHolder?.c?.takeIf { it.isAttached }?.let { origins.currentCardRect = it.boundsInRoot() }
         }
     }
+    st.onSettled = reportRect
     LaunchedEffect(current, grid, mode) {
         repeat(2) { withFrameNanos { } }
         reportRect()
     }
-    LaunchedEffect(cp, gp) {
-        snapshotFlow { cp.isScrollInProgress || gp.isScrollInProgress }.filter { !it }.collect { reportRect() }
+
+    val onNew: (Boolean) -> Unit = { priv ->
+        browser.newTab(incognito = priv, returnToPrevious = false)
+        onClose()
     }
+    val viewEnterSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
     Box(
         Modifier
@@ -444,18 +1168,17 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             // Экран лежит поверх GeckoView: нажатия мимо карточек не должны попадать в сайт под ним
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-        // Фон плавно меняет тон по мере смахивания к приватным вкладкам. Свой слой: иначе его перерисовка на каждом кадре
-        // листания заставляла бы заново записывать и скрытую начальную страницу, лежащую в том же слое
+        // Фон плавно меняет тон по мере смахивания к приватным вкладкам. Свой слой: его перерисовка на каждом кадре
+        // листания не должна задевать остальное
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { }
                 .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress()).copy(alpha = 1f - expandP.value.coerceIn(0f, 1f))) },
         )
-        // Должен быть раньше карточек: тогда слой записан до того, как его рисуют
-        if (hasHome) HomePreviewSource(homeLayer)
+        if (hasHome && homePhase == 1) HomePreviewSource(homeLayer)
 
-        Column(Modifier.fillMaxSize().statusBarsPadding().graphicsLayer { alpha = chromeAlpha() }) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
             SwitcherHeader(
                 searching = searching,
                 onSearching = { searching = it },
@@ -468,121 +1191,101 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 onSelect = select,
             )
 
-            AnimatedContent(
-                targetState = grid,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                transitionSpec = {
-                    (fadeIn(modeFadeIn) + scaleIn(modeScale, initialScale = 0.94f)) togetherWith
-                        fadeOut(modeFadeOut) using SizeTransform(clip = false) { _, _ -> snap() }
-                },
-                label = "switcherMode",
-            ) { isGrid ->
-            if (isGrid) {
-                // Сетка: два раздела, между ними переключаемся обычным смахиванием (вертикальная прокрутка не мешает)
-                HorizontalPager(state = gp, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
-                    val priv = page == 1
-                    val list = if (priv) privList else normalList
-                    if (list.isEmpty()) {
-                        EmptyTabs(priv, searching = q.isNotEmpty(), onNew = { browser.newTab(incognito = priv, returnToPrevious = false); onClose() })
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 170.dp),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+            key(grid) {
+                val enter = remember { Animatable(if (toggled.value) 0f else 1f) }
+                LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, viewEnterSpec) }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = enter.value
+                            val s = 0.96f + 0.04f * enter.value
+                            scaleX = s
+                            scaleY = s
+                        },
+                ) {
+                    if (grid) {
+                        TabGrid(
+                            mode = gridMode,
+                            onMode = { gridMode = it },
+                            normal = normalList,
+                            priv = privList,
+                            current = current,
+                            searching = q.isNotEmpty(),
+                            env = env,
+                            onNew = onNew,
                             modifier = Modifier.fillMaxSize(),
-                        ) {
-                            gridItems(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
-                                TabCard(t, i, selected = i == current, compact = true, env = env, modifier = Modifier.fillMaxWidth().aspectRatio(0.78f).animateItem())
-                            }
-                        }
+                        )
+                    } else {
+                        TabCarousel(
+                            st = st,
+                            env = env,
+                            current = current,
+                            searching = q.isNotEmpty(),
+                            onNew = onNew,
+                            modifier = Modifier.fillMaxSize().padding(bottom = 104.dp),
+                        )
                     }
                 }
-            } else {
-                BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
-                    val cardW = minOf(maxWidth * 0.78f, 400.dp)
-                    val cardH = minOf(cardW * (if (maxWidth > 600.dp) 1.0f else 1.4f), maxHeight - 16.dp)
-                    HorizontalPager(
-                        state = cp,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = (maxWidth - cardW) / 2),
-                        pageSize = PageSize.Fixed(cardW),
-                        pageSpacing = 14.dp,
-                        beyondViewportPageCount = 1,
-                        key = { slides.getOrNull(it)?.key ?: it },
-                    ) { page ->
-                        val slide = slides.getOrNull(page)
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                // Центральная карточка крупнее и ярче, соседние уменьшаются и бледнеют.
-                                // Всё читается при рисовании: кадр смахивания не вызывает перерисовку страниц
-                                .graphicsLayer {
-                                    // signed > 0: карточка правее центра. Боковые поворачиваются лицом к центру, как в coverflow
-                                    val sh = shiftInfo[0]
-                                    val extra = if (sh != null && slides.size == sh.n - 1) {
-                                        // Где карточка стояла до закрытия соседней, минус где стоит теперь (в карточках)
-                                        val old = if (page < sh.si) page else page + 1
-                                        ((old - sh.c) - (page - sh.c2)).toFloat() * shift.value
-                                    } else 0f
-                                    translationX = extra * (cardW.toPx() + 14.dp.toPx())
-                                    val signed = ((page - cp.currentPage) - cp.currentPageOffsetFraction + extra).coerceIn(-1.5f, 1.5f)
-                                    val d = signed.absoluteValue.coerceIn(0f, 1f)
-                                    val sc = 1f - 0.12f * d
-                                    scaleX = sc
-                                    scaleY = sc
-                                    alpha = 1f - 0.3f * d
-                                    // Прозрачность применяется прямо при рисовании, без отдельного буфера на каждую карточку
-                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
-                                    rotationY = -signed.coerceIn(-1f, 1f) * 22f
-                                    cameraDistance = 14f * density
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val t = slide?.tab
-                            if (slide == null) {
-                                // Пустое место карусели: рисовать нечего
-                            } else if (t == null) {
-                                EmptySlide(
-                                    slide.priv, searching = q.isNotEmpty(),
-                                    onNew = { browser.newTab(incognito = slide.priv, returnToPrevious = false); onClose() },
-                                    modifier = Modifier.width(cardW).height(cardH),
-                                )
-                            } else {
-                                TabCard(t, slide.index, selected = slide.index == current, compact = false, env = env, modifier = Modifier.width(cardW).height(cardH))
-                            }
-                        }
-                    }
-                }
-            }
             }
         }
 
         SwitcherBar(
             grid = grid,
             count = browser.tabs.size,
-            onToggleGrid = { grid = !grid },
+            onToggleGrid = {
+                toggled.value = true
+                if (grid) {
+                    // Карусель встаёт на выбранный раздел до первого кадра, а не прыгает после него
+                    st.pos = firstSlide(gridMode).toFloat()
+                    grid = false
+                } else {
+                    gridMode = carouselMode
+                    grid = true
+                }
+            },
             onHistory = onHistory,
-            onNew = { browser.newTab(incognito = mode == 1, returnToPrevious = false); onClose() },
+            onNew = { onNew(mode == 1) },
             onDone = onClose,
             privatePage = mode == 1,
             onCloseAll = {
-                closeTick++
-                if (mode == 1) {
-                    browser.closePrivateTabs(deferEngine = true)
-                } else {
-                    val toClose = browser.tabs.count { !it.isPrivate }
-                    browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it, deferEngine = true) }
-                    // История закрытых хранит 15 вкладок: вернуть можно не больше
-                    val undoable = minOf(toClose, browser.closedTabs.size)
-                    if (undoable > 0) {
-                        Notices.show("Закрыто вкладок: $toClose", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
+                scope.launch {
+                    val priv = mode == 1
+                    // Карточки раздела гаснут разом, потом вкладки закрываются одним шагом
+                    if (!grid) st.fadeOutSection(priv)
+                    closeTick++
+                    if (priv) {
+                        browser.closePrivateTabs(deferEngine = true)
+                    } else {
+                        val toClose = browser.tabs.count { !it.isPrivate }
+                        browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it, deferEngine = true) }
+                        // История закрытых хранит 15 вкладок: вернуть можно не больше
+                        val undoable = minOf(toClose, browser.closedTabs.size)
+                        if (undoable > 0) {
+                            Notices.show("Закрыто вкладок: $toClose", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
+                        }
+                    }
+                    if (!grid) {
+                        st.pos = firstSlide(if (priv) 1 else 0).toFloat()
+                        st.resetFade()
                     }
                 }
             },
             closedCount = browser.closedTabs.size,
             onClosed = { showClosed = true },
-            modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = chromeAlpha() },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+
+        // Когда карточка раскрывается в страницу, всё остальное растворяется в цвет фона. Закраска дешевле, чем прозрачность
+        // слоя: не нужен отдельный буфер на весь экран
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val a = 1f - chromeAlpha()
+                    if (a > 0f) drawRect(lerp(bgNormal, bgPrivate, progress()), alpha = a)
+                },
         )
 
         expanding?.let { e ->
@@ -896,347 +1599,6 @@ private fun rememberTabThumb(tab: Tab, compact: Boolean): ImageBitmap? {
         if (thumb != null) withContext(Dispatchers.Default) { runCatching { thumb.asAndroidBitmap().prepareToDraw() } }
     }
     return thumb
-}
-
-/**
- * Состояние жеста «смахнуть карточку вверх». Положение под пальцем и анимированное положение читаются только при
- * рисовании ([y]), поэтому кадр жеста не вызывает перерисовку.
- */
-/** Закрытие карточки в карусели: было карточек [n], убрана [si], центр был [c], станет [c2]. */
-private class PagerShift(val n: Int, val si: Int, val c: Int, val c2: Int)
-
-@Stable
-private class SwipeState(
-    val scope: CoroutineScope,
-    val haptic: HapticFeedback,
-    /** Порог закрытия. Хватает короткого движения: раньше карточку приходилось тащить почти до верха */
-    val dismissPx: Float,
-    /** Быстрый бросок вверх закрывает карточку, даже если палец прошёл меньше порога (px/с) */
-    val flickPx: Float,
-    val flickMinPx: Float,
-) {
-    /** Анимируемое смещение (доводка, улёт) */
-    val offsetY = Animatable(0f)
-
-    /** «Живое» смещение под пальцем: палец пишет обычное число без корутины на каждое событие */
-    var liveY by mutableFloatStateOf(0f)
-    var dragging by mutableStateOf(false)
-    var pastThreshold = false
-    var hapticFired = false
-    var onDismiss: () -> Unit = {}
-
-    /** Общий счётчик активных жестов: отложенное закрытие сессий не должно попасть на движение карточки */
-    var env: CardEnv? = null
-    private var busy = false
-    fun setBusy(b: Boolean) {
-        if (b == busy) return
-        busy = b
-        env?.let { it.busy += if (b) 1 else -1 }
-    }
-
-    /**
-     * Вибро-отклик вне главного потока. performHapticFeedback идёт в системный сервис и на ряде устройств занимает
-     * заметное время; вызванный посреди жеста в главном потоке, он обрывал плавность. Если отклик не удался, это не страшно.
-     */
-    fun tick(type: HapticFeedbackType) {
-        scope.launch(Dispatchers.Default) { runCatching { haptic.performHapticFeedback(type) } }
-    }
-
-    val y: Float get() = if (dragging) liveY else offsetY.value
-
-    /**
-     * Улёт вверх и закрытие. Вкладка закрывается в тот миг, когда карточка стала невидимой, а не когда пружина досчитает
-     * хвост: раньше соседние карточки занимали освободившееся место спустя полсекунды после исчезновения этой, это
-     * выглядело как подвисание, особенно после быстрого броска. Цель улёта чуть дальше точки, где карточка пропала.
-     */
-    suspend fun flyAway(velocity: Float) {
-        var done = false
-        offsetY.animateTo(-dismissPx * (SWIPE_GONE + 0.4f), HripsMotion.fling(), initialVelocity = velocity.coerceAtMost(0f)) {
-            if (!done && value <= -dismissPx * SWIPE_GONE) {
-                done = true
-                onDismiss()
-            }
-        }
-        if (!done) onDismiss()
-    }
-
-    /** Карточка улетает вверх, потом вкладка закрывается. Так же закрывает и кнопка, и меню */
-    fun fly(velocity: Float = 0f) {
-        scope.launch {
-            setBusy(true)
-            try {
-                flyAway(velocity)
-            } finally {
-                setBusy(false)
-            }
-        }
-    }
-}
-
-private fun Modifier.swipeToClose(s: SwipeState, enabled: Boolean): Modifier {
-    // В сетке карточки лежат в прокручиваемом списке: смахивание вверх отнимало бы у него прокрутку.
-    // Там карточку закрывают кнопкой
-    if (!enabled) return this
-    return pointerInput(s) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-            val velocity = VelocityTracker()
-            velocity.addPosition(down.uptimeMillis, down.position)
-            fun moveBy(dy: Float) {
-                // Вверх карточка идёт чуть быстрее пальца (1.25x): жест ощущается лёгким. Вниз возвращается 1 к 1
-                s.liveY = (s.liveY + if (dy < 0f) dy * 1.25f else dy).coerceAtMost(0f)
-                // Короткий отклик один раз за жест, когда карточку оттянули достаточно для закрытия. Раньше он срабатывал
-                // при каждом переходе через порог, и дрожание пальца на границе давало серию вызовов прямо посреди движения
-                val past = s.liveY < -s.dismissPx
-                if (past != s.pastThreshold) {
-                    s.pastThreshold = past
-                    if (past && !s.hapticFired) {
-                        s.hapticFired = true
-                        s.tick(HapticFeedbackType.GestureThresholdActivate)
-                    }
-                }
-            }
-            val first = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
-                change.consume()
-                s.liveY = s.offsetY.value
-                s.dragging = true
-                s.setBusy(true)
-                s.hapticFired = false
-                moveBy(over)
-            } ?: return@awaitEachGesture
-            velocity.addPosition(first.uptimeMillis, first.position)
-            val finished = verticalDrag(first.id) { change ->
-                velocity.addPosition(change.uptimeMillis, change.position)
-                change.consume()
-                moveBy(change.positionChange().y)
-            }
-            val vy = if (finished) velocity.calculateVelocity().y else 0f
-            s.pastThreshold = false
-            val start = s.liveY
-            s.scope.launch {
-                try {
-                    s.offsetY.snapTo(start)
-                    s.dragging = false
-                    val flick = finished && vy < -s.flickPx && start < -s.flickMinPx
-                    if (finished && (start < -s.dismissPx || flick)) {
-                        // Улетает с той скоростью, с какой бросили
-                        s.flyAway(vy)
-                    } else {
-                        s.offsetY.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow), initialVelocity = vy)
-                    }
-                } finally {
-                    s.setBusy(false)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Карточка вкладки: значок, название и адрес, кнопка закрытия и крупное превью страницы (снимок экрана).
- * Выбранная выделена цветом и рамкой.
- * Нажатие открывает, смахивание вверх закрывает (удержания нет).
- *
- * Слоёв на карточку стало меньше: смещение, наклон, сжатие при нажатии, скругление и прозрачность - один слой
- * (раньше четыре вложенных: Box, Surface, clip, graphicsLayer). Рамка рисуется прямо в этом слое.
- */
-@Composable
-private fun TabCard(
-    tab: Tab,
-    index: Int,
-    selected: Boolean,
-    compact: Boolean,
-    env: CardEnv,
-    modifier: Modifier = Modifier,
-) {
-    val cs = MaterialTheme.colorScheme
-    val density = LocalDensity.current
-    val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val swipe = remember(density) {
-        SwipeState(scope, haptic, with(density) { 64.dp.toPx() }, with(density) { 380.dp.toPx() }, with(density) { 10.dp.toPx() })
-    }
-    swipe.onDismiss = { env.onClose(index) }
-    swipe.env = env
-    DisposableEffect(swipe) { onDispose { swipe.setBusy(false) } }
-    val holder = remember { CoordsHolder() }
-    if (selected) SideEffect { env.currentHolder = holder }
-
-    val thumb = rememberTabThumb(tab, compact)
-    val subtitle = when {
-        // Название таких вкладок уже «Приватная вкладка» / «Начальная страница»: подпись говорит другое, а не повторяет его
-        tab.isPrivate && tab.home -> "История не сохраняется"
-        tab.home -> "Новая вкладка"
-        else -> runCatching { Uri.parse(tab.url).host }.getOrNull()?.removePrefix("www.") ?: tab.url
-    }
-    val cardShape = if (compact) HripsShapes.L else HripsShapes.XXL
-    val inner = RoundedCornerShape(if (compact) 23.dp else 30.dp)
-
-    // Рамка: выбранная вкладка в цвете акцента, остальные в тоне поверхности. Цвет читается при рисовании
-    val frame = animateColorAsState(
-        if (selected) cs.primary else cs.surfaceContainerHigh,
-        MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
-        label = "tabFrame",
-    )
-    // Нажатая карточка чуть проседает. Число читается при рисовании, перерисовки нет
-    val source = remember { MutableInteractionSource() }
-    val press = remember { Animatable(1f) }
-    val pressSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-    LaunchedEffect(source) {
-        source.interactions.collect { i ->
-            when (i) {
-                is PressInteraction.Press -> launch { press.animateTo(0.97f, pressSpec) }
-                is PressInteraction.Release, is PressInteraction.Cancel -> launch { press.animateTo(1f, pressSpec) }
-                else -> Unit
-            }
-        }
-    }
-
-    // Снаружи слоя нет: здесь только размер и координаты. Дальше два соседних слоя: сама карточка и значок «закрыть».
-    Box(modifier.onPlaced { holder.c = it }) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                val y = swipe.y
-                translationY = y
-                // Чем выше утащили, тем сильнее карточка сжимается и наклоняется, как отрываемый листок
-                val pull = (-y / swipe.dismissPx).coerceIn(0f, 2f)
-                val sc = (1f - 0.07f * pull) * press.value
-                scaleX = sc
-                scaleY = sc
-                rotationZ = -pull * 3f
-                // До нуля: улетевшая карточка исчезает совсем, а не пропадает щелчком при удалении вкладки
-                alpha = 1f - (abs(y) / (swipe.dismissPx * SWIPE_GONE)).coerceIn(0f, 1f)
-                shape = cardShape
-                clip = true
-                // Содержимое карточки во время жеста не меняется (значок «закрыть» вынесен в отдельный слой), поэтому оно
-                // один раз рисуется в текстуру, а на каждом кадре двигается и наклоняется только готовая картинка
-                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-            }
-            .drawBehind { drawRect(frame.value) }
-            .swipeToClose(swipe, enabled = !compact)
-            // Только нажатие: удержания нет, карточку закрывают смахиванием вверх или крестиком
-            .clickable(
-                interactionSource = source,
-                indication = null,
-                onClick = { env.onOpen(index, holder.rect(), thumb) },
-            ),
-    ) {
-            Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
-                // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
-                val context = LocalContext.current.applicationContext
-                val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
-                    value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
-                }
-                val pageImage = pageImageState.value
-                if (thumb != null && !tab.home) {
-                    Image(
-                        bitmap = thumb,
-                        contentDescription = "Превью страницы",
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.TopCenter,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else if (pageImage != null && !tab.home) {
-                    Image(
-                        bitmap = pageImage,
-                        contentDescription = "Картинка страницы",
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else if (tab.home && !tab.isPrivate) {
-                    // Начальная страница: настоящая главная, как на экране (копия общего слоя)
-                    HomeTabPreview(env.homeLayer, Modifier.fillMaxSize())
-                } else {
-                    TabPlaceholder(tab, compact)
-                }
-
-                // Кнопка закрытия справа сверху
-                Surface(
-                    onClick = {
-                        swipe.tick(HapticFeedbackType.Confirm)
-                        swipe.fly()
-                    },
-                    shape = CircleShape,
-                    color = cs.surface.copy(alpha = 0.88f),
-                    contentColor = cs.onSurface,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(if (compact) 6.dp else 10.dp)
-                        .size(if (compact) 30.dp else 38.dp)
-                        .semantics { contentDescription = "Закрыть вкладку ${tab.label()}" },
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(HripsIcons.Close, null, Modifier.size(if (compact) 16.dp else 20.dp))
-                    }
-                }
-
-                // Подпись плашкой снизу: значок, название, адрес. Лежит поверх снимка, поэтому читается на любой странице
-                CompositionLocalProvider(LocalContentColor provides cs.onSurface) {
-                    Row(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(if (compact) 6.dp else 8.dp)
-                            .background(cs.surfaceContainerHigh.copy(alpha = 0.94f), RoundedCornerShape(if (compact) 18.dp else 24.dp))
-                            .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TabIcon(tab, if (compact) 20.dp else 30.dp)
-                        Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
-                            )
-                            if (!compact) {
-                                Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-    }
-        // Значок появляется сверху, когда карточку оттянули достаточно, чтобы она закрылась. Он лежит рядом с карточкой,
-        // а не внутри неё: меняется на каждом кадре смахивания, и внутри слоя карточки заставлял бы заново рисовать
-        // всю карточку (картинку, скругления, текст) на каждом кадре
-        if (!compact) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        // Те же смещение, наклон и прозрачность, что у карточки: значок летит вместе с ней
-                        val y = swipe.y
-                        translationY = y
-                        val pull = (-y / swipe.dismissPx).coerceIn(0f, 2f)
-                        val sc = 1f - 0.07f * pull
-                        scaleX = sc
-                        scaleY = sc
-                        rotationZ = -pull * 3f
-                        alpha = 1f - (abs(y) / (swipe.dismissPx * SWIPE_GONE)).coerceIn(0f, 1f)
-                        // Значок маленький: без отдельного буфера размером с карточку
-                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
-                    },
-            ) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 14.dp)
-                        .size(44.dp)
-                        .graphicsLayer {
-                            val k = (-swipe.y / swipe.dismissPx).coerceIn(0f, 1f)
-                            alpha = k
-                            scaleX = 0.6f + 0.4f * k
-                            scaleY = 0.6f + 0.4f * k
-                        }
-                        .background(cs.error, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(HripsIcons.Close, null, Modifier.size(22.dp), tint = cs.onError) }
-            }
-        }
-    }
 }
 
 @Composable
