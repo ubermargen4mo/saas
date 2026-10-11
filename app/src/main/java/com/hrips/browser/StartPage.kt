@@ -137,18 +137,20 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                             )
                             // Фото: поиск картинкой в поисковике по умолчанию
                             Box(
-                                Modifier.width(48.dp).fillMaxHeight().clip(CircleShape).clickable(onClick = onSearchImage),
+                                Modifier.width(40.dp).fillMaxHeight().clip(CircleShape).clickable(onClick = onSearchImage),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(HripsIcons.Image, "Поиск по фото", Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             // QR сразу открывает сканер, остальная строка - поиск
                             Box(
-                                Modifier.width(56.dp).fillMaxHeight().clip(CircleShape).clickable(onClick = onScanQr),
+                                Modifier.width(40.dp).fillMaxHeight().clip(CircleShape).clickable(onClick = onScanQr),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(HripsIcons.Qr, "Сканировать QR-код", Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            // Правый отступ 8dp: значок QR остаётся на тех же 28dp от края, что и раньше
+                            Spacer(Modifier.width(8.dp))
                         }
                     }
                 }

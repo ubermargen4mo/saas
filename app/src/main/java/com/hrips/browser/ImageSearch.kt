@@ -7,7 +7,10 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.util.Base64
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Поиск по фото в поисковике, который выбран по умолчанию.
@@ -44,6 +47,48 @@ object ImageSearch {
             base64Field = "imageBin",
         ),
     )
+
+    /** Готовый запрос: либо сразу адрес результатов [url], либо страница-отправщик [page] для загрузки формой. */
+    class Prepared(val url: String? = null, val page: String? = null)
+
+    /**
+     * Загружает фото в поисковик (блокирующе, не в главном потоке). Яндекс не принимает форму напрямую: страница
+     * просто открывает выбор файла, поэтому для него фото загружается запросом из приложения, а в браузере
+     * открывается готовая страница результатов. null - загрузить не удалось.
+     */
+    fun prepare(engine: SearchEngine, jpeg: ByteArray): Prepared? =
+        if (engine.host == "ya.ru") yandexResultUrl(jpeg)?.let { Prepared(url = it) }
+        else Prepared(page = buildPage(targetFor(engine), jpeg))
+
+    /** Два шага, как на сайте: загрузка фото возвращает cbirId, по нему открывается страница результатов. */
+    private fun yandexResultUrl(jpeg: ByteArray): String? = try {
+        val boundary = "----hrips" + System.nanoTime()
+        val request = Uri.encode("""{"blocks":[{"block":"cbir-uploader__get-cbir-id"}]}""")
+        val conn = URL("https://yandex.ru/images/search?rpt=imageview&format=json&request=$request").openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 25_000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36")
+            conn.setRequestProperty("Accept", "application/json, text/plain, */*")
+            conn.outputStream.use { out ->
+                out.write(("--$boundary\r\nContent-Disposition: form-data; name=\"upfile\"; filename=\"blob\"\r\nContent-Type: image/jpeg\r\n\r\n").toByteArray())
+                out.write(jpeg)
+                out.write("\r\n--$boundary--\r\n".toByteArray())
+            }
+            if (conn.responseCode !in 200..299) null else {
+                val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                val id = JSONObject(body).getJSONArray("blocks").getJSONObject(0).getJSONObject("params").optString("cbirId")
+                if (id.isBlank()) null else "https://yandex.ru/images/search?cbir_id=" + Uri.encode(id) + "&rpt=imageview"
+            }
+        } finally {
+            conn.disconnect()
+        }
+    } catch (e: Exception) {
+        null
+    }
 
     fun supports(engine: SearchEngine) = targets.containsKey(engine.host)
 

@@ -164,15 +164,18 @@ fun BrowserScreen(browser: Browser) {
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val engine = SearchEngines.current
-        val target = ImageSearch.targetFor(engine)
+        Notices.show("Ищу по фото…")
         val started = AppExecutors.tryExecute {
             val jpeg = ImageSearch.prepareJpeg(appContext, uri)
-            val page = jpeg?.let { ImageSearch.buildPage(target, it) }
+            val prepared = jpeg?.let { ImageSearch.prepare(engine, it) }
             Handler(Looper.getMainLooper()).post {
-                if (page == null) Notices.show("Не удалось прочитать фото")
-                else {
-                    if (!ImageSearch.supports(engine)) Notices.show("${engine.name} не ищет по фото, открыт Google Lens")
-                    tab.loadImageSearch(page)
+                when {
+                    jpeg == null -> Notices.show("Не удалось прочитать фото")
+                    prepared == null -> Notices.show("Не удалось загрузить фото в ${engine.name}. Проверьте соединение")
+                    else -> {
+                        if (!ImageSearch.supports(engine)) Notices.show("${engine.name} не ищет по фото, открыт Google Lens")
+                        prepared.url?.let { tab.load(it) } ?: prepared.page?.let { tab.loadImageSearch(it) }
+                    }
                 }
             }
         }
