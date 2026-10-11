@@ -171,7 +171,7 @@ fun BrowserScreen(browser: Browser) {
             Handler(Looper.getMainLooper()).post {
                 when {
                     jpeg == null -> Notices.show("Не удалось прочитать фото")
-                    prepared == null -> Notices.show("Не удалось загрузить фото в ${engine.name}. Проверьте соединение")
+                    prepared == null -> Notices.show("Не удалось загрузить фото в ${engine.name}" + ImageSearch.lastError.let { if (it.isEmpty()) "" else ": $it" })
                     else -> {
                         if (!ImageSearch.supports(engine)) Notices.show("${engine.name} не ищет по фото, открыт Google Lens")
                         prepared.url?.let { tab.load(it) } ?: prepared.page?.let { tab.loadImageSearch(it) }

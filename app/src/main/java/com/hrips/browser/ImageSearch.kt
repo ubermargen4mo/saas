@@ -40,7 +40,7 @@ object ImageSearch {
 
     private val google = Target("www.google.com", "https://lens.google.com/v3/upload?hl=ru", fileField = "encoded_image")
     private val targets = mapOf(
-        "ya.ru" to Target("ya.ru", "https://yandex.ru/images/search?rpt=imageview", fileField = "upfile"),
+        "ya.ru" to Target("ya.ru", "https://yandex.ru/images/search?rpt=imageview&cbir_page=sites", fileField = "upfile", extra = mapOf("prg" to "1")),
         "www.google.com" to google,
         "www.bing.com" to Target(
             "www.bing.com", "https://www.bing.com/images/search?view=detailv2&iss=sbiupload&FORM=IRSBIQ",
@@ -57,11 +57,59 @@ object ImageSearch {
      * открывается готовая страница результатов. null - загрузить не удалось.
      */
     fun prepare(engine: SearchEngine, jpeg: ByteArray): Prepared? =
-        if (engine.host == "ya.ru") yandexResultUrl(jpeg)?.let { Prepared(url = it) }
-        else Prepared(page = buildPage(targetFor(engine), jpeg))
+        // Если загрузка в Яндекс не вышла, пробуем обычную форму (на ней стоят prg=1 и cbir_page=sites, как у сайта)
+        (if (engine.host == "ya.ru") yandexResultUrl(jpeg)?.let { Prepared(url = it) } else null)
+            ?: Prepared(page = buildPage(targetFor(engine), jpeg))
 
-    /** Два шага, как на сайте: загрузка фото возвращает cbirId, по нему открывается страница результатов. */
-    private fun yandexResultUrl(jpeg: ByteArray): String? = try {
+    /** Причина последней неудачи (для уведомления: по ней видно, что именно не так). */
+    @Volatile var lastError: String = ""
+
+    private const val CHROME_UA =
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+
+    /**
+     * Как это делает сайт Яндекса: фото целиком уходит телом POST на `images-apphost/image-download`, в ответе приходит
+     * адрес вида `.../get-images-cbir/<id>/preview`. Из него берётся `cbir_id`, и страница результатов открывается по нему.
+     * Если так не вышло, пробуем прежний способ (JSON-блок `cbir-uploader__get-cbir-id`). Оба способа неофициальные.
+     */
+    private fun yandexResultUrl(jpeg: ByteArray): String? {
+        lastError = ""
+        val id = yandexAppHost(jpeg) ?: yandexLegacy(jpeg)
+        return id?.let { "https://yandex.ru/images/search?rpt=imageview&cbir_id=" + Uri.encode(it) }
+    }
+
+    private fun yandexAppHost(jpeg: ByteArray): String? = try {
+        val conn = URL("https://yandex.ru/images-apphost/image-download?cbird=37&images_avatars_size=preview&images_avatars_namespace=images-cbir")
+            .openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 25_000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "image/jpeg")
+            conn.setRequestProperty("User-Agent", CHROME_UA)
+            conn.setRequestProperty("Origin", "https://yandex.ru")
+            conn.setRequestProperty("Referer", "https://yandex.ru/images/")
+            conn.setRequestProperty("Accept", "*/*")
+            conn.outputStream.use { it.write(jpeg) }
+            if (conn.responseCode !in 200..299) {
+                lastError = "Яндекс ответил ${conn.responseCode}"
+                null
+            } else {
+                val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                val found = findCbirUrl(JSONObject(body))
+                if (found == null) lastError = "в ответе Яндекса нет адреса фото"
+                found?.let { cbirId(it) }
+            }
+        } finally {
+            conn.disconnect()
+        }
+    } catch (e: Exception) {
+        lastError = e.javaClass.simpleName
+        null
+    }
+
+    private fun yandexLegacy(jpeg: ByteArray): String? = try {
         val boundary = "----hrips" + System.nanoTime()
         val request = Uri.encode("""{"blocks":[{"block":"cbir-uploader__get-cbir-id"}]}""")
         val conn = URL("https://yandex.ru/images/search?rpt=imageview&format=json&request=$request").openConnection() as HttpURLConnection
@@ -71,7 +119,8 @@ object ImageSearch {
             conn.readTimeout = 25_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36")
+            conn.setRequestProperty("User-Agent", CHROME_UA)
+            conn.setRequestProperty("Origin", "https://yandex.ru")
             conn.setRequestProperty("Accept", "application/json, text/plain, */*")
             conn.outputStream.use { out ->
                 out.write(("--$boundary\r\nContent-Disposition: form-data; name=\"upfile\"; filename=\"blob\"\r\nContent-Type: image/jpeg\r\n\r\n").toByteArray())
@@ -81,13 +130,31 @@ object ImageSearch {
             if (conn.responseCode !in 200..299) null else {
                 val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
                 val id = JSONObject(body).getJSONArray("blocks").getJSONObject(0).getJSONObject("params").optString("cbirId")
-                if (id.isBlank()) null else "https://yandex.ru/images/search?cbir_id=" + Uri.encode(id) + "&rpt=imageview"
+                id.takeIf { it.isNotBlank() }
             }
         } finally {
             conn.disconnect()
         }
     } catch (e: Exception) {
         null
+    }
+
+    /** Ищет в ответе (на любой глубине) строку-адрес картинки в хранилище `get-images-cbir`. */
+    private fun findCbirUrl(node: Any?): String? = when (node) {
+        is String -> node.takeIf { it.contains("get-images-cbir/") }
+        is JSONObject -> node.keys().asSequence().firstNotNullOfOrNull { findCbirUrl(node.opt(it)) }
+        is org.json.JSONArray -> (0 until node.length()).firstNotNullOfOrNull { findCbirUrl(node.opt(it)) }
+        else -> null
+    }
+
+    /** `https://avatars.mds.yandex.net/get-images-cbir/4330355/AbC/preview` -> `4330355/AbC`. */
+    private fun cbirId(url: String): String? {
+        var tail = url.substringAfter("get-images-cbir/").substringBefore('?')
+        val last = tail.substringAfterLast('/')
+        if (last == "preview" || last == "orig" || last.startsWith("s") && last.drop(1).all { it.isDigit() } && tail.count { it == '/' } >= 2) {
+            tail = tail.substringBeforeLast('/')
+        }
+        return tail.takeIf { it.contains('/') && it.isNotBlank() }
     }
 
     fun supports(engine: SearchEngine) = targets.containsKey(engine.host)
