@@ -2,6 +2,7 @@ package com.hrips.browser
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
@@ -12,24 +13,57 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.platform.LocalContext
 
+/** Фирменный цвет приватного режима. Вся схема ниже строится из него, поменять оттенок можно одной строкой. */
+private val PrivateSeed = Color(0xFF8B6CF0)
+
+/**
+ * Тёмная схема из одного цвета-основы по тому же правилу, что в Material: три тональные палитры
+ * (основная, вторичная с приглушённой насыщенностью, третичная со сдвигом оттенка) и нейтральная с лёгким оттенком.
+ * Тона заданы по спецификации M3 (primary 80, container 30, surface 6 и так далее). Яркость считается в HSL,
+ * это приближение к HCT, но для тёмной схемы разница на глаз малозаметна.
+ */
+private fun darkSchemeFrom(seed: Color): ColorScheme {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(seed.toArgb(), hsl)
+    val hue = hsl[0]
+    fun tone(h: Float, s: Float, t: Int): Color =
+        Color(ColorUtils.HSLToColor(floatArrayOf(((h % 360f) + 360f) % 360f, s.coerceIn(0f, 1f), t / 100f)))
+    val pS = 0.88f
+    val sS = 0.22f
+    val tS = 0.5f
+    val nS = 0.08f
+    val nvS = 0.1f
+    val th = hue + 60f
+    fun p(t: Int) = tone(hue, pS, t)
+    fun s(t: Int) = tone(hue, sS, t)
+    fun t(t: Int) = tone(th, tS, t)
+    fun n(t: Int) = tone(hue, nS, t)
+    fun nv(t: Int) = tone(hue, nvS, t)
+    return darkColorScheme(
+        primary = p(80), onPrimary = p(20), primaryContainer = p(30), onPrimaryContainer = p(90),
+        inversePrimary = p(40),
+        secondary = s(80), onSecondary = s(20), secondaryContainer = s(30), onSecondaryContainer = s(90),
+        tertiary = t(80), onTertiary = t(20), tertiaryContainer = t(30), onTertiaryContainer = t(90),
+        background = n(6), onBackground = n(90),
+        surface = n(6), onSurface = n(90), surfaceVariant = nv(30), onSurfaceVariant = nv(80),
+        surfaceTint = p(80),
+        inverseSurface = n(90), inverseOnSurface = n(20),
+        surfaceBright = n(24), surfaceDim = n(6),
+        surfaceContainerLowest = n(4), surfaceContainerLow = n(10), surfaceContainer = n(12),
+        surfaceContainerHigh = n(17), surfaceContainerHighest = n(22),
+        outline = nv(60), outlineVariant = nv(30),
+        primaryFixed = p(90), primaryFixedDim = p(80), onPrimaryFixed = p(10), onPrimaryFixedVariant = p(30),
+        secondaryFixed = s(90), secondaryFixedDim = s(80), onSecondaryFixed = s(10), onSecondaryFixedVariant = s(30),
+        tertiaryFixed = t(90), tertiaryFixedDim = t(80), onTertiaryFixed = t(10), onTertiaryFixedVariant = t(30),
+    )
+}
+
 /** Тёмно-фиолетовая схема приватного режима: сразу видно, что вкладка приватная. */
-private val PrivateScheme = darkColorScheme(
-    primary = Color(0xFFD0BCFF), onPrimary = Color(0xFF381E72),
-    primaryContainer = Color(0xFF4F378B), onPrimaryContainer = Color(0xFFEADDFF),
-    secondary = Color(0xFFCCC2DC), onSecondary = Color(0xFF332D41),
-    secondaryContainer = Color(0xFF4A4458), onSecondaryContainer = Color(0xFFE8DEF8),
-    tertiary = Color(0xFFEFB8C8), onTertiary = Color(0xFF492532),
-    tertiaryContainer = Color(0xFF633B48), onTertiaryContainer = Color(0xFFFFD8E4),
-    background = Color(0xFF141218), onBackground = Color(0xFFE6E0E9),
-    surface = Color(0xFF141218), onSurface = Color(0xFFE6E0E9),
-    surfaceVariant = Color(0xFF49454F), onSurfaceVariant = Color(0xFFCAC4D0),
-    surfaceContainerLowest = Color(0xFF0F0D13), surfaceContainerLow = Color(0xFF1D1B20),
-    surfaceContainer = Color(0xFF211F26), surfaceContainerHigh = Color(0xFF2B2930),
-    surfaceContainerHighest = Color(0xFF36343B),
-    outline = Color(0xFF938F99), outlineVariant = Color(0xFF49454F),
-)
+private val PrivateScheme = darkSchemeFrom(PrivateSeed)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

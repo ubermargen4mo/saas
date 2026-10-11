@@ -90,9 +90,9 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
             state = gridState,
             columns = GridCells.Adaptive(minSize = if (wide) 96.dp else 76.dp),
             modifier = Modifier.widthIn(max = 880.dp).fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 24.dp + islandSpace),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(start = HripsSpace.L, top = HripsSpace.XL, end = HripsSpace.L, bottom = HripsSpace.XL + islandSpace),
+            horizontalArrangement = Arrangement.spacedBy(HripsSpace.S, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(HripsSpace.L),
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                 Column(
@@ -107,7 +107,17 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         contentScale = ContentScale.Fit,
                         colorFilter = ColorFilter.tint(textColor),
                     )
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(HripsSpace.M))
+                    // Приветствие по времени суток: акцентным начертанием, свой голос главной (в Опере такого нет)
+                    val greeting = remember { greetingForNow() }
+                    Text(
+                        greeting,
+                        style = MaterialTheme.typography.headlineSmallEmphasized,
+                        color = textColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(HripsSpace.XL))
                     // Вид строки снят со скриншота Оперы (плотность 2.0): высота 56dp, края скруглены полностью,
                     // значки по центру «ячеек» 56dp слева и справа, текст начинается на 56dp от левого края.
                     // Высота растёт с крупным шрифтом; именно height, а не heightIn(min): внутри fillMaxSize/fillMaxHeight
@@ -258,7 +268,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(HripsSpace.S))
                         Text(
                             e.title,
                             maxLines = 2,
@@ -288,13 +298,12 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     Modifier.animateItem().clickable { showAdd = true }.padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(tileR),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.size(tile),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) { Icon(HripsIcons.Add, "Добавить") }
-                    }
+                    // Кнопка добавления на «печеньке» из набора фигур M3: единственная плитка не квадратной формы
+                    ShapeBadge(
+                        HripsIcons.Add, tile, badge = Badge.COOKIE9,
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                 }
             }
         }
@@ -401,7 +410,7 @@ private fun DialDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(HripsSpace.S)) {
                 HripsField(name, { name = it }, label = { Text("Название") }, singleLine = true)
                 HripsField(address, { address = it }, label = { Text("Адрес") }, singleLine = true)
             }
@@ -409,4 +418,12 @@ private fun DialDialog(
         confirmButton = { HripsTextButton(enabled = address.isNotBlank(), onClick = { onConfirm(name, address) }) { Text(confirm) } },
         dismissButton = { HripsTextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+/** Приветствие по местному времени. */
+private fun greetingForNow(): String = when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+    in 5..11 -> "Доброе утро"
+    in 12..17 -> "Добрый день"
+    in 18..22 -> "Добрый вечер"
+    else -> "Доброй ночи"
 }

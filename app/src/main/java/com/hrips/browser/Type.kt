@@ -25,7 +25,7 @@ val RobotoFlex = FontFamily(
 
 private val base = Typography()
 
-val HripsTypography = Typography(
+private val plain = Typography(
     displayLarge = base.displayLarge.copy(fontFamily = RobotoFlex),
     displayMedium = base.displayMedium.copy(fontFamily = RobotoFlex),
     displaySmall = base.displaySmall.copy(fontFamily = RobotoFlex),
@@ -41,6 +41,29 @@ val HripsTypography = Typography(
     labelLarge = base.labelLarge.copy(fontFamily = RobotoFlex, fontWeight = FontWeight.Medium),
     labelMedium = base.labelMedium.copy(fontFamily = RobotoFlex, fontWeight = FontWeight.Medium),
     labelSmall = base.labelSmall.copy(fontFamily = RobotoFlex, fontWeight = FontWeight.Medium),
+)
+
+/**
+ * Expressive-типографика: к обычной шкале добавлены акцентные начертания (`...Emphasized`) –
+ * плотнее и жирнее обычных, для заголовков экранов, приветствия и главных подписей.
+ * Обычные стили остаются как были, акцент включается точечно через `MaterialTheme.typography.xxxEmphasized`.
+ */
+val HripsTypography = plain.copy(
+    displayLargeEmphasized = plain.displayLarge.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.02).em),
+    displayMediumEmphasized = plain.displayMedium.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.02).em),
+    displaySmallEmphasized = plain.displaySmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.015).em),
+    headlineLargeEmphasized = plain.headlineLarge.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.015).em),
+    headlineMediumEmphasized = plain.headlineMedium.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.01).em),
+    headlineSmallEmphasized = plain.headlineSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.01).em),
+    titleLargeEmphasized = plain.titleLarge.copy(fontWeight = FontWeight.Bold),
+    titleMediumEmphasized = plain.titleMedium.copy(fontWeight = FontWeight.Bold),
+    titleSmallEmphasized = plain.titleSmall.copy(fontWeight = FontWeight.Bold),
+    labelLargeEmphasized = plain.labelLarge.copy(fontWeight = FontWeight.Bold),
+    labelMediumEmphasized = plain.labelMedium.copy(fontWeight = FontWeight.Bold),
+    labelSmallEmphasized = plain.labelSmall.copy(fontWeight = FontWeight.Bold),
+    bodyLargeEmphasized = plain.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+    bodyMediumEmphasized = plain.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+    bodySmallEmphasized = plain.bodySmall.copy(fontWeight = FontWeight.SemiBold),
 )
 
 /**

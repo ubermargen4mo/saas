@@ -381,11 +381,17 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            // Фон плавно меняет тон по мере смахивания к приватным вкладкам
-            .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress()).copy(alpha = 1f - expandP.value.coerceIn(0f, 1f))) }
             // Экран лежит поверх GeckoView: нажатия мимо карточек не должны попадать в сайт под ним
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
+        // Фон плавно меняет тон по мере смахивания к приватным вкладкам. Свой слой: иначе его перерисовка на каждом кадре
+        // листания заставляла бы заново записывать и скрытую начальную страницу, лежащую в том же слое
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { }
+                .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress()).copy(alpha = 1f - expandP.value.coerceIn(0f, 1f))) },
+        )
         // Должен быть раньше карточек: тогда слой записан до того, как его рисуют
         if (hasHome) HomePreviewSource(homeLayer)
 
@@ -607,7 +613,8 @@ private fun ExpandOverlay(e: Expand, progress: Animatable<Float, AnimationVector
         progress.animateTo(1f, spec)
         onDone()
     }
-    Canvas(Modifier.fillMaxSize()) {
+    // Свой слой: иначе рисование на каждом кадре перезаписывало бы весь общий слой с скрытой начальной страницей
+    Canvas(Modifier.fillMaxSize().graphicsLayer { }) {
         // Пружина может перелететь единицу: карточка не должна вылезать за экран
         val t = progress.value.coerceIn(0f, 1f)
         val full = UiRect(0f, 0f, size.width, size.height)
@@ -969,9 +976,11 @@ private fun TabCard(
         }
     }
 
+    // Снаружи слоя нет: здесь только размер и координаты. Дальше два соседних слоя: сама карточка и значок «закрыть».
+    Box(modifier.onPlaced { holder.c = it }) {
     Box(
-        modifier
-            .onPlaced { holder.c = it }
+        Modifier
+            .fillMaxSize()
             .graphicsLayer {
                 val y = swipe.y
                 translationY = y
@@ -985,9 +994,8 @@ private fun TabCard(
                 alpha = 1f - (abs(y) / (swipe.dismissPx * 2.2f)).coerceIn(0f, 1f)
                 shape = cardShape
                 clip = true
-                // Карточка один раз рисуется в отдельную текстуру (скругления, текст, картинка), а дальше на каждом кадре
-                // двигается и наклоняется как готовая картинка. Без этого родительский 3D-наклон заставлял видеокарту
-                // каждый кадр заново рисовать содержимое с двумя скруглёнными обрезками в перспективе, это самое дорогое место.
+                // Содержимое карточки во время жеста не меняется (значок «закрыть» вынесен в отдельный слой), поэтому оно
+                // один раз рисуется в текстуру, а на каждом кадре двигается и наклоняется только готовая картинка
                 compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
             }
             .drawBehind { drawRect(frame.value) }
@@ -999,98 +1007,118 @@ private fun TabCard(
                 onClick = { env.onOpen(index, holder.rect(), thumb) },
             ),
     ) {
-        Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
-            // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
-            val context = LocalContext.current.applicationContext
-            val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
-                value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
-            }
-            val pageImage = pageImageState.value
-            if (thumb != null && !tab.home) {
-                Image(
-                    bitmap = thumb,
-                    contentDescription = "Превью страницы",
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.TopCenter,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else if (pageImage != null && !tab.home) {
-                Image(
-                    bitmap = pageImage,
-                    contentDescription = "Картинка страницы",
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else if (tab.home && !tab.isPrivate) {
-                // Начальная страница: настоящая главная, как на экране (копия общего слоя)
-                HomeTabPreview(env.homeLayer, Modifier.fillMaxSize())
-            } else {
-                TabPlaceholder(tab, compact)
-            }
-
-            // Кнопка закрытия справа сверху
-            Surface(
-                onClick = {
-                    swipe.tick(HapticFeedbackType.Confirm)
-                    swipe.fly()
-                },
-                shape = CircleShape,
-                color = cs.surface.copy(alpha = 0.88f),
-                contentColor = cs.onSurface,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(if (compact) 6.dp else 10.dp)
-                    .size(if (compact) 30.dp else 38.dp)
-                    .semantics { contentDescription = "Закрыть вкладку ${tab.label()}" },
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(HripsIcons.Close, null, Modifier.size(if (compact) 16.dp else 20.dp))
+            Box(Modifier.fillMaxSize().padding(if (compact) 5.dp else 6.dp).clip(inner).background(cs.surfaceContainerLowest)) {
+                // Нет снимка: пробуем картинку самой страницы (og:image). Для приватных вкладок не запрашивается ничего
+                val context = LocalContext.current.applicationContext
+                val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
+                    value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
                 }
-            }
+                val pageImage = pageImageState.value
+                if (thumb != null && !tab.home) {
+                    Image(
+                        bitmap = thumb,
+                        contentDescription = "Превью страницы",
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (pageImage != null && !tab.home) {
+                    Image(
+                        bitmap = pageImage,
+                        contentDescription = "Картинка страницы",
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (tab.home && !tab.isPrivate) {
+                    // Начальная страница: настоящая главная, как на экране (копия общего слоя)
+                    HomeTabPreview(env.homeLayer, Modifier.fillMaxSize())
+                } else {
+                    TabPlaceholder(tab, compact)
+                }
 
-            // Подпись плашкой снизу: значок, название, адрес. Лежит поверх снимка, поэтому читается на любой странице
-            CompositionLocalProvider(LocalContentColor provides cs.onSurface) {
-                Row(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(if (compact) 6.dp else 8.dp)
-                        .background(cs.surfaceContainerHigh.copy(alpha = 0.94f), RoundedCornerShape(if (compact) 18.dp else 24.dp))
-                        .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // Кнопка закрытия справа сверху
+                Surface(
+                    onClick = {
+                        swipe.tick(HapticFeedbackType.Confirm)
+                        swipe.fly()
+                    },
+                    shape = CircleShape,
+                    color = cs.surface.copy(alpha = 0.88f),
+                    contentColor = cs.onSurface,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(if (compact) 6.dp else 10.dp)
+                        .size(if (compact) 30.dp else 38.dp)
+                        .semantics { contentDescription = "Закрыть вкладку ${tab.label()}" },
                 ) {
-                    TabIcon(tab, if (compact) 20.dp else 30.dp)
-                    Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
-                        )
-                        if (!compact) {
-                            Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(HripsIcons.Close, null, Modifier.size(if (compact) 16.dp else 20.dp))
+                    }
+                }
+
+                // Подпись плашкой снизу: значок, название, адрес. Лежит поверх снимка, поэтому читается на любой странице
+                CompositionLocalProvider(LocalContentColor provides cs.onSurface) {
+                    Row(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(if (compact) 6.dp else 8.dp)
+                            .background(cs.surfaceContainerHigh.copy(alpha = 0.94f), RoundedCornerShape(if (compact) 18.dp else 24.dp))
+                            .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TabIcon(tab, if (compact) 20.dp else 30.dp)
+                        Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
+                            )
+                            if (!compact) {
+                                Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                            }
                         }
                     }
                 }
             }
-        }
-
-        // Значок появляется сверху, когда карточку оттянули достаточно, чтобы она закрылась
+    }
+        // Значок появляется сверху, когда карточку оттянули достаточно, чтобы она закрылась. Он лежит рядом с карточкой,
+        // а не внутри неё: меняется на каждом кадре смахивания, и внутри слоя карточки заставлял бы заново рисовать
+        // всю карточку (картинку, скругления, текст) на каждом кадре
         if (!compact) {
             Box(
                 Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 14.dp)
-                    .size(44.dp)
+                    .fillMaxSize()
                     .graphicsLayer {
-                        val k = (-swipe.y / swipe.dismissPx).coerceIn(0f, 1f)
-                        alpha = k
-                        scaleX = 0.6f + 0.4f * k
-                        scaleY = 0.6f + 0.4f * k
-                    }
-                    .background(cs.error, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { Icon(HripsIcons.Close, null, Modifier.size(22.dp), tint = cs.onError) }
+                        // Те же смещение, наклон и прозрачность, что у карточки: значок летит вместе с ней
+                        val y = swipe.y
+                        translationY = y
+                        val pull = (-y / swipe.dismissPx).coerceIn(0f, 2f)
+                        val sc = 1f - 0.07f * pull
+                        scaleX = sc
+                        scaleY = sc
+                        rotationZ = -pull * 3f
+                        alpha = 1f - (abs(y) / (swipe.dismissPx * 2.2f)).coerceIn(0f, 1f)
+                        // Значок маленький: без отдельного буфера размером с карточку
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
+                    },
+            ) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 14.dp)
+                        .size(44.dp)
+                        .graphicsLayer {
+                            val k = (-swipe.y / swipe.dismissPx).coerceIn(0f, 1f)
+                            alpha = k
+                            scaleX = 0.6f + 0.4f * k
+                            scaleY = 0.6f + 0.4f * k
+                        }
+                        .background(cs.error, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(HripsIcons.Close, null, Modifier.size(22.dp), tint = cs.onError) }
+            }
         }
     }
 }
