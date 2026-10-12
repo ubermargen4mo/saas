@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Оживление миниатюр",
+  "description": "Удержание пальцем на миниатюре видео запускает предпросмотр, как наведение мыши на компьютере.",
+  "version": "1.0",
+  "browser_specific_settings": { "gecko": { "id": "hover-preview@hrips.app" } },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
