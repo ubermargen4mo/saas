@@ -1,8 +1,0 @@
-# Baseline profile: весь код приложения и основные классы Compose компилируются заранее (AOT), а не при первом запуске.
-# Профиль написан по шаблону, без замеров. Чтобы получить точный, добавьте модуль Macrobenchmark и перегенерируйте.
-HSPLcom/hrips/browser/**;->**(**)**
-Lcom/hrips/browser/**;
-HSPLandroidx/compose/runtime/**;->**(**)**
-HSPLandroidx/compose/ui/**;->**(**)**
-HSPLandroidx/compose/foundation/**;->**(**)**
-HSPLandroidx/compose/material3/**;->**(**)**
