@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -755,7 +756,7 @@ private fun TabPlaceholder(tab: Tab, mini: Boolean) {
 }
 
 @Composable
-private fun TabGlyph(tab: Tab, size: androidx.compose.ui.unit.Dp, tint: Color) {
+private fun TabGlyph(tab: Tab, size: Dp, tint: Color) {
     when {
         tab.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(size), tint = tint)
         tab.home -> Icon(HripsIcons.Home, null, Modifier.size(size), tint = tint)
