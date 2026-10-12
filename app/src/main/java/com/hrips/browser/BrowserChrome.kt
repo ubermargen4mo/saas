@@ -1,0 +1,320 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
+package com.hrips.browser
+
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+@Composable
+internal fun AddressBar(
+    tab: Tab,
+    onSearch: () -> Unit,
+    engine: SearchEngine,
+    query: String?,
+    onPickEngine: (SearchEngine) -> Unit,
+    modifier: Modifier = Modifier,
+    wide: Boolean = false,
+) {
+    val withPicker = tab.home || query != null
+    var showSecurity by remember { mutableStateOf(false) }
+    val shown = when {
+        tab.home -> ""
+        query != null -> query
+        else -> tab.url.removePrefix("https://")
+    }
+    val motion = MaterialTheme.motionScheme
+    val fxIn = motion.defaultEffectsSpec<Float>()
+    val fxOut = motion.fastEffectsSpec<Float>()
+    val popIn = motion.fastSpatialSpec<Float>()
+    val cs = MaterialTheme.colorScheme
+    val barHeight = (if (wide) 40.dp else 44.dp) * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
+    Surface(
+        shape = CircleShape,
+        color = cs.surfaceContainerHigh,
+        modifier = modifier.height(barHeight).originAnchor("search"),
+    ) {
+        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(
+                targetState = withPicker,
+                transitionSpec = {
+                    (fadeIn(fxIn) + scaleIn(popIn, initialScale = 0.7f)) togetherWith (fadeOut(fxOut) + scaleOut(popIn, targetScale = 0.7f)) using
+                        SizeTransform(clip = false) { _, _ -> snap() }
+                },
+                label = "barLeading",
+            ) { picker ->
+                if (picker) {
+                    Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+                } else {
+                    BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
+                            "Безопасность соединения",
+                            tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Row(
+                Modifier.weight(1f).fillMaxHeight().clickable(onClickLabel = "Ввести запрос или адрес") { onSearch() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedContent(
+                    targetState = shown,
+                    transitionSpec = {
+                        fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
+                            SizeTransform(clip = false) { _, _ -> snap() }
+                    },
+                    contentAlignment = Alignment.CenterStart,
+                    label = "barText",
+                ) { text ->
+                    Text(
+                        text.ifEmpty { "Искать или задать вопрос" },
+                        modifier = Modifier.padding(start = if (withPicker) 8.dp else 4.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (text.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+            BarButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
+                AnimatedContent(
+                    targetState = tab.loading,
+                    transitionSpec = {
+                        (fadeIn(fxIn) + scaleIn(popIn, initialScale = 0.6f)) togetherWith (fadeOut(fxOut) + scaleOut(popIn, targetScale = 0.6f)) using
+                            SizeTransform(clip = false) { _, _ -> snap() }
+                    },
+                    label = "barReload",
+                ) { loading ->
+                    Icon(if (loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
+                }
+            }
+            if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TabStrip(browser: Browser) {
+    val listState = rememberLazyListState()
+    val haptic = LocalHapticFeedback.current
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var settlingId by remember { mutableStateOf<String?>(null) }
+    val settleJob = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    val scope = rememberCoroutineScope()
+    val release: () -> Unit = {
+        val id = draggingId
+        if (id != null) {
+            draggingId = null
+            settlingId = id
+            settleJob[0]?.cancel()
+            settleJob[0] = scope.launch {
+                val a = androidx.compose.animation.core.Animatable(dragOffset)
+                a.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)) { dragOffset = value }
+                dragOffset = 0f
+                if (settlingId == id) settlingId = null
+            }
+        }
+    }
+
+    val seen = remember { browser.tabs.map { it.id }.toMutableSet() }
+    val lastSize = remember { intArrayOf(browser.tabs.size) }
+
+    LaunchedEffect(browser.current.id, browser.tabs.size) {
+        seen.retainAll(browser.tabs.mapTo(HashSet()) { it.id })
+        val grew = browser.tabs.size > lastSize[0]
+        lastSize[0] = browser.tabs.size
+        val index = browser.tabs.indexOfFirst { it.id == browser.current.id }
+        if (index < 0) return@LaunchedEffect
+        if (!grew) {
+            val visible = listState.layoutInfo.visibleItemsInfo.any { it.index == index }
+            if (!visible) listState.animateScrollToItem(index)
+            return@LaunchedEffect
+        }
+        repeat(30) {
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+            if (item == null) {
+                listState.animateScrollToItem(index)
+            } else {
+                val end = info.viewportEndOffset - info.afterContentPadding
+                val start = info.viewportStartOffset + info.beforeContentPadding
+                val delta = when {
+                    item.offset + item.size > end -> item.offset + item.size - end
+                    item.offset < start -> item.offset - start
+                    else -> 0
+                }
+                if (delta != 0) listState.scrollBy(delta.toFloat())
+            }
+            withFrameNanos { }
+        }
+    }
+
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(browser.tabs, key = { _, t -> t.id }) { i, t ->
+                val id = t.id
+                val grow = remember(id) { Animatable(if (seen.add(id)) 0f else 1f) }
+                LaunchedEffect(id) {
+                    if (grow.value < 1f) grow.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
+                }
+                val dragging = draggingId == id
+                val held = dragging || settlingId == id
+                val isCurrent = i == browser.currentIndex
+                val tabColor by animateColorAsState(
+                    if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+                    MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
+                    label = "tabStripColor",
+                )
+                val lift by animateFloatAsState(if (dragging) 1.05f else 1f, MaterialTheme.motionScheme.fastSpatialSpec<Float>(), label = "tabLift")
+                val shadow by animateDpAsState(if (dragging) 8.dp else 0.dp, label = "tabShadow")
+                Surface(
+                    onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.currentIndex = it } },
+                    shape = CircleShape,
+                    color = tabColor,
+                    shadowElevation = shadow,
+                    modifier = Modifier
+                        .height(36.dp).widthIn(min = 120.dp, max = 220.dp)
+                        .semantics { this.selected = isCurrent }
+                        .layout { m, c ->
+                            val p = m.measure(c)
+                            val w = (p.width * grow.value).roundToInt()
+                            layout(w, p.height) { p.place(0, 0) }
+                        }
+                        .then(if (grow.value < 1f) Modifier.clipToBounds() else Modifier)
+                        .then(if (held) Modifier.zIndex(1f) else Modifier.animateItem(fadeInSpec = null))
+                        .graphicsLayer {
+                            translationX = if (held) dragOffset else 0f
+                            scaleX = lift
+                            scaleY = lift
+                            alpha = grow.value
+                        }
+                        .pointerInput(id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    settleJob[0]?.cancel()
+                                    settlingId = null
+                                    draggingId = id
+                                    dragOffset = 0f
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount.x
+                                    val infos = listState.layoutInfo.visibleItemsInfo
+                                    val me = infos.firstOrNull { it.key == id } ?: return@detectDragGesturesAfterLongPress
+                                    val from = browser.tabs.indexOfFirst { it.id == id }
+                                    if (from < 0 || me.index != from) return@detectDragGesturesAfterLongPress
+                                    val center = me.offset + me.size / 2f + dragOffset
+                                    val target = infos.firstOrNull { it.key != id && center >= it.offset && center <= it.offset + it.size }
+                                    if (target != null) {
+                                        browser.moveTab(from, target.index)
+                                        val newOffset = if (target.index > from) target.offset + target.size - me.size else target.offset
+                                        dragOffset += me.offset - newOffset
+                                    }
+                                },
+                                onDragEnd = { release() },
+                                onDragCancel = { release() },
+                            )
+                        },
+                ) {
+                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (t.isPrivate) {
+                            Icon(HripsIcons.Mask, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        } else if (t.home) {
+                            Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            TabSiteIcon(t, 18.dp, shape = CircleShape)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            t.label(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isCurrent) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.closeTab(it) } }, modifier = Modifier.size(30.dp)) {
+                            Icon(HripsIcons.Close, "Закрыть", Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+        BarButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
+    }
+}
+
+@Composable
+fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val slideSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val bump = remember { Animatable(1f) }
+    var first by remember { mutableStateOf(true) }
+    LaunchedEffect(count) {
+        if (first) { first = false; return@LaunchedEffect }
+        bump.snapTo(1f)
+        bump.animateTo(1.16f, tween(80))
+        bump.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
+    }
+    BarButton(
+        onClick = onClick,
+        modifier = modifier.semantics { contentDescription = "Вкладки: $count" },
+    ) {
+        val color = LocalContentColor.current
+        Box(
+            Modifier.size(20.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }.border(1.8.dp, color, RoundedCornerShape(6.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedContent(
+                targetState = count,
+                transitionSpec = {
+                    val up = targetState > initialState
+                    (fadeIn(fadeSpec) + slideInVertically(slideSpec) { if (up) it else -it }) togetherWith
+                        (fadeOut(fadeSpec) + slideOutVertically(slideSpec) { if (up) -it else it }) using
+                        SizeTransform(clip = true) { _, _ -> snap() }
+                },
+                label = "tabCount",
+            ) { n ->
+                val digitSize = with(LocalDensity.current) { (if (n > 9) 9.dp else 10.dp).toSp() }
+                Text(
+                    if (n > 99) ":)" else n.toString(),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = digitSize, fontWeight = FontWeight.SemiBold),
+                    color = color,
+                )
+            }
+        }
+    }
+}
+
