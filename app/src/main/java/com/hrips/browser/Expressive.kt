@@ -70,8 +70,9 @@ fun ShapeBadge(
     /** Фигура «вкатывается»: растёт и доворачивается пружиной (в диалогах). */
     entrance: Boolean = false,
 ) {
-    // Форма не пересоздаётся при каждой перекомпоновке (значки стоят в каждой строке списков)
-    val shape = remember(badge) { badge.polygon().toShape() }
+    // toShape() сама @Composable и кэширует форму через remember(polygon), поэтому
+    // вызываем её напрямую, а не внутри remember { } (там нет composable-контекста)
+    val shape = badge.polygon().toShape()
     // Слой и анимация нужны только значкам с «вкатыванием»: остальные рисуются без отдельного слоя
     val enter = if (entrance) remember { Animatable(0f) } else null
     if (enter != null) {
