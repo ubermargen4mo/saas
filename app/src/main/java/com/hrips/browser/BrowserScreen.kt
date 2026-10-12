@@ -1,0 +1,600 @@
+package com.hrips.browser
+
+import android.app.Activity
+import androidx.compose.ui.platform.LocalDensity
+import android.net.Uri
+import android.view.WindowManager
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.Job
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.ExitTransition
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import org.mozilla.geckoview.GeckoView
+
+internal fun Tab.label() = when {
+    home && isPrivate -> "Приватная вкладка"
+    home -> "Начальная страница"
+    else -> title.ifBlank { url }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PageProgressBar(tab: Tab) {
+    Box(Modifier.fillMaxWidth().height(4.dp), contentAlignment = Alignment.Center) {
+        val shownProgress by animateFloatAsState(
+            tab.progress / 100f,
+            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+            label = "pageProgress",
+        )
+        val finishing = !tab.loading && tab.progress >= 100 && shownProgress < 0.99f
+        val barAlpha by animateFloatAsState(
+            if ((tab.loading || finishing) && !tab.home) 1f else 0f,
+            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
+            label = "pageProgressAlpha",
+        )
+        if (barAlpha > 0.01f) {
+            LinearProgressIndicator(
+                progress = { shownProgress },
+                modifier = Modifier.fillMaxWidth().height(4.dp).graphicsLayer { alpha = barAlpha },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun BrowserScreen(browser: Browser) {
+    var showTabs by remember { mutableStateOf(false) }
+    val pinnedTab = remember(showTabs) {
+        if (showTabs) androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation { browser.current } else null
+    }
+    val tab = pinnedTab ?: browser.current
+    var pullPx by remember { mutableFloatStateOf(0f) }
+    var pullRefreshing by remember { mutableStateOf(false) }
+    val pullThresholdPx = with(LocalDensity.current) { 110.dp.toPx() }
+    LaunchedEffect(pullRefreshing, tab) {
+        if (!pullRefreshing) return@LaunchedEffect
+        withTimeoutOrNull(3000) { snapshotFlow { tab.loading }.first { it } }
+        withTimeoutOrNull(30000) { snapshotFlow { tab.loading }.first { !it } }
+        pullRefreshing = false
+    }
+    LaunchedEffect(tab.id, tab.url, tab.home) { tab.chromeHidden = false }
+    val store = browser.store
+    val app = LocalContext.current.applicationContext as HripsApp
+    val wide = isWideWindow()
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val barButton = HripsLayout.phoneBarButton(screenWidthDp)
+    val activity = LocalContext.current as? Activity
+    var showHistory by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showSitePerms by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
+    var showExtManager by remember { mutableStateOf(false) }
+    var extStoreFirst by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    var showQrScan by remember { mutableStateOf(false) }
+    val appContext = LocalContext.current.applicationContext
+    val imageRequest = remember { PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) ImageSearch.start(appContext, uri, SearchEngines.current, tab) { browser.tabs.contains(tab) }
+    }
+    val downloadsRequested = browser.downloads.pageRequested
+    LaunchedEffect(downloadsRequested) {
+        if (downloadsRequested) {
+            showTabs = false; showSearch = false; showSettings = false; showTools = false
+            showQrScan = false; showHistory = false; showBookmarks = false; showExtManager = false
+            showDownloads = true
+            browser.downloads.pageRequested = false
+        }
+    }
+    var findOpen by remember { mutableStateOf(false) }
+    var oneOff by remember { mutableStateOf<SearchEngine?>(null) }
+    val parsed = remember(tab.url, tab.home) { if (tab.home) null else parseSearch(tab.url) }
+    val shownEngine = parsed?.first ?: oneOff ?: SearchEngines.current
+    val pickEngine: (SearchEngine) -> Unit = { e ->
+        if (parsed != null) tab.load(parsed.second, e) else oneOff = e
+    }
+
+    val canReturnToPage = tab.home && tab.url.isNotBlank()
+    val opener = browser.openerOf(tab)
+    val goBack: () -> Unit = {
+        when {
+            canReturnToPage -> tab.home = false
+            tab.canGoBack -> tab.goBack()
+            else -> browser.returnToOpener(tab)
+        }
+    }
+    val backEnabled = !tab.home && (tab.canGoBack || opener != null)
+    BackHandler(enabled = canReturnToPage || tab.canGoBack || opener != null) { goBack() }
+
+    DisposableEffect(tab.id) {
+        tab.ensureLoaded()
+        browser.setTabActive(tab, true, true)
+        onDispose { browser.setTabActive(tab, false, false) }
+    }
+
+    LaunchedEffect(tab.session) {
+        if (browser.isAppVisible) browser.setTabActive(tab, true, true)
+    }
+
+    var immersive by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) { immersive = false }
+    val fs = tab.fullscreen || immersive
+    LaunchedEffect(fs) {
+        val w = activity?.window ?: return@LaunchedEffect
+        val c = WindowCompat.getInsetsController(w, w.decorView)
+        if (fs) {
+            c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            c.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    BackHandler(enabled = fs) { if (tab.fullscreen) tab.exitFullscreen() else immersive = false }
+
+    val priv = tab.isPrivate
+    val systemDark = isSystemInDarkTheme()
+    LaunchedEffect(priv, store.allowPrivateShots) {
+        val w = activity?.window ?: return@LaunchedEffect
+        if (priv && !store.allowPrivateShots) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else w.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+    LaunchedEffect(priv, systemDark) {
+        val w = activity?.window ?: return@LaunchedEffect
+        val c = WindowCompat.getInsetsController(w, w.decorView)
+        c.isAppearanceLightStatusBars = !priv && !systemDark
+        c.isAppearanceLightNavigationBars = !priv && !systemDark
+    }
+
+    val viewRef = remember { arrayOfNulls<GeckoView>(1) }
+    var tabsFade by remember { mutableStateOf(false) }
+    val requestTabs: () -> Unit = {
+        if (tab.thumbnail != null || tab.home) {
+            tabsFade = tab.thumbnail != null && !tab.home
+            showTabs = true
+            captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false) { }
+        } else {
+            captureThumbnail(activity, viewRef[0], tab, timeoutMs = 350) {
+                tabsFade = tab.thumbnail != null && !tab.home
+                showTabs = true
+            }
+        }
+    }
+    LaunchedEffect(tab, tab.loading, tab.url) {
+        if (!tab.loading && !tab.home && !showTabs && !showSearch && !showHistory && !showBookmarks) {
+            kotlinx.coroutines.delay(1200)
+            if (!showTabs && !showSearch && !showHistory && !showBookmarks) captureThumbnail(activity, viewRef[0], tab) { }
+        }
+    }
+
+    val appCtx = LocalContext.current.applicationContext
+    LaunchedEffect(browser.tabs.size, showTabs) {
+        if (showTabs) return@LaunchedEffect
+        browser.tabs.take(12).forEach { t ->
+            if (!t.isPrivate && !t.home && t.thumbnail == null && t.url.isNotBlank()) {
+                TabThumbs.load(appCtx, t.url, small = true)
+                TabThumbs.load(appCtx, t.url, small = false)
+            }
+        }
+    }
+
+    val barHidden = !wide && !tab.home && tab.chromeHidden && !showTools
+    val barShift = animateFloatAsState(
+        if (barHidden) 1f else 0f,
+        tween(HripsMotion.ChromeMs, easing = HripsMotion.ChromeEasing),
+        label = "bottomBarShift",
+    )
+
+    var barDragPx by remember { mutableFloatStateOf(0f) }
+    val barScope = rememberCoroutineScope()
+    val barSettleJob = remember { arrayOfNulls<Job>(1) }
+    val settleBar: () -> Unit = {
+        barSettleJob[0]?.cancel()
+        barSettleJob[0] = barScope.launch {
+            Animatable(barDragPx).animateTo(0f, tween(HripsMotion.ChromeMs, easing = HripsMotion.ChromeEasing)) { barDragPx = value }
+        }
+    }
+
+    val origins = remember { OriginTracker() }
+    CompositionLocalProvider(LocalOrigins provides origins) {
+    val sideInsets = WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal)
+    Box(Modifier.fillMaxSize().then(if (fs) Modifier else Modifier.windowInsetsPadding(sideInsets)).trackTouches(origins)) {
+    Column(Modifier.fillMaxSize().imePadding()) {
+        if (!fs) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            if (wide) TabStrip(browser)
+            AnimatedVisibility(
+                visible = wide || !tab.home,
+                enter = fadeIn(tween(HripsMotion.ChromeMs)),
+                exit = ExitTransition.None,
+            ) {
+            Row(
+                Modifier.fillMaxWidth().padding(
+                    start = if (wide) 4.dp else 12.dp,
+                    end = if (wide) 4.dp else 12.dp,
+                    top = 4.dp,
+                    bottom = if (wide) 1.dp else 4.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (wide) {
+                    BarButton(onClick = goBack, enabled = backEnabled) {
+                        Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
+                    }
+                    BarButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
+                        Icon(HripsIcons.BarForward, "Вперёд", Modifier.size(24.dp))
+                    }
+                    BarButton(onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(24.dp)) }
+                }
+                Box(Modifier.weight(1f).padding(horizontal = if (wide) 4.dp else 0.dp), contentAlignment = Alignment.Center) {
+                    AddressBar(
+                        tab = tab,
+                        onSearch = { showSearch = true },
+                        engine = shownEngine,
+                        query = parsed?.second,
+                        onPickEngine = pickEngine,
+                        modifier = Modifier.fillMaxWidth(),
+                        wide = wide,
+                    )
+                }
+                if (wide) {
+                    TabCounterButton(browser.tabs.size, Modifier.originAnchor("tabs")) { requestTabs() }
+                    BarButton(onClick = { showExtManager = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
+                    AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true })
+                    Box(Modifier.width(36.dp).height(48.dp), contentAlignment = Alignment.Center) {
+                        BarButton(onClick = { showTools = true }, modifier = Modifier.wrapContentSize(unbounded = true)) {
+                            Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                }
+            }
+            }
+        }
+
+        PageProgressBar(tab)
+
+        if (findOpen && !tab.home) {
+            key(tab.id) { FindBar(tab, onClose = { findOpen = false }) }
+        }
+
+        }
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (tab.home && tab.isPrivate) key("private-start") { FadeInBox {
+                PrivateStartPage(
+                    privateCount = browser.privateCount,
+                    screenshotsBlocked = !store.allowPrivateShots,
+                    onSearch = { showSearch = true },
+                    onCloseAll = { browser.closePrivateTabs() },
+                    engine = if (wide) null else shownEngine,
+                    onPickEngine = pickEngine,
+                )
+            } } else if (tab.home) key("start") { FadeInBox {
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine)
+            } } else {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx -> HripsGeckoView(ctx).also { viewRef[0] = it } },
+                    update = {
+                        it.incognito = tab.isPrivate
+                        it.onSearchText = { text ->
+                            browser.newTab(SearchEngines.current.template + Uri.encode(text), incognito = tab.isPrivate)
+                        }
+                        it.pullEnabled = !fs
+                        it.onPull = { px -> pullPx = px }
+                        it.onPullRelease = { px ->
+                            if (px >= pullThresholdPx) {
+                                tab.reload()
+                                pullRefreshing = true
+                            }
+                        }
+                        it.setAutofillEnabled(!tab.isPrivate)
+                        if (it.session !== tab.session) {
+                            it.release()
+                            it.setSession(tab.session)
+                        }
+                    },
+                    onRelease = { it.release() },
+                )
+                TabSwapCover(tab)
+                PullIndicator(pullPx, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
+            }
+        }
+
+        if (wide && !fs) Spacer(Modifier.navigationBarsPadding())
+    }
+
+    if (!fs && !wide) {
+        HripsIsland(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .graphicsLayer { translationY = barShift.value * size.height + barDragPx }
+                .pointerInput(tab.home) {
+                    if (tab.home) return@pointerInput
+                    detectVerticalDragGestures(
+                        onDragStart = { barSettleJob[0]?.cancel() },
+                        onVerticalDrag = { change, dy ->
+                            change.consume()
+                            barDragPx = (barDragPx + dy).coerceIn(0f, size.height.toFloat())
+                        },
+                        onDragEnd = {
+                            if (barDragPx > size.height * 0.3f) tab.chromeHidden = true
+                            settleBar()
+                        },
+                        onDragCancel = { settleBar() },
+                    )
+                }
+                .navigationBarsPadding()
+                .padding(bottom = HripsLayout.PhoneBarGap),
+        ) {
+            BarButton(onClick = goBack, enabled = backEnabled, modifier = Modifier.size(barButton)) {
+                Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
+            }
+            BarButton(onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home, modifier = Modifier.size(barButton)) {
+                Icon(HripsIcons.BarForward, "Вперёд", Modifier.size(24.dp))
+            }
+            BarButton(onClick = { browser.newTab(incognito = tab.isPrivate) }, modifier = Modifier.size(barButton)) {
+                Icon(HripsIcons.Add, "Новая вкладка")
+            }
+            TabCounterButton(browser.tabs.size, Modifier.size(barButton).originAnchor("tabs")) { requestTabs() }
+            BarButton(onClick = { showExtManager = true }, modifier = Modifier.size(barButton)) {
+                Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp))
+            }
+            AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = barButton, centered = true)
+            BarButton(onClick = { showTools = true }, modifier = Modifier.size(barButton)) {
+                Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
+            }
+        }
+    }
+
+    if (!fs && !wide) {
+        AnimatedVisibility(
+            visible = barHidden,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(tween(HripsMotion.ChromeMs)),
+            exit = fadeOut(tween(HripsMotion.ChromeMs / 2)),
+        ) {
+            var up = 0f
+            Box(
+                Modifier
+                    .navigationBarsPadding()
+                    .size(width = 96.dp, height = 28.dp)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragStart = { up = 0f },
+                            onVerticalDrag = { change, dy ->
+                                change.consume()
+                                up += dy
+                                if (up < -24.dp.toPx()) tab.chromeHidden = false
+                            },
+                        )
+                    }
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = "Показать панель",
+                    ) { tab.chromeHidden = false },
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Box(
+                    Modifier
+                        .padding(bottom = 8.dp)
+                        .size(width = 40.dp, height = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)),
+                )
+            }
+        }
+    }
+
+    RevealHost(visible = showExtManager, group = null, onDismiss = { showExtManager = false }) {
+        ExtensionsScreen(browser.extensions, tab.isPrivate, extStoreFirst, onBack = { showExtManager = false })
+    }
+    browser.extensions.prompt?.let { p ->
+        ExtensionPromptDialog(p) { allow, priv -> browser.extensions.answerPrompt(allow, priv) }
+    }
+    browser.extensions.popup?.let { p ->
+        ExtensionPopupDialog(p, onClose = { browser.extensions.closePopup() })
+    }
+    browser.extensions.error?.let { msg ->
+        ExtensionErrorDialog(msg) { browser.extensions.error = null }
+    }
+
+    RevealHost(visible = showDownloads, group = null, onDismiss = { showDownloads = false }) {
+        DownloadsScreen(browser.downloads, onBack = { showDownloads = false })
+    }
+    RevealHost(visible = showHistory, group = null, onDismiss = { showHistory = false }) {
+        HistoryScreen(store, onOpen = { tab.load(it); showHistory = false }, onBack = { showHistory = false })
+    }
+    RevealHost(visible = showBookmarks, group = null, onDismiss = { showBookmarks = false }) {
+        BookmarksScreen(store, onOpen = { tab.load(it); showBookmarks = false }, onBack = { showBookmarks = false })
+    }
+    RevealHost(visible = showQrScan, group = null, onDismiss = { showQrScan = false }) {
+        QrScannerScreen(
+            onOpen = { url -> showQrScan = false; browser.newTab(url, incognito = tab.isPrivate) },
+            onClose = { showQrScan = false },
+        )
+    }
+    RevealHost(visible = showSettings, group = null, onDismiss = { showSettings = false }) {
+        SettingsScreen(
+            browser = browser,
+            app = app,
+            onBack = { showSettings = false },
+            onSitePermissions = { showSitePerms = true },
+            onOpenDownloads = { showSettings = false; showDownloads = true },
+        )
+    }
+    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = tabsFade) {
+        TabSwitcher(
+            browser = browser,
+            onClose = { showTabs = false },
+            onHistory = { showTabs = false; showHistory = true },
+        )
+    }
+    val collapseThumb = tab.thumbnail
+    if (showTabs && tabsFade && collapseThumb != null) TabsCollapseOverlay(collapseThumb)
+    RevealHost(visible = showSearch, group = "search", startColor = MaterialTheme.colorScheme.surfaceContainerHigh, onDismiss = { showSearch = false }) {
+        SearchPanel(
+            store = store,
+            initial = if (tab.home) "" else parsed?.second ?: tab.url,
+            initialEngine = shownEngine,
+            onSubmit = { text, engine ->
+                if (isSearch(text) && !tab.isPrivate) store.addSearch(text)
+                tab.load(text, engine)
+                oneOff = null
+                showSearch = false
+            },
+            onDismiss = { showSearch = false },
+            incognito = tab.isPrivate,
+        )
+    }
+    DownloadPrompt(browser.downloads)
+    DownloadFlightOverlay(browser.downloads.fx)
+
+    RevealHost(visible = showSitePerms, group = null, onDismiss = { showSitePerms = false }) {
+        SitePermissionsScreen(browser.runtime, browser.permissions.sites, onBack = { showSitePerms = false })
+    }
+
+    if (!store.firstRunDone) FirstRunScreen(store, browser.permissions)
+
+    val phoneBarWidthDp = (barButton.value * 6 + 12).toInt()
+    val phoneMenuEnd = ((screenWidthDp - phoneBarWidthDp) / 2).coerceAtLeast(8).dp
+    Box(
+        if (wide) Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 100.dp, end = 12.dp)
+        else Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 8.dp + barButton + 16.dp, end = phoneMenuEnd),
+    ) {
+        ToolsMenu(
+            expanded = showTools,
+            onDismiss = { showTools = false },
+            browser = browser,
+            tab = tab,
+            onFind = { findOpen = true },
+            onLibrary = { page -> if (page == 0) showBookmarks = true else showHistory = true },
+            onDownloads = { showDownloads = true },
+            onSettings = { showSettings = true },
+            onScreenshot = { PageActions.screenshot(activity, viewRef[0], tab, browser.downloads) },
+            onScanQr = { showQrScan = true },
+            onFullscreen = { immersive = true },
+        )
+    }
+
+    if (immersive && !tab.fullscreen) {
+        FilledTonalIconButton(
+            onClick = { immersive = false },
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp).size(48.dp).alpha(0.7f),
+        ) { Icon(HripsIcons.Close, "Выйти из полноэкранного режима") }
+    }
+
+    NoticeHost(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(bottom = if (wide) 96.dp else 8.dp + barButton + 24.dp)
+            .offset { androidx.compose.ui.unit.IntOffset(0, (barShift.value * (barButton + 8.dp).toPx()).toInt()) },
+    )
+    }
+    }
+
+    browser.contextMenu?.let { info -> ContextMenuSheet(info, browser) { browser.contextMenu = null } }
+
+    PromptHost(browser.prompts)
+
+    browser.external.pending?.let { r ->
+        HripsDialog(
+            icon = HripsIcons.Open,
+            onDismissRequest = { browser.external.dismiss() },
+            title = { Text("Открыть в другом приложении?") },
+            text = { Text(r.uri.take(200)) },
+            confirmButton = {
+                HripsTextButton(onClick = { browser.external.open(r) { fallback -> tab.load(fallback) } }) { Text("Открыть") }
+            },
+            dismissButton = { HripsTextButton(onClick = { browser.external.dismiss() }) { Text("Отмена") } },
+        )
+    }
+
+    browser.permissions.queue.firstOrNull()?.let { req ->
+        req.contentPermission?.let { permission ->
+            LaunchedEffect(req) { permission.notifyShown() }
+        }
+        HripsDialog(
+            icon = HripsIcons.Shield,
+            onDismissRequest = { browser.permissions.answer(req, false) },
+            title = { Text(req.origin) },
+            text = {
+                Column {
+                    Text("Сайт хочет ${req.what}.")
+                    if (req.canRemember) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 12.dp).clickable { req.remember = !req.remember },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = req.remember, onCheckedChange = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Запомнить для этого сайта")
+                        }
+                    } else if (req.note != null) {
+                        Text(
+                            req.note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = { HripsTextButton(onClick = { browser.permissions.answer(req, true) }) { Text("Разрешить") } },
+            dismissButton = { HripsTextButton(onClick = { browser.permissions.answer(req, false) }) { Text("Запретить") } },
+        )
+    }
+}
+
+fun openAutofillSettings(context: android.content.Context) {
+    val intents = listOf(
+        android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+            .setData(android.net.Uri.parse("package:")),
+        android.content.Intent(android.provider.Settings.ACTION_SETTINGS),
+    )
+    for (i in intents) {
+        try {
+            context.startActivity(i)
+            return
+        } catch (e: Exception) {
+        }
+    }
+    Notices.show("Откройте: Настройки → Пароли и аккаунты → Автозаполнение")
+}
