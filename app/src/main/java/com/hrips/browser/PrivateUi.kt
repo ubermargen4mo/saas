@@ -158,6 +158,7 @@ fun PrivateStartPage(
     modifier: Modifier = Modifier,
     engine: SearchEngine? = null,
     onPickEngine: ((SearchEngine) -> Unit)? = null,
+    showSearch: Boolean = true,
 ) {
     val cs = MaterialTheme.colorScheme
     Box(modifier.fillMaxSize().background(cs.surface), contentAlignment = Alignment.TopCenter) {
@@ -173,9 +174,9 @@ fun PrivateStartPage(
             Icon(HripsIcons.Mask, null, Modifier.size(72.dp), tint = cs.primary)
             Spacer(Modifier.height(16.dp))
             Text("Приватная вкладка", style = MaterialTheme.typography.headlineMedium, color = cs.onSurface)
-            Spacer(Modifier.height(24.dp))
+            if (showSearch) Spacer(Modifier.height(24.dp))
             val searchHeight = 56.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
-            Surface(
+            if (showSearch) Surface(
                 onClick = onSearch,
                 shape = CircleShape,
                 color = cs.surfaceContainerHigh,

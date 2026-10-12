@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, onSearchImage: () -> Unit, modifier: Modifier = Modifier, engine: SearchEngine? = null, onPickEngine: ((SearchEngine) -> Unit)? = null) {
+fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, onSearch: () -> Unit, onScanQr: () -> Unit, onSearchImage: () -> Unit, modifier: Modifier = Modifier, engine: SearchEngine? = null, onPickEngine: ((SearchEngine) -> Unit)? = null, showSearch: Boolean = true) {
     val wide = isWideWindow()
     val textColor = if (wallpaper != null) Color.White else MaterialTheme.colorScheme.onSurface
     var showAdd by remember { mutableStateOf(false) }
@@ -98,13 +98,13 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                     Image(
                         painter = painterResource(R.drawable.logo_hrips),
                         contentDescription = "hrips",
-                        modifier = Modifier.height(if (wide) 104.dp else 72.dp),
+                        modifier = Modifier.height(if (wide) 104.dp else if (showSearch) 72.dp else 88.dp),
                         contentScale = ContentScale.Fit,
                         colorFilter = ColorFilter.tint(textColor),
                     )
-                    Spacer(Modifier.height(HripsSpace.XL))
+                    if (showSearch) Spacer(Modifier.height(HripsSpace.XL))
                     val searchHeight = 56.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
-                    Surface(
+                    if (showSearch) Surface(
                         onClick = onSearch,
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,

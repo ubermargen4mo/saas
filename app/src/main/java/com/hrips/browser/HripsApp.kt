@@ -31,7 +31,6 @@ class HripsApp : Application() {
         adBlock.onInstalled = { extensions.refresh() }
         adBlock.install()
         hoverPreview.install()
-        SiteColors.install(runtime)
         Browser(runtime, store, downloads, permissions, prompts, adBlock, external, media, extensions).also { b ->
             extensions.openTab = { url, active, engineWillLoad -> b.openForExtension(url, active, engineWillLoad) }
             extensions.init()

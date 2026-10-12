@@ -4,6 +4,7 @@ package com.hrips.browser
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -70,8 +71,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -96,18 +95,11 @@ internal class BarPalette(
 )
 
 @Composable
-private fun rememberBarPalette(site: Color?): BarPalette {
+private fun rememberBarPalette(): BarPalette {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
-    val base = site ?: cs.surfaceContainerHigh
-    val onBase = when {
-        site == null -> cs.onSurface
-        site.luminance() > 0.5f -> Color(0xFF15161B)
-        else -> Color.White
-    }
-    val tinted = if (site != null) lerp(base, onBase, 0.07f) else base
-    val container by animateColorAsState(tinted, motion.defaultEffectsSpec<Color>(), label = "barContainer")
-    val content by animateColorAsState(onBase, motion.defaultEffectsSpec<Color>(), label = "barContent")
+    val container by animateColorAsState(cs.surfaceContainerHigh, motion.defaultEffectsSpec<Color>(), label = "barContainer")
+    val content by animateColorAsState(cs.onSurface, motion.defaultEffectsSpec<Color>(), label = "barContent")
     return BarPalette(container, content, content.copy(alpha = 0.10f))
 }
 
@@ -207,6 +199,10 @@ internal fun BottomBar(
     backEnabled: Boolean,
     tabCount: Int,
     tabIndex: Int,
+    engine: SearchEngine,
+    onPickEngine: (SearchEngine) -> Unit,
+    onSearchImage: () -> Unit,
+    onScanQr: () -> Unit,
     downloads: Downloads,
     onBack: () -> Unit,
     onForward: () -> Unit,
@@ -223,7 +219,7 @@ internal fun BottomBar(
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val palette = rememberBarPalette(if (tab.home || tab.errorPage) null else tab.siteColor)
+    val palette = rememberBarPalette()
 
     val collapseState = animateFloatAsState(
         if (collapsed) 1f else 0f,
@@ -268,6 +264,9 @@ internal fun BottomBar(
     val swipeUp = with(density) { 36.dp.toPx() }
     var showSecurity by remember { mutableStateOf(false) }
     val canForward = tab.canGoForward && !tab.home
+    // На главной «назад/вперёд» не нужны: прячем пару, поиску достаётся вся ширина.
+    val homeHide = animateFloatAsState(if (tab.home) 1f else 0f, motion.defaultSpatialSpec<Float>(), label = "barHomeHide")
+    val leftT: () -> Float = remember(collapseState, homeHide) { { maxOf(collapseState.value, homeHide.value).coerceIn(0f, 1f) } }
 
     Row(
         modifier
@@ -279,7 +278,7 @@ internal fun BottomBar(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.collapseWidth(t)) {
+        Box(Modifier.collapseWidth(leftT)) {
             BarPill(palette) {
                 Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     BarButton(onClick = onBack, enabled = backEnabled, modifier = Modifier.size(44.dp)) {
@@ -302,7 +301,7 @@ internal fun BottomBar(
                 }
             }
         }
-        Box(Modifier.collapseWidth(t).width(8.dp))
+        Box(Modifier.collapseWidth(leftT).width(8.dp))
 
         BarPill(
             palette,
@@ -310,6 +309,7 @@ internal fun BottomBar(
                 .weight(1f)
                 .barHeight(t)
                 .originAnchor("tabs")
+                .originAnchor("search")
                 .graphicsLayer {
                     translationX = dragX
                     val s = pop.value * pressScale.value
@@ -359,81 +359,106 @@ internal fun BottomBar(
                 if (fillOn || fillAlpha.value > 0.01f) {
                     LoadFill(progressState, fillAlpha, tab.loading, palette.content)
                 }
-                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.shrinkWidth(t).width(40.dp).fillMaxHeight(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        BarButton(
-                            onClick = { if (tab.home) onAddress() else showSecurity = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                when {
-                                    tab.home -> HripsIcons.Search
-                                    tab.trust == Trust.SECURE -> HripsIcons.BarShield
-                                    else -> HripsIcons.BarInfo
-                                },
-                                if (tab.home) "Поиск" else "Безопасность соединения",
-                                Modifier.size(22.dp),
-                                tint = if (!tab.home && tab.trust == Trust.WARNING) cs.error else LocalContentColor.current,
-                            )
+                Crossfade(targetState = tab.home, animationSpec = tween(160), label = "barMode") { home ->
+                    if (home) {
+                        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.padding(start = 6.dp)) { EnginePicker(engine, onPickEngine) }
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                Text(
+                                    "Поиск",
+                                    Modifier.padding(start = 12.dp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = cs.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                )
+                            }
+                            BarButton(onClick = onSearchImage, modifier = Modifier.size(40.dp)) {
+                                Icon(HripsIcons.Image, "Поиск по фото", Modifier.size(22.dp))
+                            }
+                            BarButton(onClick = onScanQr, modifier = Modifier.size(40.dp)) {
+                                Icon(HripsIcons.Qr, "Сканировать QR-код", Modifier.size(22.dp))
+                            }
+                            Box(Modifier.width(4.dp))
                         }
-                    }
-
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        AnimatedContent(
-                            targetState = BarLabel(shown, tabIndex),
-                            transitionSpec = {
-                                val d = targetState.tab - initialState.tab
-                                if (d != 0) {
-                                    // Смена вкладки: подпись уезжает в сторону свайпа.
-                                    val dir = if (d > 0) 1 else -1
-                                    (fadeIn(tween(200, delayMillis = 40)) +
-                                        slideInHorizontally(tween(260, easing = HripsMotion.ChromeEasing)) { it / 3 * dir }) togetherWith
-                                        (fadeOut(tween(100)) +
-                                            slideOutHorizontally(tween(200, easing = HripsMotion.ChromeEasing)) { -it / 3 * dir }) using
-                                        SizeTransform(clip = false) { _, _ -> snap() }
-                                } else {
-                                    (fadeIn(tween(180, delayMillis = 60)) + slideInVertically(tween(220)) { it / 3 }) togetherWith
-                                        (fadeOut(tween(90)) + slideOutVertically(tween(160)) { -it / 3 }) using
-                                        SizeTransform(clip = false) { _, _ -> snap() }
-                                }
-                            },
+                    } else {
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.shrinkWidth(t).width(40.dp).fillMaxHeight(),
                             contentAlignment = Alignment.Center,
-                            label = "barText",
-                        ) { label ->
-                            Text(
-                                label.text.ifEmpty { "Поиск" },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                            )
-                        }
-                    }
-
-                    Box(
-                        Modifier.shrinkWidth(t).width(40.dp).fillMaxHeight(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (!tab.home) {
-                            BarButton(onClick = { tab.reloadOrStop() }, modifier = Modifier.size(36.dp)) {
-                                AnimatedContent(
-                                    targetState = tab.loading,
-                                    transitionSpec = {
-                                        (fadeIn(motion.defaultEffectsSpec<Float>()) + scaleIn(motion.fastSpatialSpec<Float>(), initialScale = 0.6f)) togetherWith
-                                            (fadeOut(motion.fastEffectsSpec<Float>()) + scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.6f)) using
-                                            SizeTransform(clip = false) { _, _ -> snap() }
+                        ) {
+                            BarButton(
+                                onClick = { if (tab.home) onAddress() else showSecurity = true },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    when {
+                                        tab.home -> HripsIcons.Search
+                                        tab.trust == Trust.SECURE -> HripsIcons.BarShield
+                                        else -> HripsIcons.BarInfo
                                     },
-                                    contentAlignment = Alignment.Center,
-                                    label = "barReload",
-                                ) { loading ->
-                                    if (loading) LoadRing(tab.progress / 100f, LocalContentColor.current)
-                                    else Icon(HripsIcons.BarRefresh, "Обновить", Modifier.size(22.dp))
+                                    if (tab.home) "Поиск" else "Безопасность соединения",
+                                    Modifier.size(22.dp),
+                                    tint = if (!tab.home && tab.trust == Trust.WARNING) cs.error else LocalContentColor.current,
+                                )
+                            }
+                        }
+
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            AnimatedContent(
+                                targetState = BarLabel(shown, tabIndex),
+                                transitionSpec = {
+                                    val d = targetState.tab - initialState.tab
+                                    if (d != 0) {
+                                        // Смена вкладки: подпись уезжает в сторону свайпа.
+                                        val dir = if (d > 0) 1 else -1
+                                        (fadeIn(tween(200, delayMillis = 40)) +
+                                            slideInHorizontally(tween(260, easing = HripsMotion.ChromeEasing)) { it / 3 * dir }) togetherWith
+                                            (fadeOut(tween(100)) +
+                                                slideOutHorizontally(tween(200, easing = HripsMotion.ChromeEasing)) { -it / 3 * dir }) using
+                                            SizeTransform(clip = false) { _, _ -> snap() }
+                                    } else {
+                                        (fadeIn(tween(180, delayMillis = 60)) + slideInVertically(tween(220)) { it / 3 }) togetherWith
+                                            (fadeOut(tween(90)) + slideOutVertically(tween(160)) { -it / 3 }) using
+                                            SizeTransform(clip = false) { _, _ -> snap() }
+                                    }
+                                },
+                                contentAlignment = Alignment.Center,
+                                label = "barText",
+                            ) { label ->
+                                Text(
+                                    label.text.ifEmpty { "Поиск" },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                                )
+                            }
+                        }
+
+                        Box(
+                            Modifier.shrinkWidth(t).width(40.dp).fillMaxHeight(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (!tab.home) {
+                                BarButton(onClick = { tab.reloadOrStop() }, modifier = Modifier.size(36.dp)) {
+                                    AnimatedContent(
+                                        targetState = tab.loading,
+                                        transitionSpec = {
+                                            (fadeIn(motion.defaultEffectsSpec<Float>()) + scaleIn(motion.fastSpatialSpec<Float>(), initialScale = 0.6f)) togetherWith
+                                                (fadeOut(motion.fastEffectsSpec<Float>()) + scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.6f)) using
+                                                SizeTransform(clip = false) { _, _ -> snap() }
+                                        },
+                                        contentAlignment = Alignment.Center,
+                                        label = "barReload",
+                                    ) { loading ->
+                                        if (loading) LoadRing(tab.progress / 100f, LocalContentColor.current)
+                                        else Icon(HripsIcons.BarRefresh, "Обновить", Modifier.size(22.dp))
+                                    }
                                 }
                             }
                         }
                     }
+                }
                 }
             }
         }

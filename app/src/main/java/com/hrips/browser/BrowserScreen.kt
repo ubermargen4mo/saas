@@ -175,12 +175,10 @@ fun BrowserScreen(browser: Browser) {
         if (priv && !store.allowPrivateShots) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else w.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
-    val siteTint = if (!wide && !tab.home && !tab.errorPage) tab.siteColor else null
-    val siteIsLight = siteTint?.let { it.luminance() > 0.5f }
-    LaunchedEffect(priv, systemDark, siteIsLight) {
+    LaunchedEffect(priv, systemDark) {
         val w = activity?.window ?: return@LaunchedEffect
         val c = WindowCompat.getInsetsController(w, w.decorView)
-        c.isAppearanceLightStatusBars = siteIsLight ?: (!priv && !systemDark)
+        c.isAppearanceLightStatusBars = !priv && !systemDark
         c.isAppearanceLightNavigationBars = !priv && !systemDark
     }
 
@@ -227,11 +225,7 @@ fun BrowserScreen(browser: Browser) {
         parsed != null -> parsed.second
         else -> tab.siteHost() ?: tab.url.removePrefix("https://")
     }
-    val statusColor by animateColorAsState(
-        (if (!wide && !tab.home && !tab.errorPage) tab.siteColor else null) ?: MaterialTheme.colorScheme.surface,
-        MaterialTheme.motionScheme.defaultEffectsSpec<androidx.compose.ui.graphics.Color>(),
-        label = "statusColor",
-    )
+    val statusColor = MaterialTheme.colorScheme.surface
 
     val origins = remember { OriginTracker() }
     CompositionLocalProvider(LocalOrigins provides origins) {
@@ -307,9 +301,10 @@ fun BrowserScreen(browser: Browser) {
                     onCloseAll = { browser.closePrivateTabs() },
                     engine = if (wide) null else shownEngine,
                     onPickEngine = pickEngine,
+                    showSearch = wide,
                 )
             } } else if (tab.home) key("start") { FadeInBox {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine)
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
             } } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -351,6 +346,10 @@ fun BrowserScreen(browser: Browser) {
             backEnabled = backEnabled,
             tabCount = browser.tabs.size,
             tabIndex = browser.currentIndex,
+            engine = shownEngine,
+            onPickEngine = pickEngine,
+            onSearchImage = { pickImage.launch(imageRequest) },
+            onScanQr = { showQrScan = true },
             downloads = browser.downloads,
             onBack = goBack,
             onForward = { tab.goForward() },

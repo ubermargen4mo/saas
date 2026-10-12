@@ -344,7 +344,6 @@ class Tab(
             }
         }
         media.attach(s, isPrivate) { title }
-        SiteColors.bind(s) { argb -> if (s === session) siteColor = argb?.let { androidx.compose.ui.graphics.Color(it) } }
         return s
     }
 
