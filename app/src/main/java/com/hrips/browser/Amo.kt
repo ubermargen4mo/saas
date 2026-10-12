@@ -70,20 +70,28 @@ object Amo {
         }
     }
 
+    /**
+     * Строка из JSON без ловушки Android: у org.json optString() для JSON-null возвращает текст "null",
+     * а не пустую строку, и проверка на пустоту его пропускает (имя «null», иконка «null»).
+     */
+    private fun JSONObject.str(key: String): String? =
+        if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() && !it.equals("null", true) }
+
     private fun parse(o: JSONObject): AmoAddon? {
-        val guid = o.optString("guid").takeIf { it.isNotBlank() } ?: return null
+        val guid = o.str("guid") ?: return null
         val file = o.optJSONObject("current_version")?.optJSONObject("file")
         val ratings = o.optJSONObject("ratings")
         return AmoAddon(
             guid = guid,
             name = loc(o, "name").ifBlank { guid },
             summary = loc(o, "summary"),
-            iconUrl = o.optString("icon_url").takeIf { it.isNotBlank() },
-            xpiUrl = file?.optString("url")?.takeIf { it.isNotBlank() },
+            iconUrl = o.str("icon_url"),
+            xpiUrl = file?.str("url"),
             users = o.optLong("average_daily_users"),
-            rating = ratings?.optDouble("average") ?: 0.0,
+            // У новых расширений average бывает null: optDouble тогда даёт NaN
+            rating = ratings?.optDouble("average", 0.0)?.takeIf { !it.isNaN() } ?: 0.0,
             ratingCount = ratings?.optInt("count") ?: 0,
-            author = o.optJSONArray("authors")?.optJSONObject(0)?.optString("name")?.takeIf { it.isNotBlank() },
+            author = o.optJSONArray("authors")?.optJSONObject(0)?.str("name"),
         )
     }
 
@@ -93,11 +101,11 @@ object Amo {
      */
     private fun loc(o: JSONObject, key: String): String {
         val v: Any? = o.opt(key)
-        if (v is String) return v
+        if (v is String) return v.takeIf { !it.equals("null", true) } ?: ""
         if (v !is JSONObject) return ""
         val lang = Locale.getDefault().toLanguageTag()
         val order = sequenceOf(lang, Locale.getDefault().language, "en-US", "en") + v.keys().asSequence()
-        return order.map { v.optString(it) }.firstOrNull { it.isNotBlank() } ?: ""
+        return order.mapNotNull { v.str(it) }.firstOrNull() ?: ""
     }
 
     fun get(url: String): String {
