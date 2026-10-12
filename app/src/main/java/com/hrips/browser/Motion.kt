@@ -3,6 +3,7 @@ package com.hrips.browser
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.CubicBezierEasing
@@ -33,6 +34,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -103,6 +105,8 @@ fun Modifier.trackTouches(tracker: OriginTracker): Modifier = pointerInput(track
 
 private const val OPEN_MS = 420
 private const val CLOSE_MS = 300
+private const val FADE_OPEN_MS = 200
+private const val FADE_CLOSE_MS = 160
 
 object HripsMotion {
     const val ChromeMs = 220
@@ -173,13 +177,13 @@ fun RevealHost(
             shown = true
             withFrameNanos { }
             withFrameNanos { }
-            progress.animateTo(1f, tween(OPEN_MS, easing = OpenEasing))
+            progress.animateTo(1f, if (fadeOnly) tween(FADE_OPEN_MS, easing = FastOutSlowInEasing) else tween(OPEN_MS, easing = OpenEasing))
         } else if (shown) {
             if (tracker.instantClose) {
                 tracker.instantClose = false
                 progress.snapTo(0f)
             } else {
-                progress.animateTo(0f, tween(CLOSE_MS, easing = CloseEasing))
+                progress.animateTo(0f, if (fadeOnly) tween(FADE_CLOSE_MS, easing = FastOutSlowInEasing) else tween(CLOSE_MS, easing = CloseEasing))
             }
             shown = false
             back.snapTo(0f)
@@ -204,6 +208,7 @@ fun RevealHost(
                 translationX = (if (backEdge == BackEventCompat.EDGE_LEFT) 1f else -1f) * b * 12.dp.toPx()
                 if (fadeOnly) {
                     alpha = p.coerceIn(0f, 1f)
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
                     shape = RevealShape(full, b * 32.dp.toPx())
                     clip = b > 0f
                 } else {

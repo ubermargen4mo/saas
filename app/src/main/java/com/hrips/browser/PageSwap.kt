@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.Image
@@ -15,6 +16,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -45,10 +48,12 @@ fun TabSwapCover(tab: Tab, modifier: Modifier = Modifier) {
     val stamp = origins.expandStamp
     val alpha = remember { Animatable(0f) }
     var image by remember { mutableStateOf<ImageBitmap?>(null) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
 
     LaunchedEffect(tab.id, stamp) {
+        // Если снимка нет в памяти, читаем с диска: страница не должна мигнуть пустой, пока восстанавливается.
         val img = if (tab.loading || tab.home) null
-        else tab.thumbnail ?: if (tab.isPrivate) null else TabThumbs.peek(tab.url, false)
+        else tab.thumbnail ?: if (tab.isPrivate) null else (TabThumbs.peek(tab.id, false) ?: TabThumbs.load(appContext, tab.id, small = false))
         image = img
         if (img == null) {
             alpha.snapTo(0f)
@@ -79,6 +84,10 @@ fun FadeInBox(modifier: Modifier = Modifier, durationMs: Int = HripsMotion.PageS
     Box(modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value }) { content() }
 }
 
+/**
+ * Картинка, которая плавно переходит из прямоугольника в прямоугольник. Размеры и раскладка не меняются:
+ * кадр анимации - это только слой (обрезка по скруглённому прямоугольнику + масштаб и сдвиг картинки), без измерения.
+ */
 @Composable
 fun RectMorph(
     bitmap: ImageBitmap,
@@ -91,17 +100,11 @@ fun RectMorph(
     Box(
         modifier
             .fillMaxSize()
-            .layout { measurable, constraints ->
-                val r = rect(Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()))
-                val placeable = measurable.measure(
-                    Constraints.fixed(r.width.roundToInt().coerceAtLeast(1), r.height.roundToInt().coerceAtLeast(1)),
-                )
-                layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(r.left.roundToInt(), r.top.roundToInt()) }
-            }
             .graphicsLayer {
-                shape = RoundedCornerShape(CornerSize(cornerPx()))
+                shape = RevealShape(rect(size), cornerPx())
                 clip = true
                 this.alpha = alpha()
+                compositingStrategy = CompositingStrategy.ModulateAlpha
             }
             .background(background),
     ) {
@@ -110,43 +113,37 @@ fun RectMorph(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopCenter,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                val r = rect(size)
+                val k = maxOf(r.width / size.width, r.height / size.height)
+                transformOrigin = TransformOrigin(0f, 0f)
+                scaleX = k
+                scaleY = k
+                translationX = r.left + (r.width - size.width * k) / 2f
+                translationY = r.top
+            },
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/** Снимок страницы просто гаснет, пока переключатель проявляется: одна прозрачность, без обрезки и масштаба. */
 @Composable
 fun TabsCollapseOverlay(thumb: ImageBitmap, modifier: Modifier = Modifier) {
-    val origins = LocalOrigins.current
-    val progress = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
     var done by remember { mutableStateOf(false) }
-    val spec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val density = LocalDensity.current
-    val screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    val endCorner = with(density) { 36.dp.toPx() }
-
     LaunchedEffect(Unit) {
-        origins.currentCardRect = null
-        val target = withTimeoutOrNull(500) { snapshotFlow { origins.currentCardRect }.filterNotNull().first() }
-        if (target == null || target.top < -1f || target.bottom > screenH + 1f) {
-            fade.animateTo(0f, tween(HripsMotion.PageSwapMs))
-        } else {
-            progress.animateTo(1f, spec)
-        }
+        fade.animateTo(0f, tween(HripsMotion.PageSwapMs, easing = FastOutSlowInEasing))
         done = true
     }
     if (done) return
-
-    RectMorph(
+    Image(
         bitmap = thumb,
-        modifier = modifier,
-        rect = { full ->
-            val to = origins.currentCardRect
-            if (to == null) Rect(Offset.Zero, full) else lerp(Rect(Offset.Zero, full), to, progress.value)
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        alignment = Alignment.TopCenter,
+        modifier = modifier.fillMaxSize().graphicsLayer {
+            alpha = fade.value
+            compositingStrategy = CompositingStrategy.ModulateAlpha
         },
-        cornerPx = { endCorner * progress.value.coerceIn(0f, 1f) },
-        alpha = { fade.value * (1f - ((progress.value - 0.75f) / 0.25f).coerceIn(0f, 1f)) },
     )
 }

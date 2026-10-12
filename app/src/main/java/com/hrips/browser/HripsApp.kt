@@ -75,6 +75,7 @@ class HripsApp : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        TabThumbs.onTrimMemory(level)
         if (browserDelegate.isInitialized()) browser.onTrimMemory(level)
     }
 }

@@ -24,12 +24,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -83,12 +88,25 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
 
+private const val CAPTURE_WIDTH = 720
+
+// Незавершённые захваты по id вкладки (только главный поток). Повторный запрос не запускает второй захват, а ждёт первый.
+private val pendingCaptures = HashMap<String, MutableList<() -> Unit>>()
+
+/**
+ * Снимок страницы для карточки вкладки.
+ *
+ * Как в проекте-образце: захват один на вкладку, результат принимается только если вкладка за это время не ушла
+ * на другой адрес, а кадр не пустой и не чёрный. [acceptAfterDeparture] - захват начат прямо перед уходом со вкладки:
+ * к моменту ответа экран уже показывает другую, и это нормально.
+ */
 fun captureThumbnail(
     activity: Activity?,
     view: View?,
     tab: Tab,
     allowPixelCopy: Boolean = true,
-    timeoutMs: Long = 1500,
+    timeoutMs: Long = 1000,
+    acceptAfterDeparture: Boolean = false,
     done: () -> Unit,
 ) {
     val gv = view as? org.mozilla.geckoview.GeckoView
@@ -101,27 +119,45 @@ fun captureThumbnail(
     if ((activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0) {
         done(); return
     }
+    pendingCaptures[tab.id]?.let { it.add(done); return }
+    val waiters = mutableListOf(done)
+    pendingCaptures[tab.id] = waiters
+
     val main = Handler(Looper.getMainLooper())
+    val startUrl = tab.url
     var finished = false
+    var timeout: Runnable? = null
     val finish: () -> Unit = {
-        if (!finished) { finished = true; done() }
+        if (!finished) {
+            finished = true
+            timeout?.let { main.removeCallbacks(it) }
+            if (pendingCaptures[tab.id] === waiters) pendingCaptures.remove(tab.id)
+            waiters.toList().forEach { it() }
+        }
     }
-    main.postDelayed({ finish() }, timeoutMs)
+    timeout = Runnable { finish() }.also { main.postDelayed(it, timeoutMs) }
+
+    fun stillValid(): Boolean =
+        !finished && tab.url == startUrl && (acceptAfterDeparture || gv.session === tab.session)
 
     fun store(bmp: Bitmap) {
+        if (!stillValid() || TabThumbs.isLikelyFailed(bmp)) return
         tab.thumbnail = bmp.asImageBitmap()
-        val url = tab.url
-        if (!tab.isPrivate && url.isNotBlank()) {
-            val app = activity.applicationContext
-            AppExecutors.tryExecute { TabThumbs.save(app, url, bmp) }
-        }
+        if (!tab.isPrivate && tab.url.isNotBlank()) TabThumbs.saveAsync(activity.applicationContext, tab.id, bmp)
     }
 
     fun scaleAndStore(full: Bitmap) {
-        val w = 720
-        val h = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
+        val w = CAPTURE_WIDTH
         val ran = AppExecutors.tryExecute {
-            val scaled = if (full.width > w) Bitmap.createScaledBitmap(full, w, h, true) else full
+            val ratioH = (w * full.height.toFloat() / full.width).toInt().coerceAtLeast(1)
+            val h = ratioH.coerceAtMost(w * 3)
+            val scaled = when {
+                full.width <= w -> full
+                else -> {
+                    val sc = Bitmap.createScaledBitmap(full, w, ratioH, true)
+                    if (h < ratioH) Bitmap.createBitmap(sc, 0, 0, w, h) else sc
+                }
+            }
             main.post {
                 store(scaled)
                 finish()
@@ -135,8 +171,8 @@ fun captureThumbnail(
         try {
             val loc = IntArray(2)
             gv.getLocationInWindow(loc)
-            val w = 720
-            val h = (w * gv.height.toFloat() / gv.width).toInt().coerceAtLeast(1)
+            val w = CAPTURE_WIDTH
+            val h = (w * gv.height.toFloat() / gv.width).toInt().coerceIn(1, w * 3)
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val rect = Rect(loc[0], loc[1], loc[0] + gv.width, loc[1] + gv.height)
             PixelCopy.request(activity.window, rect, bmp, { result ->
@@ -193,7 +229,7 @@ private class SwitcherEnv {
 @Composable
 fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    var grid by remember { mutableStateOf(browser.store.tabsGrid) }
+    var view by remember { mutableIntStateOf(browser.store.tabsView) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
@@ -250,7 +286,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         env.currentHolder?.c?.takeIf { it.isAttached }?.let { origins.currentCardRect = it.boundsInRoot() }
         Unit
     }
-    LaunchedEffect(current, grid, mode) {
+    LaunchedEffect(current, view, mode) {
         repeat(2) { withFrameNanos { } }
         reportRect()
     }
@@ -314,20 +350,20 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 val list = if (m == 1) privList else normalList
                 if (list.isEmpty()) {
                     EmptyTabs(m == 1, searching = q.isNotEmpty(), onNew = { onNew(m == 1) })
-                } else if (grid) {
-                    TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
-                } else {
-                    TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
+                } else when (view) {
+                    1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
+                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
+                    else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
                 }
             }
         }
 
         SwitcherBar(
-            grid = grid,
+            view = view,
             count = browser.tabs.size,
-            onToggleGrid = {
-                grid = !grid
-                browser.store.updateTabsGrid(grid)
+            onCycleView = {
+                view = (view + 1) % 3
+                browser.store.updateTabsView(view)
             },
             onHistory = onHistory,
             onNew = { onNew(mode == 1) },
@@ -430,6 +466,96 @@ private fun TabListPage(
     }
 }
 
+/**
+ * Крупные карточки в один ряд. Листаются горизонтально с примагничиванием, смахивание карточки вверх закрывает вкладку.
+ * Никакого наклона и масштабирования соседей: карточка двигается только по Y и гаснет, всё в graphicsLayer.
+ */
+@Composable
+private fun TabCardsPage(
+    list: List<Pair<Int, Tab>>,
+    current: Int,
+    env: SwitcherEnv,
+    onOpen: (Int) -> Unit,
+    onClose: (Tab) -> Unit,
+    onSettled: () -> Unit,
+) {
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = list.indexOfFirst { it.first == current }.coerceAtLeast(0))
+    val fling = rememberSnapFlingBehavior(state)
+    LaunchedEffect(state) {
+        snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
+        val cw = minOf(maxWidth * 0.78f, 380.dp)
+        val ch = minOf(cw * (if (maxWidth > 600.dp) 1.0f else 1.4f), maxHeight - 16.dp)
+        val side = (maxWidth - cw) / 2
+        LazyRow(
+            state = state,
+            flingBehavior = fling,
+            contentPadding = PaddingValues(horizontal = side),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            items(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
+                SwipeUpToClose(
+                    onClose = { onClose(t) },
+                    modifier = Modifier
+                        .size(cw, ch)
+                        .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = null),
+                ) {
+                    TabCard(
+                        tab = t,
+                        selected = i == current,
+                        env = env,
+                        onOpen = { onOpen(i) },
+                        onClose = { onClose(t) },
+                        modifier = Modifier.fillMaxSize(),
+                        big = true,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Смахивание вверх. Палец ведёт карточку, бросок или проход за порог закрывает. Движение только через graphicsLayer. */
+@Composable
+private fun SwipeUpToClose(onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    var offset by remember { mutableFloatStateOf(0f) }
+    var height by remember { mutableFloatStateOf(1f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val closeNow by rememberUpdatedState(onClose)
+    val dragState = rememberDraggableState { d -> offset = (offset + d).coerceAtMost(0f) }
+    Box(
+        modifier
+            .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
+            .draggable(
+                state = dragState,
+                orientation = Orientation.Vertical,
+                onDragStopped = { velocity ->
+                    val from = offset
+                    scope.launch {
+                        if (from < -height * 0.22f || velocity < -1200f) {
+                            animate(from, -height * 1.15f, 0f, tween(SWIPE_MS)) { v, _ -> offset = v }
+                            launch(Dispatchers.Default) { runCatching { haptic.performHapticFeedback(HapticFeedbackType.Confirm) } }
+                            closeNow()
+                            delay(300)
+                            offset = 0f
+                        } else {
+                            animate(from, 0f, 0f, tween(MOVE_MS, easing = FastOutSlowInEasing)) { v, _ -> offset = v }
+                        }
+                    }
+                },
+            )
+            .graphicsLayer {
+                translationY = offset
+                alpha = 1f - 0.85f * (-offset / height).coerceIn(0f, 1f)
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
+    ) { content() }
+}
+
 /** Горизонтальный свайп закрывает строку. Движение идёт только через graphicsLayer (без перекомпозиций). */
 @Composable
 private fun SwipeToClose(onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -502,6 +628,7 @@ private fun TabCard(
     onOpen: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    big: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val holder = remember { CoordsHolder() }
@@ -514,7 +641,7 @@ private fun TabCard(
             .clickable(onClick = onOpen),
     ) {
         Box(Modifier.fillMaxSize().padding(4.dp).clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerLowest)) {
-            TabPreview(tab, mini = false, modifier = Modifier.fillMaxSize())
+            TabPreview(tab, mini = false, small = !big, modifier = Modifier.fillMaxSize())
             CloseTabButton(tab, Modifier.align(Alignment.TopEnd), onClose)
             Row(
                 Modifier
@@ -562,7 +689,7 @@ private fun TabRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TabPreview(
-            tab, mini = true,
+            tab, mini = true, small = true,
             modifier = Modifier.size(64.dp).onPlaced { holder.c = it }.clip(RoundedCornerShape(18.dp)),
         )
         Spacer(Modifier.width(12.dp))
@@ -578,8 +705,8 @@ private fun TabRow(
 
 /** Превью вкладки: сохранённый снимок, иначе картинка страницы, иначе простая заглушка. */
 @Composable
-private fun TabPreview(tab: Tab, mini: Boolean, modifier: Modifier = Modifier) {
-    val thumb = rememberTabThumb(tab)
+private fun TabPreview(tab: Tab, mini: Boolean, small: Boolean, modifier: Modifier = Modifier) {
+    val thumb = rememberTabThumb(tab, small)
     val context = LocalContext.current.applicationContext
     val pageImageState = produceState<ImageBitmap?>(null, tab.url, thumb == null, PageImages.enabled) {
         value = if (thumb == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) PageImages.load(context, tab.url) else null
@@ -602,8 +729,46 @@ private fun TabPreview(tab: Tab, mini: Boolean, modifier: Modifier = Modifier) {
                 alignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize(),
             )
+        } else if (tab.home && !tab.isPrivate) {
+            HomeMini(mini)
         } else {
             TabPlaceholder(tab, mini)
+        }
+    }
+}
+
+/** Уменьшенная копия настоящей главной (фон, логотип, строка поиска): рисуется мгновенно, без снимка и без заглушки. */
+@Composable
+private fun HomeMini(mini: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val wallpaper = (LocalContext.current.applicationContext as HripsApp).wallpaper.image
+    Box(Modifier.fillMaxSize().background(cs.background)) {
+        if (wallpaper != null) {
+            Image(bitmap = wallpaper, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = if (mini) 6.dp else 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(if (mini) 0.12f else 0.18f))
+            Image(
+                painter = androidx.compose.ui.res.painterResource(R.drawable.logo_hrips),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(cs.onBackground),
+                modifier = Modifier.fillMaxWidth(0.62f).height(if (mini) 14.dp else 34.dp),
+            )
+            if (!mini) {
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth().height(22.dp).clip(CircleShape).background(cs.surfaceContainerHigh))
+                Spacer(Modifier.height(18.dp))
+                repeat(2) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        repeat(4) { Box(Modifier.size(22.dp).clip(CircleShape).background(cs.surfaceContainerHigh)) }
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
         }
     }
 }
@@ -748,8 +913,19 @@ private fun TabPlaceholder(tab: Tab, mini: Boolean) {
         if (mini) {
             TabGlyph(tab, icon, fg)
         } else {
-            Box(Modifier.size(104.dp).background(fg.copy(alpha = 0.16f), MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
-                TabGlyph(tab, icon, fg)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(96.dp).background(fg.copy(alpha = 0.16f), MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                    TabGlyph(tab, icon, fg)
+                }
+                if (!tab.isPrivate) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        tab.label(), color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 36.dp),
+                    )
+                }
             }
         }
     }
@@ -765,10 +941,10 @@ private fun TabGlyph(tab: Tab, size: Dp, tint: Color) {
 }
 
 @Composable
-private fun rememberTabThumb(tab: Tab): ImageBitmap? {
+private fun rememberTabThumb(tab: Tab, small: Boolean): ImageBitmap? {
     val context = LocalContext.current.applicationContext
-    val fromDisk by produceState<ImageBitmap?>(TabThumbs.peek(tab.url, true), tab.url, tab.thumbnail) {
-        value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home && tab.url.isNotBlank()) TabThumbs.load(context, tab.url, small = true) else null
+    val fromDisk by produceState<ImageBitmap?>(TabThumbs.peek(tab.id, small), tab.id, tab.thumbnail, small) {
+        value = if (tab.thumbnail == null && !tab.isPrivate && !tab.home) TabThumbs.load(context, tab.id, small = small) else null
     }
     val thumb = tab.thumbnail ?: fromDisk
     LaunchedEffect(thumb) {
@@ -806,10 +982,10 @@ private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modi
 
 @Composable
 private fun SwitcherBar(
-    grid: Boolean,
+    view: Int,
     count: Int,
     privatePage: Boolean,
-    onToggleGrid: () -> Unit,
+    onCycleView: () -> Unit,
     onHistory: () -> Unit,
     onNew: () -> Unit,
     onDone: () -> Unit,
@@ -826,8 +1002,12 @@ private fun SwitcherBar(
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HripsIsland {
-                BarButton(onClick = onToggleGrid) {
-                    Icon(if (grid) HripsIcons.Rows else HripsIcons.Grid, if (grid) "Показать списком" else "Показать сеткой")
+                BarButton(onClick = onCycleView) {
+                    when (view) {
+                        0 -> Icon(HripsIcons.Grid, "Показать сеткой")
+                        1 -> Icon(HripsIcons.Layers, "Показать карточками")
+                        else -> Icon(HripsIcons.Rows, "Показать списком")
+                    }
                 }
                 BarButton(onClick = onHistory) { Icon(HripsIcons.History, "История") }
                 TabCounterButton(count, onClick = onDone)

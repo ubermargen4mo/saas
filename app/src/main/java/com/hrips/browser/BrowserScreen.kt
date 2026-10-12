@@ -184,34 +184,53 @@ fun BrowserScreen(browser: Browser) {
 
     val viewRef = remember { arrayOfNulls<GeckoView>(1) }
     var tabsFade by remember { mutableStateOf(false) }
+    val appCtx = LocalContext.current.applicationContext
     val requestTabs: () -> Unit = {
-        if (tab.thumbnail != null || tab.home) {
+        // Читаем снимки соседних вкладок в память заранее, чтобы карточки появились сразу с картинкой.
+        val around = browser.tabs.indices
+            .filter { kotlin.math.abs(it - browser.currentIndex) <= 8 }
+            .map { browser.tabs[it] }
+            .filter { !it.isPrivate && !it.home }
+        TabThumbs.prefetch(appCtx, around.map { it.id }, small = true)
+        TabThumbs.prefetch(appCtx, around.filter { kotlin.math.abs(browser.tabs.indexOf(it) - browser.currentIndex) <= 1 }.map { it.id }, small = false)
+        val open = {
             tabsFade = tab.thumbnail != null && !tab.home
             showTabs = true
-            captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false) { }
-        } else {
-            captureThumbnail(activity, viewRef[0], tab, timeoutMs = 350) {
-                tabsFade = tab.thumbnail != null && !tab.home
-                showTabs = true
-            }
         }
+        if (tab.home || TabThumbs.isFresh(tab.id)) {
+            open()
+        } else {
+            // Свежий снимок до открытия, как в образце: во время анимации захват давал рывки.
+            // Если страница ответит позже 600 мс, открываем со старым снимком.
+            captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false, timeoutMs = 600) { open() }
+        }
+    }
+    // Адресная строка и поиск открываются поверх страницы: снимок делаем параллельно, открытие не ждёт.
+    val openSearch: () -> Unit = {
+        if (!tab.home && !TabThumbs.isFresh(tab.id)) captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false) { }
+        showSearch = true
     }
     LaunchedEffect(tab, tab.loading, tab.url) {
         if (!tab.loading && !tab.home && !showTabs && !showSearch && !showHistory && !showBookmarks) {
-            kotlinx.coroutines.delay(1200)
+            kotlinx.coroutines.delay(700)
             if (!showTabs && !showSearch && !showHistory && !showBookmarks) captureThumbnail(activity, viewRef[0], tab) { }
         }
     }
 
-    val appCtx = LocalContext.current.applicationContext
+    // При запуске: убрать превью несуществующих вкладок и сразу прочитать остальные в память.
+    LaunchedEffect(Unit) {
+        val ids = browser.tabs.filter { !it.isPrivate && !it.home }.map { it.id }
+        if (ids.isNotEmpty()) TabThumbs.prune(appCtx, ids.toSet())
+        TabThumbs.prefetch(appCtx, ids.take(60), small = true)
+    }
     LaunchedEffect(browser.tabs.size, showTabs) {
         if (showTabs) return@LaunchedEffect
-        browser.tabs.take(12).forEach { t ->
-            if (!t.isPrivate && !t.home && t.thumbnail == null && t.url.isNotBlank()) {
-                TabThumbs.load(appCtx, t.url, small = true)
-                TabThumbs.load(appCtx, t.url, small = false)
-            }
-        }
+        val ids = browser.tabs.indices
+            .filter { kotlin.math.abs(it - browser.currentIndex) <= 10 }
+            .map { browser.tabs[it] }
+            .filter { !it.isPrivate && !it.home && it.thumbnail == null }
+            .map { it.id }
+        TabThumbs.prefetch(appCtx, ids, small = true)
     }
 
     val collapsed = !wide && !tab.home && tab.chromeHidden && !showTools
@@ -261,7 +280,7 @@ fun BrowserScreen(browser: Browser) {
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 4.dp else 0.dp), contentAlignment = Alignment.Center) {
                     AddressBar(
                         tab = tab,
-                        onSearch = { showSearch = true },
+                        onSearch = { openSearch() },
                         engine = shownEngine,
                         query = parsed?.second,
                         onPickEngine = pickEngine,
@@ -297,14 +316,14 @@ fun BrowserScreen(browser: Browser) {
                 PrivateStartPage(
                     privateCount = browser.privateCount,
                     screenshotsBlocked = !store.allowPrivateShots,
-                    onSearch = { showSearch = true },
+                    onSearch = { openSearch() },
                     onCloseAll = { browser.closePrivateTabs() },
                     engine = if (wide) null else shownEngine,
                     onPickEngine = pickEngine,
                     showSearch = wide,
                 )
             } } else if (tab.home) key("start") { FadeInBox {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { showSearch = true }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
             } } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -353,14 +372,20 @@ fun BrowserScreen(browser: Browser) {
             downloads = browser.downloads,
             onBack = goBack,
             onForward = { tab.goForward() },
-            onAddress = { showSearch = true },
+            onAddress = { openSearch() },
             onMore = { showTools = true },
             onDownloads = { showDownloads = true },
             onExpand = { tab.chromeHidden = false },
             onSwipeUp = { if (collapsed) tab.chromeHidden = false else requestTabs() },
             onSwipeSide = { d ->
                 val i = browser.currentIndex + d
-                if (i in browser.tabs.indices) browser.currentIndex = i
+                if (i in browser.tabs.indices) {
+                    // Снимок уходящей вкладки начинаем до переключения; ответ принимается и после ухода.
+                    if (!tab.home && !TabThumbs.isFresh(tab.id)) {
+                        captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false, acceptAfterDeparture = true) { }
+                    }
+                    browser.currentIndex = i
+                }
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -406,7 +431,7 @@ fun BrowserScreen(browser: Browser) {
             onOpenDownloads = { showSettings = false; showDownloads = true },
         )
     }
-    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = tabsFade) {
+    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = true) {
         TabSwitcher(
             browser = browser,
             onClose = { showTabs = false },

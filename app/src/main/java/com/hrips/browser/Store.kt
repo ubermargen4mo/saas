@@ -252,12 +252,13 @@ class Store(context: Context) {
     var pageImages by mutableStateOf(prefs.getBoolean("page_images", true))
         private set
 
-    var tabsGrid by mutableStateOf(prefs.getBoolean("tabs_grid", false))
+    /** Вид переключателя вкладок: 0 - список, 1 - сетка, 2 - крупные карточки. Старая настройка `tabs_grid` переносится один раз. */
+    var tabsView by mutableIntStateOf(prefs.getInt("tabs_view", if (prefs.getBoolean("tabs_grid", false)) 1 else 0).coerceIn(0, 2))
         private set
 
-    fun updateTabsGrid(on: Boolean) {
-        tabsGrid = on
-        prefs.edit().putBoolean("tabs_grid", on).apply()
+    fun updateTabsView(v: Int) {
+        tabsView = v.coerceIn(0, 2)
+        prefs.edit().putInt("tabs_view", tabsView).apply()
     }
 
     fun updatePageImages(on: Boolean) {
