@@ -24,6 +24,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +65,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,6 +89,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -94,6 +100,7 @@ enum class FileKind(val label: String) {
 
 private val archiveExt = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "zst")
 private val apkExt = setOf("apk", "apks", "xapk", "aab")
+private val riskyExt = setOf("exe", "msi", "bat", "cmd", "scr", "com", "jar", "sh", "dmg", "pkg", "vbs", "ps1")
 private val badNameChars = Regex("[\\\\/:*?\"<>|]")
 private val docExt = setOf("doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods", "odp", "csv", "md", "json", "xml", "html", "epub", "fb2")
 
@@ -326,9 +333,12 @@ fun DownloadPrompt(downloads: Downloads) {
 private fun PromptPanel(p: PendingDownload, downloads: Downloads) {
     val fx = downloads.fx
     val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
     var name by remember(p) { mutableStateOf(p.name) }
     var iconCenter by remember { mutableStateOf<Offset?>(null) }
     val kind = fileKind(name, p.mime)
+    val ext = name.substringAfterLast('.', "").lowercase()
+    val risky = kind == FileKind.APK || ext in riskyExt
 
     val accept: () -> Unit = accept@{
         if (!downloads.pending.contains(p)) return@accept
@@ -337,18 +347,51 @@ private fun PromptPanel(p: PendingDownload, downloads: Downloads) {
         downloads.accept(p, clean)
     }
 
+    // Панель можно смахнуть вниз, как нижнюю шторку: это то же самое, что «Отмена».
+    var dragY by remember(p) { mutableFloatStateOf(0f) }
+    val dismissPx = with(LocalDensity.current) { 96.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val dragState = rememberDraggableState { d -> dragY = (dragY + d).coerceAtLeast(0f) }
+
     Surface(
         shape = HripsShapes.XL,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cs.surfaceContainerHigh,
         shadowElevation = 8.dp,
         modifier = Modifier
             .widthIn(max = 560.dp)
             .fillMaxWidth()
             .padding(12.dp)
             .imePadding()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .graphicsLayer { translationY = dragY }
+            .draggable(
+                state = dragState,
+                orientation = Orientation.Vertical,
+                onDragStopped = { velocity ->
+                    val from = dragY
+                    if (from > dismissPx || velocity > 1200f) {
+                        downloads.decline(p)
+                    } else {
+                        scope.launch {
+                            androidx.compose.animation.core.animate(from, 0f) { v, _ -> dragY = v }
+                        }
+                    }
+                },
+            ),
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 20.dp)) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(width = 32.dp, height = 4.dp)
+                    .background(cs.onSurfaceVariant.copy(alpha = 0.4f), CircleShape),
+            )
+            Text(
+                "Загрузить файл?",
+                style = MaterialTheme.typography.titleMedium,
+                color = cs.onSurface,
+                modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 14.dp),
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 KindBadge(
                     kind, 56.dp,
@@ -367,24 +410,71 @@ private fun PromptPanel(p: PendingDownload, downloads: Downloads) {
                 )
             }
             val size = if (p.total > 0) Formatter.formatShortFileSize(context, p.total) else "размер неизвестен"
+            Row(
+                Modifier.fillMaxWidth().padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                p.host?.let { PromptChip(it, Modifier.weight(1f, fill = false)) }
+                PromptChip(size)
+                if (p.isPrivate) PromptChip("Приватная", icon = HripsIcons.Mask)
+            }
             Text(
-                listOfNotNull(p.host, size, "папка «Загрузки»").joinToString(" · "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 12.dp),
+                "Сохранится в папку «Загрузки»",
+                style = MaterialTheme.typography.bodySmall,
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 10.dp),
             )
+            if (risky) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp)
+                        .background(cs.errorContainer, HripsShapes.M)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(HripsIcons.Info, null, Modifier.size(20.dp), tint = cs.onErrorContainer)
+                    Text(
+                        if (kind == FileKind.APK) "Установочный файл. Скачивайте его только с сайтов, которым доверяете."
+                        else "Исполняемый файл. Не открывайте его, если не уверены в источнике.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onErrorContainer,
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                }
+            }
             Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                val btnCs = MaterialTheme.colorScheme
                 ToolButton(
-                    "Отмена", null, btnCs.surfaceContainerHigh, btnCs.onSurface, segCorners(2, 2, 0, 28.dp, 8.dp),
+                    "Отмена", null, cs.surfaceContainerHighest, cs.onSurface, segCorners(2, 2, 0, 28.dp, 8.dp),
                     Modifier.weight(1f), onClick = { downloads.decline(p) },
                 )
                 ToolButton(
-                    "Загрузить", HripsIcons.Download, btnCs.primary, btnCs.onPrimary, segCorners(2, 2, 1, 28.dp, 8.dp),
+                    "Загрузить", HripsIcons.Download, cs.primary, cs.onPrimary, segCorners(2, 2, 1, 28.dp, 8.dp),
                     Modifier.weight(1.4f), onClick = accept,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PromptChip(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .background(cs.surfaceContainerHighest, CircleShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant,
+        )
     }
 }
 

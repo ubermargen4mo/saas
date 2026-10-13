@@ -51,9 +51,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect as UiRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -68,6 +70,9 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -75,12 +80,14 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -274,6 +281,28 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
 
     val modeP = animateFloatAsState(mode.toFloat(), tween(MOVE_MS, easing = FastOutSlowInEasing), label = "mode")
     val progress: () -> Float = { modeP.value.coerceIn(0f, 1f) }
+    // Смена режима боковым свайпом, когда карточки уже доехали до края: LazyRow забирает жест себе,
+    // родительский detectHorizontalDragGestures его не видит, поэтому ловим остаток прокрутки.
+    val modeNow by rememberUpdatedState(mode)
+    val modeSwipePx = with(LocalDensity.current) { 56.dp.toPx() }
+    val modeSwipe = remember(modeSwipePx) {
+        object : NestedScrollConnection {
+            var total = 0f
+            var fired = false
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (fired || source != NestedScrollSource.UserInput || available.x == 0f) return Offset.Zero
+                total += available.x
+                if (modeNow == 0 && total < -modeSwipePx) { fired = true; mode = 1 }
+                else if (modeNow == 1 && total > modeSwipePx) { fired = true; mode = 0 }
+                else if ((modeNow == 0 && total > 0f) || (modeNow == 1 && total < 0f)) total = 0f
+                return Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                total = 0f; fired = false
+                return Velocity.Zero
+            }
+        }
+    }
     val bgNormal = cs.surface
     val bgPrivate = lerp(cs.surface, cs.tertiaryContainer, 0.55f)
 
@@ -332,6 +361,9 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    // Карточка, смахнутая вверх, уходит под пилюлю режимов, а не поверх неё.
+                    .clipToBounds()
+                    .nestedScroll(modeSwipe)
                     .pointerInput(mode) {
                         var total = 0f
                         detectHorizontalDragGestures(

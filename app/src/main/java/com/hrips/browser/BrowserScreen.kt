@@ -68,7 +68,7 @@ private fun PageProgressBar(tab: Tab) {
             label = "pageProgressAlpha",
         )
         if (barAlpha > 0.01f) {
-            LinearWavyProgressIndicator(
+            LinearProgressIndicator(
                 progress = { shownProgress },
                 modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = barAlpha },
             )
@@ -194,7 +194,7 @@ fun BrowserScreen(browser: Browser) {
         TabThumbs.prefetch(appCtx, around.map { it.id }, small = true)
         TabThumbs.prefetch(appCtx, around.filter { kotlin.math.abs(browser.tabs.indexOf(it) - browser.currentIndex) <= 1 }.map { it.id }, small = false)
         val open = {
-            tabsFade = tab.thumbnail != null && !tab.home
+            tabsFade = !wide && tab.thumbnail != null && !tab.home
             showTabs = true
         }
         if (tab.home || TabThumbs.isFresh(tab.id)) {
@@ -431,7 +431,7 @@ fun BrowserScreen(browser: Browser) {
             onOpenDownloads = { showSettings = false; showDownloads = true },
         )
     }
-    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = true) {
+    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = !wide) {
         TabSwitcher(
             browser = browser,
             onClose = { showTabs = false },
