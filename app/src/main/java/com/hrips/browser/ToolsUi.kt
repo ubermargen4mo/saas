@@ -168,7 +168,7 @@ internal fun ToolsHeader(letter: String, title: String, subtitle: String, modifi
 @Composable
 internal fun ToolButton(
     label: String,
-    icon: ImageVector,
+    icon: ImageVector?,
     container: Color,
     content: Color,
     corners: Corners,
@@ -178,11 +178,11 @@ internal fun ToolButton(
 ) {
     PressSurface(onClick, corners, container, content, pressedCorner = height / 2, pressScale = 0.97f, modifier = modifier.height(height)) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            Modifier.fillMaxSize().padding(horizontal = if (icon != null) 14.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
-            Icon(icon, null, Modifier.size(22.dp))
+            if (icon != null) Icon(icon, null, Modifier.size(22.dp))
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
         }
     }
@@ -275,7 +275,7 @@ internal fun SegIcon(
     }
 }
 
-/** Тумблер-таблетка: включённый превращается в скруглённый квадрат и заливается primary. */
+/** Тумблер: выключенный — скруглённый прямоугольник, включённый превращается в таблетку и заливается primary (как в M3E и в плеере). */
 @Composable
 internal fun ToolToggle(
     icon: ImageVector,
@@ -288,7 +288,7 @@ internal fun ToolToggle(
 ) {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
-    val corner by animateDpAsState(if (on) 18.dp else height / 2, motion.defaultSpatialSpec<Dp>(), label = "toggleCorner")
+    val corner by animateDpAsState(if (on) height / 2 else 18.dp, motion.defaultSpatialSpec<Dp>(), label = "toggleCorner")
     val dot by animateColorAsState(
         if (on) cs.onPrimary.copy(alpha = 0.18f) else cs.surfaceContainerHighest,
         motion.defaultEffectsSpec<Color>(),

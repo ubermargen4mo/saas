@@ -174,13 +174,13 @@ private fun ToolsPopup(
                         MenuAction(HripsIcons.Download, "Загрузки") { onDismiss(); onDownloads() },
                         MenuAction(HripsIcons.Settings, "Настройки") { onDismiss(); onSettings() },
                     )
-                    Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         nav.forEachIndexed { i, a ->
                             SegTile(a.icon, a.label, segCorners(nav.size, nav.size, i, 26.dp, 8.dp), Modifier.weight(1f), onClick = a.onClick)
                         }
                     }
 
-                    Row(Modifier.fillMaxWidth().toolsIn(2), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().toolsIn(2), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         if (hasSite) {
                             ToolToggle(HripsIcons.Desktop, "ПК-версия", tab.desktopMode, true, Modifier.weight(1f), height = 56.dp) {
                                 val next = !tab.desktopMode
@@ -209,7 +209,7 @@ private fun ToolsPopup(
                             MenuAction(HripsIcons.FindInPage, "Найти на странице") { onDismiss(); onFind() },
                             MenuAction(HripsIcons.Qr, "QR этой страницы") { onDismiss(); onQr() },
                         )
-                        Row(Modifier.fillMaxWidth().toolsIn(index++), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(Modifier.fillMaxWidth().toolsIn(index++), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             quick.forEachIndexed { i, a ->
                                 SegIcon(a.icon, a.label, segCorners(quick.size, quick.size, i, 26.dp, 8.dp), Modifier.weight(1f), on = a.checked, onClick = a.onClick)
                             }
@@ -235,7 +235,7 @@ private fun ToolsPopup(
                         }
                     }
 
-                    Row(Modifier.fillMaxWidth().toolsIn(index++), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().toolsIn(index++), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         ToolButton(
                             "Вкладка", HripsIcons.Add, cs.primary, cs.onPrimary,
                             Corners(26.dp, 8.dp, 8.dp, 26.dp), Modifier.weight(1f), height = 52.dp,

@@ -1038,9 +1038,9 @@ private fun SwitcherBar(
                 shape = MaterialShapes.Cookie9Sided.toShape(),
                 containerColor = fabBg,
                 contentColor = fabFg,
-                modifier = Modifier.size(68.dp),
+                modifier = Modifier.size(56.dp),
             ) {
-                Icon(HripsIcons.Add, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", Modifier.size(30.dp))
+                Icon(HripsIcons.Add, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", Modifier.size(26.dp))
             }
         }
     }

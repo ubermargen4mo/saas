@@ -125,7 +125,7 @@ internal fun ToolsSheet(
             ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0))
 
             // Двойная кнопка: внешние углы — таблетка, внутренние — маленькие.
-            Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 ToolButton(
                     "Новая вкладка", HripsIcons.Add, cs.primary, cs.onPrimary,
                     Corners(28.dp, 8.dp, 8.dp, 28.dp), Modifier.weight(1.4f),
@@ -138,7 +138,7 @@ internal fun ToolsSheet(
                 )
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(2), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(2), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 nav.forEachIndexed { i, n ->
                     SegTile(
                         n.icon, n.label, segCorners(nav.size, nav.size, i, 28.dp, 8.dp), Modifier.weight(1f),
@@ -147,7 +147,7 @@ internal fun ToolsSheet(
                 }
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(3), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(3), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (hasSite) {
                     ToolToggle(HripsIcons.Desktop, "ПК-версия", tab.desktopMode, true, Modifier.weight(1f)) {
                         val next = !tab.desktopMode
@@ -169,9 +169,9 @@ internal fun ToolsSheet(
                     style = MaterialTheme.typography.labelMedium,
                     color = cs.onSurfaceVariant,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     actions.chunked(SHEET_COLS).forEachIndexed { r, line ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             line.forEachIndexed { c, a ->
                                 SegTile(
                                     a.icon, a.label, segCorners(actions.size, SHEET_COLS, r * SHEET_COLS + c, 28.dp, 8.dp),
@@ -184,7 +184,7 @@ internal fun ToolsSheet(
                 }
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(5), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(5), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 ToolButton(
                     "Расширения", HripsIcons.Puzzle, cs.surfaceContainerHigh, cs.onSurface,
                     Corners(28.dp, 8.dp, 8.dp, 28.dp), Modifier.weight(1f),

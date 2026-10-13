@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -95,13 +96,33 @@ fun ExtIcon(ext: WebExtension, action: WebExtension.Action?, size: Dp, modifier:
         if (b != null) {
             Image(b, null, Modifier.size(size))
         } else {
-            ShapeBadge(
-                HripsIcons.Puzzle, size, badge = Badge.COOKIE6,
-                container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
+            PuzzleDot(size)
         }
     }
 }
+
+/** Значок-заглушка расширения: печенька цвета secondaryContainer, как было. */
+@Composable
+private fun PuzzleDot(size: Dp, modifier: Modifier = Modifier, icon: androidx.compose.ui.graphics.vector.ImageVector = HripsIcons.Puzzle) {
+    val cs = MaterialTheme.colorScheme
+    ShapeBadge(
+        icon, size, modifier, badge = Badge.COOKIE6,
+        container = cs.secondaryContainer, content = cs.onSecondaryContainer,
+    )
+}
+
+@Composable
+internal fun ExtEmpty(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, text: String) {
+    EmptyState(icon, title, text, badge = Badge.COOKIE6)
+}
+
+private class ExtBtn(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val container: Color,
+    val content: Color,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun ExtIconWithBadge(ext: WebExtension, action: WebExtension.Action?, size: Dp) {
@@ -209,10 +230,9 @@ fun ExtensionsScreen(
             if (mine.isEmpty()) {
                 item(key = "empty") {
                     Column(Modifier.widthIn(max = HripsLayout.PageMaxWidth).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        EmptyState(
+                        ExtEmpty(
                             HripsIcons.Puzzle, "Расширений пока нет",
                             "Ставьте расширения из каталога Mozilla: блокировщики, менеджеры паролей, тёмные темы и другие.",
-                            badge = Badge.COOKIE6,
                         )
                         Button(shapes = ButtonDefaults.shapes(), onClick = { tab = 1 }) { Text("Открыть каталог") }
                     }
@@ -300,7 +320,7 @@ private fun LazyListScope.extGroup(
     itemsIndexed(list, key = { _, e -> e.id }) { i, ext ->
         Box(Modifier.widthIn(max = HripsLayout.PageMaxWidth).fillMaxWidth()) {
             InstalledCard(
-                ext, extensions, isPrivate, segShape(i, list.size), expanded == ext.id,
+                ext, extensions, isPrivate, segCorners(list.size, 1, i, 28.dp, 8.dp), expanded == ext.id,
                 onToggle = { onToggle(ext.id) },
                 onOpen = { onClose(); extensions.actions[ext.id]?.click() },
                 onRemove = { onRemove(ext) },
@@ -314,7 +334,7 @@ private fun InstalledCard(
     ext: WebExtension,
     extensions: Extensions,
     isPrivate: Boolean,
-    shape: Shape,
+    corners: Corners,
     expanded: Boolean,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
@@ -333,7 +353,7 @@ private fun InstalledCard(
             else -> null
         },
     ).joinToString(" · ")
-    Surface(onClick = onToggle, shape = shape, color = cs.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+    PressSurface(onToggle, corners, cs.surfaceContainerHigh, cs.onSurface, pressedCorner = 20.dp, pressScale = 0.985f, modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -353,32 +373,48 @@ private fun InstalledCard(
                 }
             }
             AnimatedVisibility(expanded) {
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                Column(
+                    Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     md.description?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("В приватных вкладках", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                "Расширение сможет видеть страницы, открытые инкогнито",
-                                style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                    Surface(shape = RoundedCornerShape(22.dp), color = cs.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("В приватных вкладках", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "Расширение сможет видеть страницы, открытые инкогнито",
+                                    style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = md.allowedInPrivateBrowsing, onCheckedChange = { extensions.setAllowedInPrivate(ext, it) },
+                                modifier = Modifier.semantics { contentDescription = "В приватных вкладках" },
                             )
                         }
-                        Switch(
-                            checked = md.allowedInPrivateBrowsing, onCheckedChange = { extensions.setAllowedInPrivate(ext, it) },
-                            modifier = Modifier.semantics { contentDescription = "В приватных вкладках" },
-                        )
                     }
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    val buttons = buildList {
+                        if (usable) add(ExtBtn("Открыть", HripsIcons.Open, cs.primary, cs.onPrimary, onOpen))
                         md.optionsPageUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                            HripsTextButton(onClick = { extensions.openTab(url, true, false) }) { Text("Настройки") }
+                            add(ExtBtn("Настройки", HripsIcons.Settings, cs.surfaceContainerHighest, cs.onSurface) { extensions.openTab(url, true, false) })
                         }
-                        if (!ext.isBuiltIn) {
-                            HripsTextButton(onClick = onRemove) { Text("Удалить", color = cs.error) }
-                        }
-                        if (usable) {
-                            FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = onOpen) { Text("Открыть") }
+                        if (!ext.isBuiltIn) add(ExtBtn("Удалить", HripsIcons.Trash, cs.surfaceContainerHighest, cs.error, onRemove))
+                    }
+                    if (buttons.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            buttons.forEachIndexed { i, btn ->
+                                ToolButton(
+                                    btn.label, if (buttons.size >= 3) null else btn.icon, btn.container, btn.content,
+                                    segCorners(buttons.size, buttons.size, i, 24.dp, 8.dp), Modifier.weight(1f), height = 48.dp,
+                                    onClick = btn.onClick,
+                                )
+                            }
                         }
                     }
                 }
@@ -406,11 +442,11 @@ private fun LazyListScope.storeItems(
         }
         failed -> item(key = "failed") {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                EmptyState(HripsIcons.Puzzle, "Каталог недоступен", "Проверьте соединение и попробуйте ещё раз.")
+                ExtEmpty(HripsIcons.Puzzle, "Каталог недоступен", "Проверьте соединение и попробуйте ещё раз.")
                 FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = onRetry) { Text("Повторить") }
             }
         }
-        results.isEmpty() -> item(key = "none") { EmptyState(HripsIcons.Search, "Ничего не найдено", "Попробуйте другой запрос.") }
+        results.isEmpty() -> item(key = "none") { ExtEmpty(HripsIcons.Search, "Ничего не найдено", "Попробуйте другой запрос.") }
         else -> {
             itemsIndexed(results, key = { _, a -> a.guid }) { i, a ->
                 Box(Modifier.widthIn(max = HripsLayout.PageMaxWidth).fillMaxWidth()) { StoreCard(a, extensions, segShape(i, results.size)) }
@@ -436,10 +472,7 @@ private fun StoreCard(a: AmoAddon, extensions: Extensions, shape: Shape) {
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             RemoteIcon(a.iconUrl, 48.dp) {
-                ShapeBadge(
-                    HripsIcons.Puzzle, 48.dp, badge = Badge.COOKIE6,
-                    container = cs.secondaryContainer, content = cs.onSecondaryContainer,
-                )
+                PuzzleDot(48.dp)
             }
             Column(Modifier.weight(1f)) {
                 Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
