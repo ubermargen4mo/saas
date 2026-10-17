@@ -383,7 +383,7 @@ internal fun BottomBar(
                     ),
             ) {
                 if (fillOn || fillAlpha.value > 0.01f) {
-                    LoadFill(progressState, fillAlpha, tab.loading, palette.content)
+                    LoadFill(progressState.asState(), fillAlpha, tab.loading, palette.content)
                 }
                 Box(Modifier.fillMaxSize().graphicsLayer { translationX = dragX; translationY = dragY }) {
                 Crossfade(targetState = tab.home, animationSpec = tween(160), label = "barMode") { home ->
