@@ -15,6 +15,25 @@ class BrowserEngine(private val runtime: GeckoRuntime) {
 
     private val executor by lazy { GeckoWebExecutor(runtime) }
 
+    private val warmed = HashMap<String, Long>()
+    private val ipLike = Regex("^[0-9.]+$|^\\[.*]$")
+
+    /** Заранее резолвит имя сайта: к моменту открытия страницы ответ DNS уже в кэше. Вызывать с основного потока. */
+    fun warm(host: String) {
+        val h = host.trim().lowercase().trimEnd('.')
+        if (h.isEmpty() || !h.contains('.') || ipLike.matches(h)) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = warmed[h]
+        if (last != null && now - last < 60_000L) return
+        if (warmed.size > 64) warmed.entries.removeAll { now - it.value > 60_000L }
+        warmed[h] = now
+        try {
+            executor.resolve(h).accept({ }, { })
+        } catch (e: Exception) {
+            Log.w(TAG, "Не удалось прогреть DNS для $h", e)
+        }
+    }
+
     fun fetch(
         uri: String,
         referrer: String?,

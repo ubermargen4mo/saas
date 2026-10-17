@@ -82,7 +82,6 @@ internal fun ToolsSheet(
             add(SheetAction(if (saved) HripsIcons.StarFilled else HripsIcons.Star, if (saved) "В закладках" else "Закладка", saved, act {
                 toggleBookmarkWithNotice(store, tab.url, tab.title)
             }))
-            add(SheetAction(HripsIcons.Share, "Поделиться", onClick = act { PageActions.share(context, tab) }))
             add(SheetAction(HripsIcons.FindInPage, "Найти", onClick = act { onFind() }))
             add(SheetAction(HripsIcons.Qr, "QR-код", onClick = act { onQr() }))
             if (hasSite && !PageActions.isTranslated(tab)) {

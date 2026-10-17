@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import android.app.Activity
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import android.net.Uri
 import android.view.WindowManager
@@ -110,6 +111,7 @@ fun BrowserScreen(browser: Browser) {
     var showTools by remember { mutableStateOf(false) }
     var showQrScan by remember { mutableStateOf(false) }
     val appContext = LocalContext.current.applicationContext
+    val clipboard = remember { appContext.getSystemService(android.content.ClipboardManager::class.java) }
     val imageRequest = remember { PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly) }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) ImageSearch.start(appContext, uri, SearchEngines.current, tab) { browser.tabs.contains(tab) }
@@ -234,6 +236,8 @@ fun BrowserScreen(browser: Browser) {
     }
 
     val collapsed = !wide && !tab.home && tab.chromeHidden && !showTools
+    val overlayOpen = showSearch || findOpen || showTabs || showTools || showHistory || showBookmarks ||
+        showSettings || showSitePerms || showDownloads || showExtManager || showQrScan
     val noticeLift by animateDpAsState(
         if (collapsed) HripsLayout.BarHeight - HripsLayout.BarCompactHeight else 0.dp,
         MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.Dp>(),
@@ -245,12 +249,15 @@ fun BrowserScreen(browser: Browser) {
         else -> tab.siteHost() ?: tab.url.removePrefix("https://")
     }
     val statusColor = MaterialTheme.colorScheme.surface
+    LaunchedEffect(statusColor) {
+        activity?.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(statusColor.toArgb()))
+    }
 
     val origins = remember { OriginTracker() }
     CompositionLocalProvider(LocalOrigins provides origins) {
     val sideInsets = WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal)
     Box(Modifier.fillMaxSize().then(if (fs) Modifier else Modifier.windowInsetsPadding(sideInsets)).trackTouches(origins)) {
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().pageImePadding(overlayOpen)) {
         if (!fs) {
         Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).statusBarsPadding()) {
             if (wide) TabStrip(browser)
@@ -350,7 +357,7 @@ fun BrowserScreen(browser: Browser) {
                     onRelease = { it.release() },
                 )
                 TabSwapCover(tab)
-                PullIndicator(pullPx, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
+                PullIndicator({ pullPx }, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
         }
 
@@ -377,6 +384,25 @@ fun BrowserScreen(browser: Browser) {
             onDownloads = { showDownloads = true },
             onExpand = { tab.chromeHidden = false },
             onSwipeUp = { if (collapsed) tab.chromeHidden = false else requestTabs() },
+            onSwipeDown = { if (!tab.home) tab.chromeHidden = true },
+            onCopy = {
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", tab.url))
+                Notices.show("Адрес скопирован")
+            },
+            onShare = { PageActions.share(activity ?: appContext, tab) },
+            onPasteGo = {
+                val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }
+                    ?.getItemAt(0)?.coerceToText(appContext)?.toString()?.trim().orEmpty()
+                if (text.isEmpty()) {
+                    Notices.show("Буфер обмена пуст")
+                } else {
+                    if (isSearch(text) && !tab.isPrivate) store.addSearch(text)
+                    tab.load(text, shownEngine)
+                    oneOff = null
+                }
+            },
+            onCloseTab = { browser.closeTab(browser.currentIndex) },
+            onCloseAll = { browser.closeAllTabs() },
             onSwipeSide = { d ->
                 val i = browser.currentIndex + d
                 if (i in browser.tabs.indices) {

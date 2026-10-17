@@ -513,6 +513,14 @@ object HripsIcons {
         }
     }
 
+    // Шевроны «‹ ›» для нижней панели телефона (как в Safari).
+    val BarChevronBack by lazy {
+        icon("BarChevronBack", stroke = 2.4f) { moveTo(14.5f, 5.5f); lineTo(8f, 12f); lineTo(14.5f, 18.5f) }
+    }
+    val BarChevronForward by lazy {
+        icon("BarChevronForward", stroke = 2.4f) { moveTo(9.5f, 5.5f); lineTo(16f, 12f); lineTo(9.5f, 18.5f) }
+    }
+
     val BarRefresh by lazy {
         icon("BarRefresh", stroke = 2f) {
             moveTo(18.34f, 14.96f)

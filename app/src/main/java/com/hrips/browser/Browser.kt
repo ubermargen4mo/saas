@@ -1,5 +1,8 @@
 package com.hrips.browser
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -101,8 +104,41 @@ class Browser(
         }
     }
 
+    fun warmHost(host: String?) {
+        if (host.isNullOrBlank()) return
+        val run = { engine.warm(host) }
+        if (Looper.myLooper() == Looper.getMainLooper()) run() else Handler(Looper.getMainLooper()).post(run)
+    }
+
+    private fun warmStartHosts() {
+        warmHost(runCatching { Uri.parse(SearchEngines.current.template).host }.getOrNull())
+        store.speedDial.take(6).forEach { warmHost(runCatching { Uri.parse(it.url).host }.getOrNull()) }
+    }
+
+    private var lastNetRetry = 0L
+
+    /** Следим за появлением сети: открытая страница с ошибкой связи перезагружается сама. */
+    fun watchNetwork(context: Context) {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
+        val main = Handler(Looper.getMainLooper())
+        try {
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    main.post {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (!appVisible || now - lastNetRetry < 3000L) return@post
+                        if (current.retryIfNetworkError()) lastNetRetry = now
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Не удалось подписаться на сеть", e)
+        }
+    }
+
     fun onForeground() {
         appVisible = true
+        warmStartHosts()
         downloads.setAppVisible(true)
         tabs.forEach { tab ->
             val active = tab === current
@@ -333,6 +369,22 @@ class Browser(
         privateTabRemoved()
         if (!deferEngine && appVisible) onForeground()
         if (deferEngine) scheduleStateSaveIdle() else scheduleStateSave()
+    }
+
+    /** Закрывает все вкладки и открывает одну пустую. Обычные вкладки попадают в список закрытых. */
+    fun closeAllTabs() {
+        val doomed = tabs.toList()
+        if (doomed.isEmpty()) return
+        doomed.forEach { t ->
+            if (!t.isPrivate && !t.home && t.url.isNotBlank()) closedTabs.add(0, ClosedTab(t.saveParts()))
+        }
+        while (closedTabs.size > MAX_CLOSED_TABS) closedTabs.removeAt(closedTabs.lastIndex)
+        doomed.forEach { it.close() }
+        tabManager.removeAll { true }
+        newTab()
+        privateTabRemoved()
+        if (appVisible) onForeground()
+        scheduleStateSave()
     }
 
     private fun privateTabRemoved() {

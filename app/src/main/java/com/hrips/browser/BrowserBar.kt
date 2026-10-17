@@ -31,6 +31,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -44,6 +46,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +87,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
@@ -191,6 +198,7 @@ private fun DrawScope.drawTabDots(count: Int, index: Float, color: Color, alpha:
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun BottomBar(
     tab: Tab,
@@ -211,7 +219,13 @@ internal fun BottomBar(
     onDownloads: () -> Unit,
     onExpand: () -> Unit,
     onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit,
     onSwipeSide: (Int) -> Unit,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onPasteGo: () -> Unit,
+    onCloseTab: () -> Unit,
+    onCloseAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -221,18 +235,24 @@ internal fun BottomBar(
     val scope = rememberCoroutineScope()
     val palette = rememberBarPalette()
 
+    // Размеры панели меняются без перелёта: пружина с критическим затуханием, иначе панель «дышит».
+    val calm = remember { spring<Float>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow) }
     val collapseState = animateFloatAsState(
         if (collapsed) 1f else 0f,
-        motion.defaultSpatialSpec<Float>(),
+        calm,
         label = "barCollapse",
     )
     val t: () -> Float = remember(collapseState) { { collapseState.value.coerceIn(0f, 1f) } }
 
     val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) }
     val rise = with(density) { 36.dp.toPx() }
 
-    val progressState = animateFloatAsState(tab.progress / 100f, motion.defaultEffectsSpec<Float>(), label = "barProgress")
+    val progressSpec = motion.defaultEffectsSpec<Float>()
+    val progressState = remember { Animatable(0f) }
+    LaunchedEffect(tab) {
+        snapshotFlow { tab.progress / 100f }.collectLatest { progressState.animateTo(it, progressSpec) }
+    }
     var fillOn by remember { mutableStateOf(false) }
     LaunchedEffect(tab.loading, tab.home) {
         if (tab.loading && !tab.home) {
@@ -244,34 +264,28 @@ internal fun BottomBar(
     }
     val fillAlpha = animateFloatAsState(if (fillOn) 1f else 0f, motion.defaultEffectsSpec<Float>(), label = "barFillAlpha")
 
-    val pop = remember { Animatable(1f) }
-    var wasLoading by remember { mutableStateOf(false) }
-    LaunchedEffect(tab.loading) {
-        if (wasLoading && !tab.loading && !tab.home) {
-            pop.animateTo(1.035f, tween(90))
-            pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
-        }
-        wasLoading = tab.loading
-    }
 
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val pressScale = animateFloatAsState(if (pressed) 0.97f else 1f, motion.fastSpatialSpec<Float>(), label = "barPress")
-    val dotIndex = animateFloatAsState(tabIndex.toFloat(), motion.defaultSpatialSpec<Float>(), label = "barDots")
+    val pressScale = animateFloatAsState(if (pressed) 0.97f else 1f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium), label = "barPress")
+    val dotIndex = animateFloatAsState(tabIndex.toFloat(), calm, label = "barDots")
 
     var dragX by remember { mutableFloatStateOf(0f) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+    val pullMax = with(density) { 10.dp.toPx() }
     val swipeSide = with(density) { 72.dp.toPx() }
     val swipeUp = with(density) { 36.dp.toPx() }
     var showSecurity by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     val canForward = tab.canGoForward && !tab.home
     // На главной «назад/вперёд» не нужны: прячем пару, поиску достаётся вся ширина.
-    val homeHide = animateFloatAsState(if (tab.home) 1f else 0f, motion.defaultSpatialSpec<Float>(), label = "barHomeHide")
+    val homeHide = animateFloatAsState(if (tab.home) 1f else 0f, calm, label = "barHomeHide")
     val leftT: () -> Float = remember(collapseState, homeHide) { { maxOf(collapseState.value, homeHide.value).coerceIn(0f, 1f) } }
 
     Row(
         modifier
             .fillMaxWidth()
-            .barInset(t, HripsLayout.BarMargin, 72.dp)
+            .barInset(t, HripsLayout.BarMargin, 112.dp)
             .graphicsLayer {
                 alpha = appear.value.coerceIn(0f, 1f)
                 translationY = (1f - appear.value) * rise
@@ -282,7 +296,7 @@ internal fun BottomBar(
             BarPill(palette) {
                 Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     BarButton(onClick = onBack, enabled = backEnabled, modifier = Modifier.size(44.dp)) {
-                        Icon(HripsIcons.BarBack, "Назад", Modifier.size(24.dp))
+                        Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(28.dp))
                     }
                     // «Вперёд» появляется только когда есть куда идти: адресу достаётся больше места.
                     AnimatedVisibility(
@@ -295,7 +309,7 @@ internal fun BottomBar(
                             scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.6f),
                     ) {
                         BarButton(onClick = onForward, modifier = Modifier.size(44.dp)) {
-                            Icon(HripsIcons.BarForward, "Вперёд", Modifier.size(24.dp))
+                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(28.dp))
                         }
                     }
                 }
@@ -311,8 +325,7 @@ internal fun BottomBar(
                 .originAnchor("tabs")
                 .originAnchor("search")
                 .graphicsLayer {
-                    translationX = dragX
-                    val s = pop.value * pressScale.value
+                    val s = pressScale.value
                     scaleX = s
                     scaleY = s
                 },
@@ -326,7 +339,10 @@ internal fun BottomBar(
                         var dy = 0f
                         val settle: () -> Unit = {
                             scope.launch {
-                                Animatable(dragX).animateTo(0f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow)) { dragX = value }
+                                Animatable(dragX).animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)) { dragX = value }
+                            }
+                            scope.launch {
+                                Animatable(dragY).animateTo(0f, spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium)) { dragY = value }
                             }
                         }
                         detectDragGestures(
@@ -336,11 +352,15 @@ internal fun BottomBar(
                                 dx += amount.x
                                 dy += amount.y
                                 if (abs(dx) > abs(dy)) dragX = (dx * 0.5f).coerceIn(-swipeSide, swipeSide)
+                                else dragY = (dy * 0.3f).coerceIn(-pullMax, pullMax)
                             },
                             onDragEnd = {
                                 if (abs(dy) > abs(dx) && dy < -swipeUp) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSwipeUp()
+                                } else if (abs(dy) > abs(dx) && dy > swipeUp) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSwipeDown()
                                 } else if (abs(dx) > abs(dy) && abs(dx) > swipeSide) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onSwipeSide(if (dx < 0) 1 else -1)
@@ -350,15 +370,22 @@ internal fun BottomBar(
                             onDragCancel = { settle() },
                         )
                     }
-                    .clickable(
+                    .combinedClickable(
                         interactionSource = source,
                         indication = null,
                         onClickLabel = if (collapsed) "Показать панель" else "Ввести запрос или адрес",
-                    ) { if (collapsed) onExpand() else onAddress() },
+                        onLongClickLabel = "Действия со ссылкой",
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            menuOpen = true
+                        },
+                        onClick = { if (collapsed) onExpand() else onAddress() },
+                    ),
             ) {
                 if (fillOn || fillAlpha.value > 0.01f) {
                     LoadFill(progressState, fillAlpha, tab.loading, palette.content)
                 }
+                Box(Modifier.fillMaxSize().graphicsLayer { translationX = dragX; translationY = dragY }) {
                 Crossfade(targetState = tab.home, animationSpec = tween(160), label = "barMode") { home ->
                     if (home) {
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
@@ -460,6 +487,17 @@ internal fun BottomBar(
                     }
                 }
                 }
+                }
+                PillMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    hasPage = !tab.home,
+                    onCopy = onCopy,
+                    onShare = onShare,
+                    onPasteGo = onPasteGo,
+                    onCloseTab = onCloseTab,
+                    onCloseAll = onCloseAll,
+                )
             }
         }
 
@@ -477,6 +515,56 @@ internal fun BottomBar(
     }
 
     if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+}
+
+/** Меню по удержанию пилюли: действия с адресом и вкладками. Только телефон. */
+@Composable
+private fun PillMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    hasPage: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onPasteGo: () -> Unit,
+    onCloseTab: () -> Unit,
+    onCloseAll: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
+        containerColor = cs.surfaceContainerHigh,
+    ) {
+        val run: (() -> Unit) -> () -> Unit = { action -> { onDismiss(); action() } }
+        if (hasPage) {
+            DropdownMenuItem(
+                text = { Text("Скопировать") },
+                leadingIcon = { Icon(HripsIcons.Copy, null) },
+                onClick = run(onCopy),
+            )
+            DropdownMenuItem(
+                text = { Text("Поделиться") },
+                leadingIcon = { Icon(HripsIcons.Share, null) },
+                onClick = run(onShare),
+            )
+        }
+        DropdownMenuItem(
+            text = { Text("Вставить и перейти") },
+            leadingIcon = { Icon(HripsIcons.Link, null) },
+            onClick = run(onPasteGo),
+        )
+        DropdownMenuItem(
+            text = { Text("Закрыть вкладку") },
+            leadingIcon = { Icon(HripsIcons.Close, null) },
+            onClick = run(onCloseTab),
+        )
+        DropdownMenuItem(
+            text = { Text("Закрыть все вкладки", color = cs.error) },
+            leadingIcon = { Icon(HripsIcons.Trash, null, tint = cs.error) },
+            onClick = run(onCloseAll),
+        )
+    }
 }
 
 /**

@@ -92,6 +92,7 @@ class Tab(
     var errorPage by mutableStateOf(false)
         private set
     private var errorTarget: String? = null
+    private var errorNetwork = false
     var secure by mutableStateOf(false)
         private set
     var secureException by mutableStateOf(false)
@@ -289,6 +290,11 @@ class Tab(
             ): GeckoResult<String>? {
                 if (sess !== session) return null
                 errorTarget = uri
+                errorNetwork = when (error.code) {
+                    WebRequestError.ERROR_OFFLINE, WebRequestError.ERROR_UNKNOWN_HOST, WebRequestError.ERROR_NET_TIMEOUT,
+                    WebRequestError.ERROR_NET_RESET, WebRequestError.ERROR_NET_INTERRUPT, WebRequestError.ERROR_CONNECTION_REFUSED -> true
+                    else -> false
+                }
                 return GeckoResult.fromValue(ErrorPages.dataUri(uri, error))
             }
             override fun onCanGoBack(sess: GeckoSession, value: Boolean) {
@@ -409,6 +415,14 @@ class Tab(
     fun stopLoading() = session.stop()
 
     fun reload() = session.reload()
+
+    /** Сеть вернулась: если страница не открылась из-за связи, пробуем ещё раз. Возвращает true, если повторили. */
+    fun retryIfNetworkError(): Boolean {
+        if (!errorPage || !errorNetwork || loading) return false
+        val target = errorTarget?.takeIf { it.isNotBlank() } ?: return false
+        session.loadUri(target)
+        return true
+    }
 
     fun saveAsPdf() = session.saveAsPdf()
 

@@ -155,6 +155,7 @@ object Favicons {
             } catch (e: Exception) {
                 return null
             }
+            var reusable = false
             try {
                 c.connectTimeout = 5000
                 c.readTimeout = 5000
@@ -176,7 +177,7 @@ object Favicons {
                     while (out.size() < max) {
                         val remaining = max - out.size()
                         val n = input.read(buf, 0, minOf(buf.size, remaining))
-                        if (n < 0) break
+                        if (n < 0) { reusable = true; break }
                         out.write(buf, 0, n)
                     }
                 }
@@ -184,7 +185,8 @@ object Favicons {
             } catch (e: Exception) {
                 return null
             } finally {
-                c.disconnect()
+                // Дочитали до конца: соединение возвращается в пул и подходит для следующей иконки того же сайта.
+                if (!reusable) c.disconnect()
             }
         }
         return null

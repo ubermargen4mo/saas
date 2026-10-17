@@ -58,21 +58,24 @@ object Suggestions {
     suspend fun fetch(engine: SearchEngine, query: String): List<String> = withContext(Dispatchers.IO) {
         if (engine.suggest.isBlank()) return@withContext emptyList<String>()
         val c = try { URL(engine.suggest + Uri.encode(query)).openConnection() as HttpURLConnection } catch (_: Exception) { return@withContext emptyList() }
+        // Соединение не закрываем после успешного ответа: следующая подсказка пойдёт по нему без нового рукопожатия TLS.
+        var ok = true
         try {
             c.connectTimeout = 3000
             c.readTimeout = 3000
             c.instanceFollowRedirects = false
             c.useCaches = false
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) hrips")
-            if (c.responseCode !in 200..299) return@withContext emptyList<String>()
+            if (c.responseCode !in 200..299) { ok = false; return@withContext emptyList<String>() }
             val bytes = c.inputStream.use { it.readBounded(256 * 1024) }
             val text = bytes.toString(Charsets.UTF_8)
             val arr = JSONArray(text).optJSONArray(1) ?: return@withContext emptyList()
             (0 until minOf(arr.length(), 12)).mapNotNull { (arr.opt(it) as? String)?.takeIf { s -> s.isNotBlank() } }
         } catch (_: Exception) {
+            ok = false
             emptyList()
         } finally {
-            c.disconnect()
+            if (!ok) c.disconnect()
         }
     }
 }
@@ -116,6 +119,20 @@ fun SearchPanel(
         keyboard?.show()
         delay(150)
         clip = readClipUrl(ctx, initial)
+    }
+    // Тёплое соединение: пока человек печатает первую букву, рукопожатие с поисковиком уже сделано.
+    LaunchedEffect(engine, store.suggestionsOn, incognito) {
+        if (incognito) return@LaunchedEffect
+        val app = ctx.applicationContext as? HripsApp
+        app?.browserIfReady?.warmHost(runCatching { Uri.parse(engine.template).host }.getOrNull())
+        if (store.suggestionsOn) Suggestions.fetch(engine, "")
+    }
+    // Набирают адрес: резолвим его имя заранее.
+    LaunchedEffect(q, incognito) {
+        if (incognito || q.isEmpty() || isSearch(q)) return@LaunchedEffect
+        delay(150)
+        val host = runCatching { Uri.parse(toUrl(q)).host }.getOrNull()
+        (ctx.applicationContext as? HripsApp)?.browserIfReady?.warmHost(host)
     }
     LaunchedEffect(q, engine, store.suggestionsOn, incognito) {
         if (!typing || !store.suggestionsOn || incognito) {

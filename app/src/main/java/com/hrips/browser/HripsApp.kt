@@ -12,6 +12,7 @@ class HripsApp : Application() {
             applyPrivateDefaults(it)
             PrivacyEngine.apply(it, store)
             GeckoColors.attach()
+            NetworkTuning.apply()
             it.webNotificationDelegate = siteNotifications.delegate
         }
     }
@@ -34,6 +35,7 @@ class HripsApp : Application() {
         Browser(runtime, store, downloads, permissions, prompts, adBlock, external, media, extensions).also { b ->
             extensions.openTab = { url, active, engineWillLoad -> b.openForExtension(url, active, engineWillLoad) }
             extensions.init()
+            b.watchNetwork(this)
         }
     }
 

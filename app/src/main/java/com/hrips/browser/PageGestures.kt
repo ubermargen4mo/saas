@@ -71,7 +71,8 @@ class HripsSelectionDelegate(
 }
 
 @Composable
-fun PullIndicator(pullPx: Float, thresholdPx: Float, refreshing: Boolean, modifier: Modifier = Modifier) {
+fun PullIndicator(pull: () -> Float, thresholdPx: Float, refreshing: Boolean, modifier: Modifier = Modifier) {
+    val pullPx = pull()
     val armed = pullPx >= thresholdPx
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(armed) {
