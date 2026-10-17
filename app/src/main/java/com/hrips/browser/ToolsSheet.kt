@@ -28,6 +28,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.pm.ShortcutManagerCompat
 import kotlinx.coroutines.launch
 
@@ -95,9 +96,15 @@ internal fun ToolsSheet(
                 add(SheetAction(HripsIcons.Phone, "Ярлык", onClick = act { PageActions.addToHomeScreen(context, tab) }))
             }
         }
-        add(SheetAction(HripsIcons.QrScan, "Сканер QR", onClick = act { onScanQr() }))
-        add(SheetAction(HripsIcons.Fullscreen, "Весь экран", onClick = act { onFullscreen() }))
     }
+
+    // Общие инструменты: список с полными подписями, без тесных плиток.
+    val tools = listOf(
+        SheetAction(HripsIcons.QrScan, "Сканер QR-кодов", onClick = act { onScanQr() }),
+        SheetAction(HripsIcons.Fullscreen, "На весь экран", onClick = act { onFullscreen() }),
+        SheetAction(HripsIcons.Puzzle, "Расширения", onClick = act { onExtensions() }),
+        SheetAction(HripsIcons.Settings, "Настройки", onClick = act { onSettings() }),
+    )
 
     val nav = listOf(
         SheetNav(HripsIcons.Layers, "Вкладки", browser.tabs.size, act { onTabs() }),
@@ -119,7 +126,7 @@ internal fun ToolsSheet(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0))
 
@@ -161,39 +168,35 @@ internal fun ToolsSheet(
                 }
             }
 
-            Column(Modifier.fillMaxWidth().toolsIn(4)) {
-                Text(
-                    if (onPage) "Эта страница" else "Инструменты",
-                    Modifier.padding(start = 12.dp, top = 6.dp, bottom = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = cs.onSurfaceVariant,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    actions.chunked(SHEET_COLS).forEachIndexed { r, line ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            line.forEachIndexed { c, a ->
-                                SegTile(
-                                    a.icon, a.label, segCorners(actions.size, SHEET_COLS, r * SHEET_COLS + c, 28.dp, 8.dp),
-                                    Modifier.weight(1f), on = a.active, onClick = a.onClick,
-                                )
+            if (actions.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().toolsIn(4)) {
+                    Text(
+                        "Эта страница",
+                        Modifier.padding(start = 12.dp, top = 2.dp, bottom = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = cs.onSurfaceVariant,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        actions.chunked(SHEET_COLS).forEachIndexed { r, line ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                line.forEachIndexed { c, a ->
+                                    SegTile(
+                                        a.icon, a.label, segCorners(actions.size, SHEET_COLS, r * SHEET_COLS + c, 24.dp, 8.dp),
+                                        Modifier.weight(1f), height = 78.dp, on = a.active,
+                                        labelSize = 12.5.sp, labelLines = 1, onClick = a.onClick,
+                                    )
+                                }
+                                repeat(SHEET_COLS - line.size) { Spacer(Modifier.weight(1f)) }
                             }
-                            repeat(SHEET_COLS - line.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(5), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                ToolButton(
-                    "Расширения", HripsIcons.Puzzle, cs.surfaceContainerHigh, cs.onSurface,
-                    Corners(28.dp, 8.dp, 8.dp, 28.dp), Modifier.weight(1f),
-                    onClick = act { onExtensions() },
-                )
-                ToolButton(
-                    "Настройки", HripsIcons.Settings, cs.surfaceContainerHigh, cs.onSurface,
-                    Corners(8.dp, 28.dp, 28.dp, 8.dp), Modifier.weight(1f),
-                    onClick = act { onSettings() },
-                )
+            Column(Modifier.fillMaxWidth().toolsIn(5), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                tools.forEachIndexed { i, t ->
+                    ToolRow(t.icon, t.label, segCorners(tools.size, 1, i, 24.dp, 8.dp), onClick = t.onClick)
+                }
             }
 
             if (browser.privateCount > 0) {
@@ -204,4 +207,4 @@ internal fun ToolsSheet(
     }
 }
 
-private const val SHEET_COLS = 4
+private const val SHEET_COLS = 3

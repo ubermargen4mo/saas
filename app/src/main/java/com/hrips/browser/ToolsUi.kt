@@ -198,6 +198,8 @@ internal fun SegTile(
     height: Dp = 72.dp,
     on: Boolean = false,
     badge: Int? = null,
+    labelSize: androidx.compose.ui.unit.TextUnit = 11.5.sp,
+    labelLines: Int = 2,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -239,10 +241,10 @@ internal fun SegTile(
             Text(
                 label,
                 Modifier.padding(top = 6.dp),
-                maxLines = 2,
+                maxLines = labelLines,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp, lineHeight = 13.sp, letterSpacing = 0.sp),
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = labelSize, lineHeight = labelSize * 1.15f, letterSpacing = 0.sp),
                 color = if (on) cs.onPrimaryContainer else cs.onSurface,
             )
         }

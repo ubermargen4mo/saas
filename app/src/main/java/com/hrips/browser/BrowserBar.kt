@@ -294,9 +294,9 @@ internal fun BottomBar(
     ) {
         Box(Modifier.collapseWidth(leftT)) {
             BarPill(palette) {
-                Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BarButton(onClick = onBack, enabled = backEnabled, modifier = Modifier.size(44.dp)) {
-                        Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(28.dp))
+                Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BarButton(onClick = onBack, enabled = backEnabled, modifier = Modifier.size(width = 34.dp, height = 40.dp)) {
+                        Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(26.dp))
                     }
                     // «Вперёд» появляется только когда есть куда идти: адресу достаётся больше места.
                     AnimatedVisibility(
@@ -308,8 +308,8 @@ internal fun BottomBar(
                             shrinkHorizontally(motion.fastSpatialSpec<IntSize>()) +
                             scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.6f),
                     ) {
-                        BarButton(onClick = onForward, modifier = Modifier.size(44.dp)) {
-                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(28.dp))
+                        BarButton(onClick = onForward, modifier = Modifier.size(width = 34.dp, height = 40.dp)) {
+                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(26.dp))
                         }
                     }
                 }
@@ -505,9 +505,9 @@ internal fun BottomBar(
         Box(Modifier.collapseWidth(t)) {
             BarPill(palette) {
                 Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AnimatedDownloadsSlot(downloads, onClick = onDownloads, size = 44.dp, centered = true)
-                    BarButton(onClick = onMore, modifier = Modifier.size(44.dp)) {
-                        Icon(HripsIcons.BarMore, "Меню", Modifier.size(24.dp))
+                    AnimatedDownloadsSlot(downloads, onClick = onDownloads, size = 40.dp, centered = true)
+                    BarButton(onClick = onMore, modifier = Modifier.size(40.dp)) {
+                        Icon(HripsIcons.BarMore, "Меню", Modifier.size(22.dp))
                     }
                 }
             }

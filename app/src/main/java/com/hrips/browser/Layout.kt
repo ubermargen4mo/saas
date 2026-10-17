@@ -34,7 +34,7 @@ object HripsLayout {
     val PhoneBarInset = 4.dp
     val PhoneBarGap = 8.dp
 
-    val BarHeight = 52.dp
+    val BarHeight = 48.dp
     val BarCompactHeight = 22.dp
     val BarGap = 8.dp
     val BarMargin = 12.dp
