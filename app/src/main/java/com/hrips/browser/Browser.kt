@@ -318,6 +318,7 @@ class Browser(
             setTabActive(tab, true, true)
         }
         scheduleStateSave()
+        return tab
     }
 
     fun moveTab(from: Int, to: Int) {
