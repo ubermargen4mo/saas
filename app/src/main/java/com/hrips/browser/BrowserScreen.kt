@@ -132,11 +132,16 @@ fun BrowserScreen(browser: Browser) {
         when {
             canReturnToPage -> tab.home = false
             tab.canGoBack -> tab.goBack()
+            opener == null && tab.fromApp -> {
+                val index = browser.tabs.indexOf(tab)
+                if (index >= 0) browser.closeTab(index)
+                activity?.moveTaskToBack(true)
+            }
             else -> browser.returnToOpener(tab)
         }
     }
     val backEnabled = !tab.home && (tab.canGoBack || opener != null)
-    BackHandler(enabled = canReturnToPage || tab.canGoBack || opener != null) { goBack() }
+    BackHandler(enabled = canReturnToPage || tab.canGoBack || opener != null || tab.fromApp) { goBack() }
 
     DisposableEffect(tab.id) {
         tab.ensureLoaded()
@@ -554,13 +559,17 @@ fun BrowserScreen(browser: Browser) {
     browser.external.pending?.let { r ->
         HripsDialog(
             icon = HripsIcons.Open,
-            onDismissRequest = { browser.external.dismiss() },
-            title = { Text("Открыть в другом приложении?") },
+            onDismissRequest = { browser.external.dismiss(); if (r.web) tab.load(r.uri) },
+            title = { Text(if (r.appLabel != null) "Открыть в «${r.appLabel}»?" else "Открыть в другом приложении?") },
             text = { Text(r.uri.take(200)) },
             confirmButton = {
                 HripsTextButton(onClick = { browser.external.open(r) { fallback -> tab.load(fallback) } }) { Text("Открыть") }
             },
-            dismissButton = { HripsTextButton(onClick = { browser.external.dismiss() }) { Text("Отмена") } },
+            dismissButton = {
+                HripsTextButton(onClick = { browser.external.dismiss(); if (r.web) tab.load(r.uri) }) {
+                    Text(if (r.web) "Остаться в браузере" else "Отмена")
+                }
+            },
         )
     }
 

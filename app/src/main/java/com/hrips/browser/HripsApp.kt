@@ -23,7 +23,7 @@ class HripsApp : Application() {
     val adBlock: AdBlock by lazy { AdBlock(runtime) }
     val hoverPreview: HoverPreview by lazy { HoverPreview(runtime) }
     val extensions: Extensions by lazy { Extensions(runtime) }
-    val external: ExternalLinks by lazy { ExternalLinks(this) }
+    val external: ExternalLinks by lazy { ExternalLinks(this) { store.openInApps } }
     val wallpaper: Wallpaper by lazy { Wallpaper(this) }
     val media: MediaHub by lazy { MediaHub(this) }
     val siteNotifications: SiteNotifications by lazy { SiteNotifications(this) }

@@ -16,6 +16,17 @@ object IncomingIntents {
     fun isLocalFile(intent: Intent?): Boolean =
         intent?.action == Intent.ACTION_VIEW && intent.data?.scheme?.lowercase().let { it == "file" || it == "content" }
 
+    private const val CUSTOM_TAB_SESSION = "android.support.customtabs.extra.SESSION"
+
+    /** Ссылка пришла из другого приложения (Custom Tab или обычный VIEW): после «назад» вернёмся туда. */
+    fun isFromOtherApp(activity: android.app.Activity, intent: Intent?): Boolean {
+        intent ?: return false
+        if (intent.action != Intent.ACTION_VIEW) return false
+        if (intent.hasExtra(CUSTOM_TAB_SESSION)) return true
+        val ref = activity.referrer ?: return false
+        return ref.scheme == "android-app" && ref.host != activity.packageName
+    }
+
     fun resolve(context: Context, intent: Intent?): String? {
         intent ?: return null
         return when (intent.action) {

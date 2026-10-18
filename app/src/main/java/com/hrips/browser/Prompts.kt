@@ -91,7 +91,7 @@ class PickItem(val id: String, val label: String, val enabled: Boolean, val sele
 class Prompts(private val context: Context) {
     val queue = mutableStateListOf<PromptRequest>()
 
-    var pickFiles: ((multiple: Boolean, mimeTypes: Array<String>, onResult: (List<Uri>) -> Unit) -> Unit)? = null
+    var pickFiles: ((FilePickRequest, onResult: (List<Uri>) -> Unit) -> Unit)? = null
 
     var pickFolder: ((onResult: (List<Uri>) -> Unit) -> Unit)? = null
 
@@ -240,7 +240,7 @@ class Prompts(private val context: Context) {
                 pickDir(finish)
             } else {
                 val pick = pickFiles ?: return GeckoResult.fromValue(prompt.dismiss())
-                pick(multiple, accept(prompt.mimeTypes), finish)
+                pick(FilePickRequest(multiple, accept(prompt.mimeTypes), prompt.capture), finish)
             }
             return result
         }

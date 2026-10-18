@@ -116,6 +116,7 @@ private val index = listOf(
     SettingEntry("Global Privacy Control", "gpc не продавать данные сигнал приватность", SettingsPage.PRIVACY),
     SettingEntry("Картинки страниц в карточках вкладок", "превью og:image карточки вкладок запросы", SettingsPage.PRIVACY),
     SettingEntry("Скрывать запросы cookie", "баннеры согласия куки отклонять", SettingsPage.PRIVACY),
+    SettingEntry("Ссылки в приложениях", "открывать в приложении app link youtube telegram", SettingsPage.PRIVACY),
     SettingEntry("Безопасное соединение (HTTPS)", "https only http шифрование предупреждение", SettingsPage.PRIVACY),
     SettingEntry("Защищённый DNS (DoH)", "dns doh днс cloudflare quad9 adguard провайдер", SettingsPage.PRIVACY),
     SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
@@ -626,6 +627,16 @@ private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
                     true,
                     shape,
                 ) { store.updateSuspendTabsOnMemoryPressure(it) }
+            },
+            { shape ->
+                SwitchRow(
+                    HripsIcons.Layers,
+                    "Держать страницу при сворачивании",
+                    "Текущая страница остаётся в памяти до 20 минут после сворачивания, чтобы не перезагружаться при возврате. Занимает больше памяти в фоне.",
+                    store.keepPageInBackground,
+                    true,
+                    shape,
+                ) { store.updateKeepPageInBackground(it) }
             },
         )
         Spacer(Modifier.height(12.dp))

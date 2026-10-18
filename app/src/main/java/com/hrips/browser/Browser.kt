@@ -34,6 +34,8 @@ private const val TAG = "Browser"
 
 private const val MAX_CLOSED_TABS = 15
 
+private const val KEEP_ALIVE_MS = 20 * 60_000L
+
 private const val SAVE_DELAY_MS = 400L
 
 private const val SAVE_DELAY_IDLE_MS = 2500L
@@ -152,7 +154,15 @@ class Browser(
         }
     }
 
+    private var keepAliveTab: Tab? = null
+    private val releaseKeepAlive = Runnable {
+        keepAliveTab?.setBackgroundPriority(false)
+        keepAliveTab = null
+    }
+
     fun onForeground() {
+        mainHandler.removeCallbacks(releaseKeepAlive)
+        keepAliveTab = null
         appVisible = true
         warmStartHosts()
         downloads.setAppVisible(true)
@@ -168,6 +178,16 @@ class Browser(
         downloads.setAppVisible(false)
         tabs.forEach { tab ->
             setTabActive(tab, false, false)
+        }
+        // Текущую страницу держим «важной» ещё некоторое время: иначе Android убивает процесс вкладки,
+        // и при возврате страница грузится заново.
+        if (store.keepPageInBackground) {
+            tabManager.current?.let {
+                it.setBackgroundPriority(true)
+                keepAliveTab = it
+                mainHandler.removeCallbacks(releaseKeepAlive)
+                mainHandler.postDelayed(releaseKeepAlive, KEEP_ALIVE_MS)
+            }
         }
         scheduleStateSave()
     }
@@ -228,9 +248,10 @@ class Browser(
         onDownload = { tab, response -> handleDownload(tab, response) },
         permissionDelegate = permissions.delegate,
         promptDelegate = prompts.delegate,
-        onNewWindow = { openPopup(it) },
+        onNewWindow = { opener, u -> openPopup(opener, u) },
+        onPageClose = { closeFromPage(it) },
         onMenu = { contextMenu = it },
-        onExternal = { u, g -> external.handle(u, g) },
+        onExternal = { u, g, from -> external.handle(u, g, from) },
         media = media,
         savedState = savedState,
         savedTitle = savedTitle,
@@ -255,9 +276,8 @@ class Browser(
         downloads.request(response, tab.isPrivate) { if (blankPopup) tab.close() }
     }
 
-    private fun openPopup(uri: String): GeckoSession {
-        val opener = tabManager.current
-        val tab = create(uri, openNow = false, isPrivate = opener?.isPrivate == true)
+    private fun openPopup(opener: Tab, uri: String): GeckoSession {
+        val tab = create(uri, openNow = false, isPrivate = opener.isPrivate)
         tab.parent = opener
         tabManager.add(tab)
         return tab.session
@@ -288,7 +308,7 @@ class Browser(
 
     fun applyPrivacy() = PrivacyEngine.apply(runtime, store)
 
-    fun newTab(url: String = "", incognito: Boolean = false, returnToPrevious: Boolean = true) {
+    fun newTab(url: String = "", incognito: Boolean = false, returnToPrevious: Boolean = true): Tab {
         val previous = tabManager.current
         val tab = create(url, isPrivate = incognito)
         if (returnToPrevious && url.isNotBlank()) tab.returnTo = previous
@@ -337,6 +357,13 @@ class Browser(
 
     fun openerOf(tab: Tab): Tab? =
         (tab.returnTo ?: tab.parent)?.takeIf { it !== tab && it.isPrivate == tab.isPrivate && tabs.contains(it) }
+
+    /** Страница сама просит закрыть вкладку (window.close): попап входа/оплаты завершил работу. */
+    fun closeFromPage(tab: Tab) {
+        val index = tabs.indexOf(tab)
+        if (index < 0) return
+        if (tab === tabManager.current && openerOf(tab) != null) returnToOpener(tab) else closeTab(index)
+    }
 
     fun returnToOpener(tab: Tab) {
         val opener = openerOf(tab) ?: return

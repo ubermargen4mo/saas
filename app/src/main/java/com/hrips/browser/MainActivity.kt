@@ -57,13 +57,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val pickOneFile = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri -> deliverCopied(listOfNotNull(uri)) }
-
-    private val pickManyFiles = registerForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris -> deliverCopied(uris) }
+    private val pickFilesLauncher = registerForActivityResult(FilePickContract()) { uris -> deliverCopied(uris) }
 
     private val pickFolderLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -82,31 +76,6 @@ class MainActivity : ComponentActivity() {
             deliverFiles(emptyList())
             Notices.show("Приложение занято. Повторите через пару секунд")
         }
-    }
-
-    private val pickOneMedia = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri -> deliverFiles(listOfNotNull(uri)) }
-
-    private val pickManyMedia = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> deliverFiles(uris) }
-
-    private fun mediaRequest(types: Array<String>): PickVisualMediaRequest? {
-        if (types.isEmpty() || types.any { it == "*/*" }) return null
-        val images = types.all { it.startsWith("image/") }
-        val videos = types.all { it.startsWith("video/") }
-        val media = types.all { it.startsWith("image/") || it.startsWith("video/") }
-        return PickVisualMediaRequest(
-            when {
-                (images || videos) && types.size == 1 && !types[0].endsWith("/*") ->
-                    ActivityResultContracts.PickVisualMedia.SingleMimeType(types[0])
-                images -> ActivityResultContracts.PickVisualMedia.ImageOnly
-                videos -> ActivityResultContracts.PickVisualMedia.VideoOnly
-                media -> ActivityResultContracts.PickVisualMedia.ImageAndVideo
-                else -> return null
-            }
-        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,16 +99,10 @@ class MainActivity : ComponentActivity() {
         hrips.downloads.requestNotifications = {
             if (Build.VERSION.SDK_INT >= 33) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        hrips.prompts.pickFiles = { multiple, mimeTypes, onResult ->
+        hrips.prompts.pickFiles = { request, onResult ->
             hrips.prompts.replaceFileSelection(onResult)
             try {
-                val media = mediaRequest(mimeTypes)
-                when {
-                    media != null && multiple -> pickManyMedia.launch(media)
-                    media != null -> pickOneMedia.launch(media)
-                    multiple -> pickManyFiles.launch(mimeTypes)
-                    else -> pickOneFile.launch(mimeTypes)
-                }
+                pickFilesLauncher.launch(request)
             } catch (e: Exception) {
                 deliverFiles(emptyList())
                 Notices.show("Не удалось открыть выбор файлов")
@@ -225,7 +188,10 @@ class MainActivity : ComponentActivity() {
                 Notices.show("Не удалось открыть файл сейчас")
             }
         } else {
-            IncomingIntents.resolve(this, intent)?.let { browser.newTab(it, returnToPrevious = false) }
+            IncomingIntents.resolve(this, intent)?.let {
+                val tab = browser.newTab(it, returnToPrevious = false)
+                if (IncomingIntents.isFromOtherApp(this, intent)) tab.fromApp = true
+            }
         }
     }
 }

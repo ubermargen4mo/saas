@@ -472,6 +472,15 @@ object HripsIcons {
         }
     }
 
+    val Print by lazy {
+        icon("Print") {
+            moveTo(7f, 8f); verticalLineTo(3f); horizontalLineTo(17f); verticalLineTo(8f)
+            roundRect(3f, 8f, 18f, 9f, 2.5f)
+            moveTo(7f, 14f); horizontalLineTo(17f); verticalLineTo(21f); horizontalLineTo(7f); close()
+            moveTo(17f, 11.5f); horizontalLineToRelative(0.01f)
+        }
+    }
+
     val Desktop by lazy {
         icon("Desktop") {
             roundRect(3f, 4f, 18f, 12f, 2.5f)

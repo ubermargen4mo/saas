@@ -23,6 +23,12 @@ import androidx.compose.ui.unit.dp
 
 private class Opt(val mode: Int, val title: String, val note: String)
 
+private val openInAppsOptions = listOf(
+    Opt(ExternalLinks.MODE_ASK, "Спрашивать", "Если ссылку открывает установленное приложение (YouTube, Telegram и др.), браузер предложит перейти в него"),
+    Opt(ExternalLinks.MODE_ALWAYS, "Всегда открывать в приложении", "Переход сразу в приложение, без вопроса"),
+    Opt(ExternalLinks.MODE_NEVER, "Только в браузере", "Ссылки всегда открываются здесь"),
+)
+
 private val httpsOptions = listOf(
     Opt(PrivacyEngine.HTTPS_OFF, "Разрешить HTTP", "Как раньше: сайты без шифрования открываются без предупреждения"),
     Opt(PrivacyEngine.HTTPS_PRIVATE, "Только в приватных вкладках", "Перед открытием сайта без HTTPS показывается предупреждение"),
@@ -63,6 +69,15 @@ internal fun NetworkPrivacySection(browser: Browser) {
             ) { store.updatePageImages(it) }
         },
     )
+
+    SectionTitle("Ссылки в приложениях")
+    GroupOf(openInAppsOptions) { o, s ->
+        SettingsRow(
+            null, o.title, o.note, s,
+            onClick = { store.updateOpenInApps(o.mode) },
+            trailing = { RadioButton(selected = store.openInApps == o.mode, onClick = null) },
+        )
+    }
 
     SectionTitle("Безопасное соединение (HTTPS)")
     GroupOf(httpsOptions) { o, s ->

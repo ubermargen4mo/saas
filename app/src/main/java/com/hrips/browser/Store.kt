@@ -108,6 +108,14 @@ class Store(context: Context) {
     var suggestionsOn by mutableStateOf(prefs.getBoolean("suggest", true))
         private set
 
+    var keepPageInBackground by mutableStateOf(prefs.getBoolean("keep_page_bg", true))
+        private set
+
+    fun updateKeepPageInBackground(on: Boolean) {
+        keepPageInBackground = on
+        prefs.edit().putBoolean("keep_page_bg", on).apply()
+    }
+
     var suspendTabsOnMemoryPressure by mutableStateOf(prefs.getBoolean("suspend_tabs_pressure", false))
         private set
 
@@ -205,6 +213,14 @@ class Store(context: Context) {
     fun updateGpc(on: Boolean) {
         gpc = on
         prefs.edit().putBoolean("gpc", on).apply()
+    }
+
+    var openInApps by mutableIntStateOf(prefs.getInt("open_in_apps", ExternalLinks.MODE_ASK))
+        private set
+
+    fun updateOpenInApps(mode: Int) {
+        openInApps = mode
+        prefs.edit().putInt("open_in_apps", mode).apply()
     }
 
     var stripTrackingParams by mutableStateOf(prefs.getBoolean("strip_tracking_params", true))

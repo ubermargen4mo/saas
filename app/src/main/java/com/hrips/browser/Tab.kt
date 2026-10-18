@@ -21,6 +21,7 @@ private val ISSUER_CN = Regex("(?:^|,)CN=([^,]+)")
 private const val TAG = "HripsTab"
 // Three crashes in this window trigger a clean home-page fallback.
 private const val RECOVERY_WINDOW_MS = 8_000L
+private const val REDIRECT_GESTURE_MS = 15_000L
 private const val HOME_FALLBACK_STREAK = 3
 private const val THUMBNAIL_RELEASE_DELAY_MS = 5_000L
 private const val SESSION_RETRY_BACKOFF_MS = 1_500L
@@ -70,9 +71,10 @@ class Tab(
     private val onDownload: (Tab, WebResponse) -> Unit,
     private val permissionDelegate: GeckoSession.PermissionDelegate,
     private val promptDelegate: GeckoSession.PromptDelegate,
-    private val onNewWindow: (String) -> GeckoSession,
+    private val onNewWindow: (opener: Tab, uri: String) -> GeckoSession,
+    private val onPageClose: (Tab) -> Unit,
     private val onMenu: (ContextInfo) -> Unit,
-    private val onExternal: (uri: String, hasUserGesture: Boolean) -> Boolean,
+    private val onExternal: (uri: String, hasUserGesture: Boolean, fromUrl: String?) -> Boolean,
     private val media: MediaHub,
     savedState: String? = null,
     savedTitle: String = "",
@@ -87,6 +89,9 @@ class Tab(
     val popup = !openNow
     var parent: Tab? = null
     var returnTo: Tab? = null
+
+    /** Открыта ссылкой из другого приложения (в т.ч. Custom Tab): «назад» с первой страницы возвращает в то приложение. */
+    var fromApp = false
 
     var desktopMode by mutableStateOf(desktopFor(siteKey(rawStartUrl)))
         private set
@@ -133,6 +138,7 @@ class Tab(
         }
     private val stateCache = StateCache()
     private var lastRecoverAt = 0L
+    private var lastGestureAt = 0L
     private var lastEnsureLoadAttemptAt = 0L
     private var recoverStreak = 0
     private var recovering = false
@@ -276,6 +282,10 @@ class Tab(
         return TabSaveParts(if (home) "" else url, title, id, raw, st, sessionStateVersion, stateCache)
     }
 
+    /** Версия для ПК: не только десктопный User-Agent, но и широкий макет (~980 px), `<meta viewport>` игнорируется, как в Chrome и Firefox. */
+    private fun viewportFor(desktop: Boolean) =
+        if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+
     private fun uaMode(desktop: Boolean) =
         if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
 
@@ -283,7 +293,7 @@ class Tab(
         val s = GeckoSession(
             GeckoSessionSettings.Builder()
                 .userAgentMode(uaMode(desktopMode))
-                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .viewportMode(viewportFor(desktopMode))
                 .usePrivateMode(isPrivate)
                 .build()
         )
@@ -375,10 +385,16 @@ class Tab(
                 request: GeckoSession.NavigationDelegate.LoadRequest,
             ): GeckoResult<AllowOrDeny>? {
                 if (sess !== session) return null
-                return if (onExternal(request.uri, request.hasUserGesture)) GeckoResult.fromValue(AllowOrDeny.DENY) else null
+                val now = SystemClock.elapsedRealtime()
+                if (request.hasUserGesture) lastGestureAt = now
+                // Редирект после недавнего нажатия (вход через Google/OAuth -> возврат в приложение)
+                // считается действием пользователя; фоновые переходы без нажатия по-прежнему блокируются.
+                val gesture = request.hasUserGesture ||
+                    (request.isRedirect && lastGestureAt != 0L && now - lastGestureAt < REDIRECT_GESTURE_MS)
+                return if (onExternal(request.uri, gesture, request.triggerUri.takeIf { !request.isDirectNavigation })) GeckoResult.fromValue(AllowOrDeny.DENY) else null
             }
             override fun onNewSession(sess: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-                return GeckoResult.fromValue(onNewWindow(uri))
+                return GeckoResult.fromValue(onNewWindow(this@Tab, uri))
             }
         }
         s.permissionDelegate = permissionDelegate
@@ -408,6 +424,10 @@ class Tab(
             }
             override fun onExternalResponse(sess: GeckoSession, response: WebResponse) {
                 onDownload(this@Tab, response)
+            }
+            override fun onCloseRequest(sess: GeckoSession) {
+                // window.close() из попапа (вход через Google, оплата, OAuth): закрываем вкладку и возвращаемся к opener.
+                if (sess === session && !closed) onPageClose(this@Tab)
             }
             override fun onKill(sess: GeckoSession) {
                 if (sess === session) recover()
@@ -596,6 +616,17 @@ class Tab(
         return true
     }
 
+    /**
+     * Приложение свёрнуто: страница не рисуется, но процесс вкладки остаётся «важным» для Android,
+     * чтобы система не убивала его первым и страница не перезагружалась при возврате.
+     */
+    fun setBackgroundPriority(high: Boolean) {
+        if (closed || isSuspended || !session.isOpen) return
+        runCatching {
+            session.setPriorityHint(if (high) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
+        }
+    }
+
     /** Drops only the in-memory reference; persisted previews can still be loaded by the tab tray. */
     fun updateThumbnail(image: androidx.compose.ui.graphics.ImageBitmap): Boolean {
         if (closed) return false
@@ -684,6 +715,7 @@ class Tab(
     fun applyDesktop(value: Boolean, reload: Boolean) {
         desktopMode = value
         session.settings.setUserAgentMode(uaMode(value))
+        session.settings.setViewportMode(viewportFor(value))
         if (reload && !home && session.isOpen && lazyState == null) session.reload()
     }
 

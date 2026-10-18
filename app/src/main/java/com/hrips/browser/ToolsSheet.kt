@@ -89,6 +89,7 @@ internal fun ToolsSheet(
             }
             if (hasSite) add(SheetAction(HripsIcons.Open, "В приложении", onClick = act { PageActions.openInApp(context, tab.url) }))
             add(SheetAction(HripsIcons.FilePdf, "PDF", onClick = act { PageActions.savePdf(tab, browser.downloads) }))
+            add(SheetAction(HripsIcons.Print, "Печать", onClick = act { PagePrint.print(context, tab) }))
             add(SheetAction(HripsIcons.Capture, "Снимок", onClick = act { onScreenshot() }))
             add(SheetAction(HripsIcons.Home, "На старт", onClick = act { PageActions.addToStartPage(context, store, tab) }))
             if (hasSite && ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
