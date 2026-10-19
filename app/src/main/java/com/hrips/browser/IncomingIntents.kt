@@ -32,6 +32,10 @@ object IncomingIntents {
         return when (intent.action) {
             Intent.ACTION_VIEW -> view(context, intent)
             Intent.ACTION_SEND -> send(intent)
+            Intent.ACTION_WEB_SEARCH -> {
+                val q = intent.getStringExtra(android.app.SearchManager.QUERY)?.trim().orEmpty().take(MAX_SHARED_TEXT)
+                if (q.isEmpty()) null else if (!isSearch(q)) toUrl(q) else search(q)
+            }
             Intent.ACTION_PROCESS_TEXT -> {
                 val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()?.trim().orEmpty()
                     .take(MAX_SHARED_TEXT)

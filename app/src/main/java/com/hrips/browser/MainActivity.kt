@@ -43,15 +43,20 @@ class MainActivity : ComponentActivity() {
 
     private fun deliverCopied(uris: List<Uri>) {
         if (uris.isEmpty()) { deliverFiles(emptyList()); return }
+        // Большой файл копируется заметное время: без подсказки страница выглядит зависшей.
+        val slowNotice = Runnable { Notices.show("Подготавливаю файлы…") }
+        mainHandler.postDelayed(slowNotice, 700L)
         if (!AppExecutors.tryExecute {
             val copied = UploadFiles.copyFiles(applicationContext, uris)
             mainHandler.post {
+                mainHandler.removeCallbacks(slowNotice)
                 if (copied.isEmpty()) {
                     Notices.show("Не удалось прочитать выбранные файлы")
                 }
                 deliverFiles(copied)
             }
         }) {
+            mainHandler.removeCallbacks(slowNotice)
             deliverFiles(emptyList())
             Notices.show("Приложение занято. Повторите через пару секунд")
         }
@@ -143,7 +148,9 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         browser.tabs.forEach { if (!it.isSuspended && !it.session.isOpen) it.recover() }
         browser.onForeground()
-        Updater.cleanup(this)
+        // Разбор APK обновления не должен задерживать первый кадр после возврата.
+        val appCtx = applicationContext
+        AppExecutors.tryExecute { Updater.cleanup(appCtx) }
         Updater.autoCheck(hrips)
     }
 

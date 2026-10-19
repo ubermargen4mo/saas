@@ -353,7 +353,8 @@ class Tab(
                     errorTarget = null
                     url = newUrl
                     val host = siteKey(newUrl)
-                    if (host != null && host != modeHost) {
+                    // Страницы входа (accounts.*) не переключают режим сайта: перезагрузка посреди входа ломает цепочку.
+                    if (host != null && host != modeHost && !host.startsWith("accounts.")) {
                         modeHost = host
                         val want = if (isPrivate) localDesktop[host] ?: desktopFor(host) else desktopFor(host)
                         if (want != desktopMode) applyDesktop(want, reload = true)
@@ -389,8 +390,16 @@ class Tab(
                 if (request.hasUserGesture) lastGestureAt = now
                 // Редирект после недавнего нажатия (вход через Google/OAuth -> возврат в приложение)
                 // считается действием пользователя; фоновые переходы без нажатия по-прежнему блокируются.
-                val gesture = request.hasUserGesture ||
-                    (request.isRedirect && lastGestureAt != 0L && now - lastGestureAt < REDIRECT_GESTURE_MS)
+                val isWeb = request.uri.startsWith("http://", ignoreCase = true) || request.uri.startsWith("https://", ignoreCase = true)
+                // Обычные http(s)-ссылки считаются действием пользователя только при настоящем нажатии и не в цепочке редиректов:
+                // иначе вход (Google, OAuth) уводит в приложение (Gmail, YouTube) и страница остаётся как есть.
+                // Для внешних схем (intent://, com.app:/oauth) редирект после нажатия по-прежнему считается жестом.
+                val gesture = if (isWeb) {
+                    request.hasUserGesture && !request.isRedirect
+                } else {
+                    request.hasUserGesture ||
+                        (request.isRedirect && lastGestureAt != 0L && now - lastGestureAt < REDIRECT_GESTURE_MS)
+                }
                 return if (onExternal(request.uri, gesture, request.triggerUri.takeIf { !request.isDirectNavigation })) GeckoResult.fromValue(AllowOrDeny.DENY) else null
             }
             override fun onNewSession(sess: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
@@ -594,7 +603,7 @@ class Tab(
 
     fun exitFullscreen() = session.exitFullScreen()
 
-    fun setVisibility(active: Boolean, focused: Boolean = active): Boolean {
+    fun setVisibility(active: Boolean, focused: Boolean = active, driveEngine: Boolean = true): Boolean {
         mainHandler.removeCallbacks(releaseThumbnailRunnable)
         if (active) {
             pendingSuspendSession = null
@@ -610,8 +619,10 @@ class Tab(
         visible = active
         this.focused = nextFocused
         if (nextFocused) lastActivatedAt = SystemClock.elapsedRealtime()
-        session.setActive(active)
-        session.setFocused(nextFocused)
+        if (driveEngine) {
+            session.setActive(active)
+            session.setFocused(nextFocused)
+        }
         session.setPriorityHint(if (active && nextFocused) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
         return true
     }

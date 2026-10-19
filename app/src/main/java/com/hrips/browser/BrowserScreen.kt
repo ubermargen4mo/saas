@@ -172,8 +172,12 @@ fun BrowserScreen(browser: Browser) {
     val systemDark = isSystemInDarkTheme()
     LaunchedEffect(priv, store.allowPrivateShots) {
         val w = activity?.window ?: return@LaunchedEffect
-        if (priv && !store.allowPrivateShots) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        else w.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // Меняем флаг только при реальной смене: каждое изменение пересоздаёт поверхность окна (мигание и чёрный кадр).
+        val wantSecure = priv && !store.allowPrivateShots
+        val hasSecure = (w.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+        if (wantSecure != hasSecure) {
+            if (wantSecure) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else w.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
     LaunchedEffect(priv, systemDark) {
         val w = activity?.window ?: return@LaunchedEffect
@@ -226,8 +230,21 @@ fun BrowserScreen(browser: Browser) {
             .collectLatest { loading ->
                 if (loading) return@collectLatest
                 kotlinx.coroutines.delay(700)
-                if (!tab.loading && !overlaysOpen) captureThumbnail(activity, viewRef[0], tab) { }
+                if (!tab.loading && !overlaysOpen && browser.isAppVisible) {
+                    captureThumbnail(activity, viewRef[0], tab, minIntervalMs = 8_000L) { }
+                }
             }
+    }
+
+    // Страница после возврата в приложение (в том числе из выбора файла) не должна остаться чёрной или прозрачной:
+    // через ~1 с проверяем кадр и при пустом пересоздаём поверхность GeckoView.
+    val foregroundStamp = browser.foregroundStamp
+    LaunchedEffect(foregroundStamp) {
+        if (foregroundStamp == 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(1000)
+        val gv = viewRef[0] ?: return@LaunchedEffect
+        if (tab.home || tab.loading || !browser.isAppVisible || gv.session !== tab.session || !gv.isShown) return@LaunchedEffect
+        SurfaceGuard.check(gv)
     }
 
     // При запуске удаляем устаревшие снимки; заранее читать десятки изображений в память не нужно.

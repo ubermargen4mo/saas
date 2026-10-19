@@ -104,6 +104,9 @@ private const val CAPTURE_WIDTH = 720
 // Незавершённые захваты по id вкладки (только главный поток). Повторный запрос не запускает второй захват, а ждёт первый.
 private val pendingCaptures = HashMap<String, MutableList<() -> Unit>>()
 
+// Когда в последний раз снимали вкладку (главный поток). Чтобы фоновые снимки не грузили GPU после каждой загрузки.
+private val lastCaptureAt = HashMap<String, Long>()
+
 /**
  * Снимок страницы для карточки вкладки.
  *
@@ -118,14 +121,20 @@ fun captureThumbnail(
     allowPixelCopy: Boolean = true,
     timeoutMs: Long = 1000,
     acceptAfterDeparture: Boolean = false,
+    minIntervalMs: Long = 0L,
     done: () -> Unit,
 ) {
     val gv = view as? org.mozilla.geckoview.GeckoView
     if (activity == null || gv == null || tab.home ||
         gv.width == 0 || gv.height == 0 || !gv.isShown ||
-        gv.session !== tab.session
+        gv.session !== tab.session || tab.fullscreen
     ) {
         done(); return
+    }
+    if (minIntervalMs > 0L) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - (lastCaptureAt[tab.id] ?: 0L) < minIntervalMs) { done(); return }
+        lastCaptureAt[tab.id] = now
     }
     if ((activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0) {
         done(); return

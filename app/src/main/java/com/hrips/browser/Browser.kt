@@ -7,6 +7,7 @@ import android.net.Network
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import android.os.Handler
@@ -79,6 +80,10 @@ class Browser(
     private var extensionActiveSession: GeckoSession? = null
     val isAppVisible: Boolean get() = appVisible
 
+    /** Растёт при каждом возврате приложения на экран: по нему экран проверяет, что поверхность страницы жива. */
+    var foregroundStamp by mutableIntStateOf(0)
+        private set
+
     fun saveUrl(uri: String, referrer: String?, incognito: Boolean = false) {
         fetch(uri, referrer, incognito) { r ->
             if (r != null && r.statusCode in 200..299) downloads.request(r, incognito, referrer) else downloads.toast("Не удалось скачать файл")
@@ -100,11 +105,15 @@ class Browser(
     fun clearData(cookies: Boolean, cache: Boolean, onDone: () -> Unit) =
         engine.clearData(cookies, cache, onDone)
 
-    fun setTabActive(tab: Tab, active: Boolean, focused: Boolean = active) {
+    /**
+     * [driveEngine] = false: активность и фокус показанной страницы ведёт сам GeckoView (по жизни поверхности),
+     * как в Firefox для Android; приложение только запоминает состояние и ставит приоритет.
+     */
+    fun setTabActive(tab: Tab, active: Boolean, focused: Boolean = active, driveEngine: Boolean = true) {
         val previousSession = tab.session
         if (active) tab.ensureLoaded()
         val currentSession = tab.session
-        val visibilityChanged = tab.setVisibility(active, focused)
+        val visibilityChanged = tab.setVisibility(active, focused, driveEngine)
         val sessionNeedsSync = active && extensionActiveSession !== currentSession
         if (visibilityChanged || sessionNeedsSync) {
             try {
@@ -164,11 +173,13 @@ class Browser(
         mainHandler.removeCallbacks(releaseKeepAlive)
         keepAliveTab = null
         appVisible = true
+        foregroundStamp++
         warmStartHosts()
         downloads.setAppVisible(true)
+        val shown = tabManager.current
         tabs.forEach { tab ->
-            val active = tab === current
-            setTabActive(tab, active, active)
+            val active = tab === shown
+            setTabActive(tab, active, active, driveEngine = !active)
         }
     }
 
@@ -176,8 +187,9 @@ class Browser(
         flushPendingClose()
         appVisible = false
         downloads.setAppVisible(false)
+        val shown = tabManager.current
         tabs.forEach { tab ->
-            setTabActive(tab, false, false)
+            setTabActive(tab, false, false, driveEngine = tab !== shown)
         }
         // Текущую страницу держим «важной» ещё некоторое время: иначе Android убивает процесс вкладки,
         // и при возврате страница грузится заново.
@@ -195,6 +207,8 @@ class Browser(
     @Suppress("DEPRECATION")
     fun onTrimMemory(level: Int) {
         if (!store.suspendTabsOnMemoryPressure) return
+        // Свёртывание приложения (UI_HIDDEN) - не нехватка памяти: вкладки не выгружаем.
+        if (level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
         // Chromium-style tab discarding: keep fewer live renderers on low-RAM devices,
         // while preserving the same session-state restoration path when a tab is reopened.
         val keepLive = when {

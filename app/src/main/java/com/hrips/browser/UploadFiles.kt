@@ -14,7 +14,15 @@ object UploadFiles {
     private const val MAX_TOTAL_BYTES = 512L * 1024L * 1024L
     private const val BUFFER_SIZE = 64 * 1024
 
+    // Файл, выданный странице, читается движком во время отправки: свежие пакеты не трогаем.
+    private const val KEEP_MS = 30L * 60_000L
+
     private fun root(context: Context) = File(context.cacheDir, "uploads")
+
+    private fun pruneOld(context: Context) {
+        val now = System.currentTimeMillis()
+        root(context).listFiles()?.forEach { if (now - it.lastModified() > KEEP_MS) it.deleteRecursively() }
+    }
 
     fun cleanup(context: Context) {
         root(context).deleteRecursively()
@@ -61,7 +69,7 @@ object UploadFiles {
     }
 
     fun copyFiles(context: Context, uris: List<Uri>): List<Uri> {
-        cleanup(context)
+        pruneOld(context)
         val batch = File(root(context), System.nanoTime().toString())
         var remaining = MAX_TOTAL_BYTES
         return uris.mapIndexedNotNull { i, u ->
@@ -75,7 +83,7 @@ object UploadFiles {
 
     fun copyTree(context: Context, tree: Uri): Uri? {
         return try {
-            cleanup(context)
+            pruneOld(context)
             val rootId = DocumentsContract.getTreeDocumentId(tree)
             val rootName = displayName(context, DocumentsContract.buildDocumentUriUsingTree(tree, rootId)) ?: "folder"
             val dest = File(File(root(context), System.nanoTime().toString()), safe(rootName)).apply { mkdirs() }

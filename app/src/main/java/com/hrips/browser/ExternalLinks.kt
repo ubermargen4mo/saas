@@ -52,6 +52,7 @@ class ExternalLinks(private val context: Context, private val openInAppsMode: ()
         val host = target.host?.lowercase() ?: return false
         val fromHost = Uri.parse(fromUrl).host?.lowercase()
         if (fromHost != null && sameSite(host, fromHost)) return false
+        if (isAuthFlow(target, fromHost)) return false
         val pm = context.packageManager
         val (pkg, label) = try {
             val probe = Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -73,6 +74,14 @@ class ExternalLinks(private val context: Context, private val openInAppsMode: ()
         }
         pending = ExternalRequest(uri, intent, uri, appLabel = label, web = true)
         return true
+    }
+
+    /** Вход и авторизация (Google, OAuth, SSO) всегда остаются в браузере: уход в приложение посреди входа обрывает его. */
+    private fun isAuthFlow(target: Uri, fromHost: String?): Boolean {
+        val hosts = listOfNotNull(target.host?.lowercase(), fromHost)
+        if (hosts.any { h -> h in AUTH_HOSTS || AUTH_HOST_PREFIXES.any { h.startsWith(it) } }) return true
+        val path = target.path?.lowercase().orEmpty()
+        return AUTH_PATHS.any { path.contains(it) }
     }
 
     @Suppress("DEPRECATION")
@@ -141,6 +150,10 @@ class ExternalLinks(private val context: Context, private val openInAppsMode: ()
             "http", "https", "about", "data", "blob", "file", "javascript",
             "resource", "moz-extension", "view-source", "ws", "wss", "moz-icon",
         )
+
+        private val AUTH_HOSTS = setOf("appleid.apple.com", "login.live.com", "login.microsoftonline.com", "id.vk.com", "oauth.vk.com")
+        private val AUTH_HOST_PREFIXES = listOf("accounts.", "login.", "auth.", "sso.", "signin.", "oauth.")
+        private val AUTH_PATHS = listOf("/signin", "/sign-in", "/login", "/oauth", "/authorize", "/servicelogin", "/accounts/", "/sso/")
 
         private val DIRECT = setOf("tel", "mailto", "sms", "smsto", "geo")
     }

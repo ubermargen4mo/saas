@@ -225,20 +225,20 @@
     lastType = e.pointerType;
     if (e.pointerType === 'mouse' || !e.isPrimary) return;
     touchStart(e.target, e.clientX, e.clientY);
-  }, true);
+  }, { capture: true, passive: true });
 
   window.addEventListener('pointermove', function (e) {
     if (!e.isTrusted || !hold || e.pointerType === 'mouse') return;
     var dx = e.clientX - hold.x, dy = e.clientY - hold.y;
     if (dx * dx + dy * dy > MOVE_TOL * MOVE_TOL && !hold.active) stop(hold);
-  }, true);
+  }, { capture: true, passive: true });
 
   window.addEventListener('pointerup', function (e) {
     if (e.isTrusted && e.pointerType !== 'mouse') lift();
-  }, true);
+  }, { capture: true, passive: true });
   window.addEventListener('pointercancel', function (e) {
     if (e.isTrusted && e.pointerType !== 'mouse') interrupted();
-  }, true);
+  }, { capture: true, passive: true });
 
   // --- Палец: касания (запасной путь, если указатели не доставлены) ---
   window.addEventListener('touchstart', function (e) {
@@ -247,18 +247,18 @@
     if (e.touches.length !== 1 || hold) return;
     var t = e.touches[0];
     touchStart(e.target, t.clientX, t.clientY);
-  }, true);
-  window.addEventListener('touchend', function (e) { if (e.isTrusted) lift(); }, true);
-  window.addEventListener('touchcancel', function (e) { if (e.isTrusted) interrupted(); }, true);
+  }, { capture: true, passive: true });
+  window.addEventListener('touchend', function (e) { if (e.isTrusted) lift(); }, { capture: true, passive: true });
+  window.addEventListener('touchcancel', function (e) { if (e.isTrusted) interrupted(); }, { capture: true, passive: true });
 
   document.addEventListener('play', function (e) {
     var h = hold || lingering;
     if (h && h.active && e.target && h.root.contains(e.target)) h.reacted = true;
-  }, true);
+  }, { capture: true, passive: true });
   document.addEventListener('playing', function (e) {
     var h = hold || lingering;
     if (h && h.active && e.target && h.root.contains(e.target)) h.reacted = true;
-  }, true);
+  }, { capture: true, passive: true });
 
   // Долгое нажатие приходит как contextmenu. Его НЕ отменяем: меню открывается как обычно.
   // Нужно только на случай, когда сами касания до скрипта не дошли: тогда запускаем превью от него.
@@ -272,10 +272,10 @@
     h.kill = setTimeout(function () { if (hold === h) stop(h); }, MAX_HOLD_MS);
     activate(h);
     interrupted();
-  }, true);
+  }, { capture: true, passive: true });
 
   // Прокрутка или уход со страницы заканчивают превью, оставшееся после меню.
-  window.addEventListener('scroll', dropLinger, true);
-  window.addEventListener('pagehide', function () { dropLinger(); stop(hold); }, true);
+  window.addEventListener('scroll', dropLinger, { capture: true, passive: true });
+  window.addEventListener('pagehide', function () { dropLinger(); stop(hold); }, { capture: true, passive: true });
   document.addEventListener('visibilitychange', function () { if (document.hidden) { dropLinger(); stop(hold); } });
 })();
