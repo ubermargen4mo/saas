@@ -191,8 +191,6 @@ fun HripsTheme(incognito: Boolean = false, content: @Composable () -> Unit) {
         }
     }
     SideEffect {
-        ErrorPages.updatePalette(scheme)
-        GeckoColors.update(scheme)
         // Incognito uses a dark palette even when Android itself is in light mode.
         // Keep edge-to-edge system icons readable when the browser switches modes.
         if (!view.isInEditMode) {

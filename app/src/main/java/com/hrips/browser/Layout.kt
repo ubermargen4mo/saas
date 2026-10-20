@@ -102,18 +102,3 @@ object HripsSpace {
     val XL = 24.dp
     val XXL = 32.dp
 }
-
-/** Радиусы углов сегмента в dp (для морфинга при нажатии). Для не-скруглённых форм берётся большой радиус. */
-@Composable
-internal fun Shape.asCorners(): Corners {
-    val d = LocalDensity.current
-    val r = this as? CornerBasedShape ?: return Corners.all(28.dp)
-    return with(d) {
-        Corners(
-            r.topStart.toPx(Size.Zero, d).toDp(),
-            r.topEnd.toPx(Size.Zero, d).toDp(),
-            r.bottomEnd.toPx(Size.Zero, d).toDp(),
-            r.bottomStart.toPx(Size.Zero, d).toDp(),
-        )
-    }
-}
