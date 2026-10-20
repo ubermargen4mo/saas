@@ -108,3 +108,17 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 }
+
+// GeckoView уже содержит нативную часть Glean. Автономный glean-native конфликтует с ней по capability,
+// поэтому, как и в самой Mozilla, выбираем вариант из GeckoView.
+configurations.configureEach {
+    resolutionStrategy.capabilitiesResolution.withCapability("org.mozilla.telemetry:glean-native") {
+        val gecko = candidates.firstOrNull {
+            (it.id as? org.gradle.api.artifacts.component.ModuleComponentIdentifier)?.module?.contains("geckoview") == true
+        }
+        if (gecko != null) {
+            select(gecko)
+            because("use GeckoView Glean instead of standalone Glean")
+        }
+    }
+}
