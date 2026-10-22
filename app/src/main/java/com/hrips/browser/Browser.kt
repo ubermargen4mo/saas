@@ -100,12 +100,12 @@ class Browser(
     fun clearData(cookies: Boolean, cache: Boolean, onDone: () -> Unit) =
         engine.clearData(cookies, cache, onDone)
 
-    fun setTabActive(tab: Tab, active: Boolean, focused: Boolean = active) {
+    fun setTabActive(tab: Tab, active: Boolean, focused: Boolean = active, lifecycleOnly: Boolean = false) {
         val previousSession = tab.session
         if (active) tab.ensureLoaded()
         val currentSession = tab.session
-        val visibilityChanged = tab.setVisibility(active, focused)
-        AppLog.i("Tab", "setActive вкладка=${tab.id.take(6)} active=$active focused=$focused изменилось=$visibilityChanged")
+        val visibilityChanged = tab.setVisibility(active, focused, lifecycleOnly)
+        AppLog.i("Tab", "setActive вкладка=${tab.id.take(6)} active=$active focused=$focused изменилось=$visibilityChanged жизненный цикл=$lifecycleOnly")
         val sessionNeedsSync = active && extensionActiveSession !== currentSession
         if (visibilityChanged || sessionNeedsSync) {
             try {
@@ -170,7 +170,7 @@ class Browser(
         downloads.setAppVisible(true)
         tabs.forEach { tab ->
             val active = tab === current
-            setTabActive(tab, active, active)
+            setTabActive(tab, active, active, lifecycleOnly = true)
         }
     }
 
@@ -180,7 +180,7 @@ class Browser(
         appVisible = false
         downloads.setAppVisible(false)
         tabs.forEach { tab ->
-            setTabActive(tab, false, false)
+            setTabActive(tab, false, false, lifecycleOnly = true)
         }
         // Текущую страницу держим «важной» ещё некоторое время: иначе Android убивает процесс вкладки,
         // и при возврате страница грузится заново.

@@ -603,7 +603,15 @@ class Tab(
 
     fun exitFullscreen() = session.exitFullScreen()
 
-    fun setVisibility(active: Boolean, focused: Boolean = active): Boolean {
+    /**
+     * @param lifecycleOnly смена видимости вызвана уходом приложения в фон или возвратом, а не переключением вкладок.
+     *  Тогда `session.setActive` не вызываем: активностью сессии текущей вкладки управляет сам GeckoView по состоянию
+     *  поверхности (`onSurfaceChanged` -> сначала `syncResumeResizeCompositor`, и только потом `setActive(true)`;
+     *  `onSurfaceDestroyed` -> `setActive(false)`). Наш `setActive(true)` на `onStart` приходил раньше, чем создавалась
+     *  поверхность, и на Android 16 (Xiaomi) возврат из системного выбора файла вешал главный поток в
+     *  `syncResumeResizeCompositor` (чёрный экран, «не отвечает»).
+     */
+    fun setVisibility(active: Boolean, focused: Boolean = active, lifecycleOnly: Boolean = false): Boolean {
         mainHandler.removeCallbacks(releaseThumbnailRunnable)
         if (active) {
             pendingSuspendSession = null
@@ -619,7 +627,7 @@ class Tab(
         visible = active
         this.focused = nextFocused
         if (nextFocused) lastActivatedAt = SystemClock.elapsedRealtime()
-        session.setActive(active)
+        if (!lifecycleOnly) session.setActive(active)
         session.setFocused(nextFocused)
         session.setPriorityHint(if (active && nextFocused) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
         return true
