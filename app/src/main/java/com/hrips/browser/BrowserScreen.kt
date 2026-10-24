@@ -87,7 +87,7 @@ fun BrowserScreen(browser: Browser) {
         withTimeoutOrNull(30000) { snapshotFlow { tab.loading }.first { !it } }
         pullRefreshing = false
     }
-    LaunchedEffect(tab.id, tab.url, tab.home) { tab.chromeHidden = false }
+    LaunchedEffect(tab.id, tab.url, tab.home) { tab.expandChrome() }
     val store = browser.store
     val app = LocalContext.current.applicationContext as HripsApp
     val wide = isWideWindow()
@@ -421,9 +421,9 @@ fun BrowserScreen(browser: Browser) {
             onAddress = { openSearch() },
             onMore = { showTools = true },
             onDownloads = { showDownloads = true },
-            onExpand = { tab.chromeHidden = false },
-            onSwipeUp = { if (collapsed) tab.chromeHidden = false else requestTabs() },
-            onSwipeDown = { if (!tab.home) tab.chromeHidden = true },
+            onExpand = { tab.expandChrome() },
+            onSwipeUp = { if (collapsed) tab.expandChrome() else requestTabs() },
+            onSwipeDown = { if (!tab.home) tab.collapseChrome() },
             onCopy = {
                 val copied = runCatching {
                     clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", tab.url))
@@ -446,6 +446,16 @@ fun BrowserScreen(browser: Browser) {
             },
             onCloseTab = { browser.closeTab(browser.currentIndex) },
             onCloseAll = { browser.closeAllTabs() },
+            quickTabs = { browser.tabs.filter { it.isPrivate == tab.isPrivate } },
+            onPickTab = { target ->
+                val i = browser.tabs.indexOf(target)
+                if (i >= 0 && i != browser.currentIndex) {
+                    if (!tab.home && !TabThumbs.isFresh(tab.id)) {
+                        captureThumbnail(activity, viewRef[0], tab, allowPixelCopy = false, acceptAfterDeparture = true) { }
+                    }
+                    browser.currentIndex = i
+                }
+            },
             onSwipeSide = { d ->
                 val i = browser.currentIndex + d
                 if (i in browser.tabs.indices) {

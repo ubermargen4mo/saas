@@ -2,7 +2,8 @@ package com.hrips.browser
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -18,58 +19,70 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
-private const val SHAPE_IDLE = 50f
-private const val SHAPE_PRESSED = 32f
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * Кнопка панели без подложки: на нажатие реагирует сама иконка. Вниз она быстро сжимается и тускнеет,
+ * вверх возвращается с лёгким пружинным перелётом. Всё идёт в graphicsLayer, то есть без перекомпозиции за кадр.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun BarButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
+    // Быстрый тап длится десятки миллисекунд, пружина бы не успела показаться: держим «нажато» не меньше 90 мс.
+    var held by remember { mutableStateOf(false) }
+    LaunchedEffect(pressed) {
+        if (pressed) held = true else { delay(90); held = false }
+    }
     val motion = MaterialTheme.motionScheme
-    val percent by animateFloatAsState(if (pressed) SHAPE_PRESSED else SHAPE_IDLE, motion.fastSpatialSpec<Float>(), label = "barBtnShape")
-    // Вниз быстро и без качания, вверх с лёгким пружинящим «возвратом».
     val press by animateFloatAsState(
-        if (pressed) HripsMotion.PressScale else 1f,
-        if (pressed) HripsMotion.pressDown() else HripsMotion.pressRelease(),
+        if (held) 0.7f else 1f,
+        if (held) HripsMotion.pressDown() else HripsMotion.pressRelease(),
         label = "barBtnPress",
     )
+    val dim by animateFloatAsState(if (held) 0.5f else 1f, motion.fastEffectsSpec(), label = "barBtnDim")
     val base = LocalContentColor.current
     val tint by animateColorAsState(if (enabled) base else base.copy(alpha = 0.38f), motion.defaultEffectsSpec(), label = "barBtnTint")
-    val wash by animateColorAsState(
-        if (pressed) base.copy(alpha = 0.14f) else base.copy(alpha = 0f),
-        motion.fastEffectsSpec(),
-        label = "barBtnWash",
-    )
     Box(
         modifier
             .size(48.dp)
-            .graphicsLayer { scaleX = press; scaleY = press }
-            .drawBehind {
-                val color = wash
-                if (color.alpha > 0f) {
-                    val radius = size.minDimension * percent.coerceIn(0f, SHAPE_IDLE) / 100f
-                    drawRoundRect(color, cornerRadius = CornerRadius(radius))
-                }
-            }
-            .clickable(interactionSource = source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
+            .combinedClickable(
+                interactionSource = source,
+                indication = null,
+                // Долгое нажатие работает и у неактивной кнопки (например, «назад» без истории открывает список вкладок).
+                enabled = enabled || onLongClick != null,
+                role = Role.Button,
+                onClick = { if (enabled) onClick() },
+                onLongClick = onLongClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        CompositionLocalProvider(LocalContentColor provides tint) { content() }
+        Box(
+            Modifier.graphicsLayer {
+                scaleX = press
+                scaleY = press
+                alpha = dim
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides tint) { content() }
+        }
     }
 }
 

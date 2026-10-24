@@ -181,14 +181,32 @@ class Tab(
     private var lastScrollY = 0
     private var scrollAcc = 0
 
+    /**
+     * Панель свёрнута жестом, а не прокруткой. На непрокручиваемой странице Gecko всё равно присылает
+     * onScrollChanged(0) (например, при смене клиппинга), и прокрутка в ноль разворачивала бы панель сразу.
+     * Закреплённое сворачивание держится, пока пользователь сам не развернёт панель, не прокрутит вверх
+     * или не уйдёт на другую страницу.
+     */
+    private var chromePinned = false
+
+    fun collapseChrome() {
+        chromePinned = true
+        chromeHidden = true
+    }
+
+    fun expandChrome() {
+        chromePinned = false
+        chromeHidden = false
+    }
+
     private fun onPageScrolled(y: Int) {
         val dy = y - lastScrollY
         lastScrollY = y
-        if (y <= 0) { scrollAcc = 0; chromeHidden = false; return }
+        if (y <= 0) { scrollAcc = 0; if (!chromePinned) chromeHidden = false; return }
         if (dy == 0) return
         if ((scrollAcc > 0) != (dy > 0)) scrollAcc = 0
         scrollAcc += dy
-        if (scrollAcc > 64) chromeHidden = true else if (scrollAcc < -24) chromeHidden = false
+        if (scrollAcc > 64) chromeHidden = true else if (scrollAcc < -24) expandChrome()
     }
 
     var session by mutableStateOf(newSession())
@@ -580,7 +598,7 @@ class Tab(
         certIssuer = null
         lastScrollY = 0
         scrollAcc = 0
-        chromeHidden = false
+        expandChrome()
 
         try {
             val opened = runCatching { fresh.open(runtime) }.isSuccess
