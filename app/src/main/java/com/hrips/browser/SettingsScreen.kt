@@ -80,6 +80,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 
 enum class SettingsPage(val title: String, val subtitle: String) {
     SEARCH("Поиск", "Поисковая система, подсказки"),
@@ -95,17 +101,20 @@ enum class SettingsPage(val title: String, val subtitle: String) {
 }
 
 private fun SettingsPage.icon(): ImageVector = when (this) {
-    SettingsPage.SEARCH -> HripsIcons.Search
-    SettingsPage.HOME -> HripsIcons.Palette
-    SettingsPage.PRIVACY -> HripsIcons.EyeOff
-    SettingsPage.PASSWORDS -> HripsIcons.Key
-    SettingsPage.PERMISSIONS -> HripsIcons.ShieldCheck
-    SettingsPage.DESKTOP -> HripsIcons.Desktop
-    SettingsPage.MEDIA -> HripsIcons.PlayCircle
-    SettingsPage.DOWNLOADS -> HripsIcons.Download
-    SettingsPage.PERFORMANCE -> HripsIcons.Gauge
-    SettingsPage.ABOUT -> HripsIcons.Info
+    SettingsPage.SEARCH -> SymbolIcons.Search
+    SettingsPage.HOME -> SymbolIcons.Palette
+    SettingsPage.PRIVACY -> SymbolIcons.PrivacyShield
+    SettingsPage.PASSWORDS -> SymbolIcons.Key
+    SettingsPage.PERMISSIONS -> SymbolIcons.Verified
+    SettingsPage.DESKTOP -> SymbolIcons.Desktop
+    SettingsPage.MEDIA -> SymbolIcons.PlayCircle
+    SettingsPage.DOWNLOADS -> SymbolIcons.Download
+    SettingsPage.PERFORMANCE -> SymbolIcons.Speed
+    SettingsPage.ABOUT -> SymbolIcons.Info
 }
+
+/** В двухпанельном режиме (планшет) страница рисуется справа без большой сворачивающейся шапки. */
+private val LocalSettingsPane = compositionLocalOf { false }
 
 private class SettingEntry(val title: String, val keywords: String, val page: SettingsPage)
 
@@ -144,6 +153,118 @@ fun SettingsScreen(
     onSitePermissions: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
+    if (isWideWindow()) SettingsTwoPane(browser, app, onBack, onSitePermissions, onOpenDownloads)
+    else SettingsSinglePane(browser, app, onBack, onSitePermissions, onOpenDownloads)
+}
+
+@Composable
+private fun SettingsPageContent(
+    p: SettingsPage,
+    browser: Browser,
+    app: HripsApp,
+    back: () -> Unit,
+    onSitePermissions: () -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
+    run {
+        when (p) {
+            SettingsPage.SEARCH -> SearchPage(browser.store, back)
+            SettingsPage.HOME -> HomePage(app, back)
+            SettingsPage.PRIVACY -> PrivacyPage(browser, back)
+            SettingsPage.PASSWORDS -> PasswordsPage(back)
+            SettingsPage.PERMISSIONS -> PermissionsPage(onSitePermissions, back)
+            SettingsPage.DESKTOP -> DesktopPage(browser, back)
+            SettingsPage.MEDIA -> MediaPage(browser.store, app.hoverPreview, back)
+            SettingsPage.DOWNLOADS -> DownloadsPage(browser, back, onOpenDownloads)
+            SettingsPage.PERFORMANCE -> PerformancePage(browser, back)
+            SettingsPage.ABOUT -> AboutPage(app, back)
+        }
+    }
+}
+
+/**
+ * Планшет: слева список разделов с поиском, справа выбранный раздел, как в системных настройках Android.
+ * Слева всегда выбран какой-то раздел (по умолчанию первый), «назад» в шапке справа закрывает настройки.
+ */
+@Composable
+private fun SettingsTwoPane(
+    browser: Browser,
+    app: HripsApp,
+    onBack: () -> Unit,
+    onSitePermissions: () -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    var page by remember { mutableStateOf(SettingsPage.SEARCH) }
+    var query by remember { mutableStateOf("") }
+    val paneIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val paneOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    BackHandler(onBack = onBack)
+    Row(
+        Modifier
+            .fillMaxSize()
+            .background(cs.surface)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+    ) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(0.36f).widthIn(min = 320.dp, max = 440.dp)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 12.dp, bottom = 32.dp),
+            ) {
+                PageSearchField("Поиск настроек", query) { query = it }
+                Spacer(Modifier.height(16.dp))
+                if (query.isNotBlank()) {
+                    val q = query.trim()
+                    val found = index.filter { it.title.contains(q, true) || it.keywords.contains(q, true) || it.page.title.contains(q, true) }
+                    if (found.isEmpty()) {
+                        Text(
+                            "Ничего не найдено",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = cs.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    } else {
+                        GroupOf(found) { e, s ->
+                            SettingsRow(e.page.icon(), e.title, e.page.title, s, onClick = { query = ""; page = e.page })
+                        }
+                    }
+                } else {
+                    QuickAndSections(browser, app, selected = page, onOpen = { page = it })
+                }
+            }
+        }
+        // Правая панель: страница на фоне чуть темнее/светлее списка, как в образце.
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(cs.surfaceContainerLow),
+        ) {
+            CompositionLocalProvider(LocalSettingsPane provides true) {
+                AnimatedContent(
+                    targetState = page,
+                    transitionSpec = { fadeIn(paneIn) togetherWith fadeOut(paneOut) },
+                    label = "settings-pane",
+                ) { p ->
+                    SettingsPageContent(p, browser, app, onBack, onSitePermissions, onOpenDownloads)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSinglePane(
+    browser: Browser,
+    app: HripsApp,
+    onBack: () -> Unit,
+    onSitePermissions: () -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     BackHandler(enabled = page != null) { page = null }
 
@@ -166,19 +287,7 @@ fun SettingsScreen(
         if (p == null) {
             MainPage(browser, app, onBack = onBack, onOpen = { page = it })
         } else {
-            val back = { page = null }
-            when (p) {
-                SettingsPage.SEARCH -> SearchPage(browser.store, back)
-                SettingsPage.HOME -> HomePage(app, back)
-                SettingsPage.PRIVACY -> PrivacyPage(browser, back)
-                SettingsPage.PASSWORDS -> PasswordsPage(back)
-                SettingsPage.PERMISSIONS -> PermissionsPage(onSitePermissions, back)
-                SettingsPage.DESKTOP -> DesktopPage(browser, back)
-                SettingsPage.MEDIA -> MediaPage(browser.store, app.hoverPreview, back)
-                SettingsPage.DOWNLOADS -> DownloadsPage(browser, back, onOpenDownloads)
-                SettingsPage.PERFORMANCE -> PerformancePage(browser, back)
-                SettingsPage.ABOUT -> AboutPage(app, back)
-            }
+            SettingsPageContent(p, browser, app, { page = null }, onSitePermissions, onOpenDownloads)
         }
     }
 }
@@ -209,13 +318,13 @@ private fun MainPage(browser: Browser, app: HripsApp, onBack: () -> Unit, onOpen
                 }
             }
         } else {
-            QuickAndSections(browser, app, onOpen)
+            QuickAndSections(browser, app, selected = null, onOpen = onOpen)
         }
     }
 }
 
 @Composable
-private fun QuickAndSections(browser: Browser, app: HripsApp, onOpen: (SettingsPage) -> Unit) {
+private fun QuickAndSections(browser: Browser, app: HripsApp, selected: SettingsPage?, onOpen: (SettingsPage) -> Unit) {
     val store = browser.store
     val adBlock = app.adBlock
     Column {
@@ -230,20 +339,20 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, onOpen: (SettingsP
         }
         Column(Modifier.toolsIn(1)) { Group(
             { s ->
-                SwitchRow(HripsIcons.Block, "Блокировка рекламы", adSubtitle, adBlock.enabled, adBlock.extension != null, s) {
+                SwitchRow(SymbolIcons.Block, "Блокировка рекламы", adSubtitle, adBlock.enabled, adBlock.extension != null, s) {
                     adBlock.setBlocking(it)
                 }
             },
             { s ->
                 SwitchRow(
-                    HripsIcons.Shield, "Защита от трекеров",
+                    SymbolIcons.Shield, "Защита от трекеров",
                     if (store.trackingProtection) "Включена" else "Выключена. Сайты могут следить за вами",
                     store.trackingProtection, true, s,
                 ) { browser.setTracking(it) }
             },
             { s ->
                 SwitchRow(
-                    HripsIcons.InsertQuery, "Подсказки при вводе", "Вводимый текст отправляется поисковой системе",
+                    SymbolIcons.Keyboard, "Подсказки при вводе", "Вводимый текст отправляется поисковой системе",
                     store.suggestionsOn, true, s,
                 ) { store.updateSuggestions(it) }
             },
@@ -253,7 +362,7 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, onOpen: (SettingsP
 
         Column(Modifier.toolsIn(2)) { GroupOf(SettingsPage.entries) { p, s ->
             SettingsRow(
-                p.icon(), p.title, p.subtitle, s, onClick = { onOpen(p) },
+                p.icon(), p.title, p.subtitle, s, onClick = { onOpen(p) }, selected = p == selected,
                 value = if (p == SettingsPage.SEARCH) SearchEngines.current.name else null,
             )
         } }
@@ -277,7 +386,7 @@ private fun DefaultBrowserRow() {
     Group(
         { s ->
             SettingsRow(
-                HripsIcons.Compass,
+                SymbolIcons.Web,
                 "Браузер по умолчанию",
                 if (isDefault) "hrips открывает ссылки из других приложений" else "Сделать hrips браузером по умолчанию",
                 s,
@@ -349,10 +458,10 @@ private fun HomePage(app: HripsApp, onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
         }
         Group(
-            { s -> SettingsRow(HripsIcons.Image, "Выбрать фото", "Фон главной страницы", s, onClick = { wallpaper.pick?.invoke() }) },
+            { s -> SettingsRow(SymbolIcons.Image, "Выбрать фото", "Фон главной страницы", s, onClick = { wallpaper.pick?.invoke() }) },
             { s ->
                 SettingsRow(
-                    HripsIcons.Trash, "Убрать фон", if (wallpaper.image == null) "Сейчас фон не задан" else null, s,
+                    SymbolIcons.Delete, "Убрать фон", if (wallpaper.image == null) "Сейчас фон не задан" else null, s,
                     enabled = wallpaper.image != null,
                     onClick = { wallpaper.clear() },
                 )
@@ -439,14 +548,14 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
         Group(
             { s ->
                 SwitchRow(
-                    HripsIcons.Shield, "Защита от трекеров",
+                    SymbolIcons.Shield, "Защита от трекеров",
                     "Если сайт работает неправильно, выключите и перезагрузите страницу",
                     store.trackingProtection, true, s,
                 ) { browser.setTracking(it) }
             },
             { s ->
                 SwitchRow(
-                    HripsIcons.Capture, "Скриншоты в приватных вкладках",
+                    SymbolIcons.Screenshot, "Скриншоты в приватных вкладках",
                     "По умолчанию запрещены, а миниатюра в списке приложений скрыта",
                     store.allowPrivateShots, true, s,
                 ) { store.updatePrivateShots(it) }
@@ -495,7 +604,7 @@ private fun PasswordsPage(onBack: () -> Unit) {
         Group(
             { s ->
                 SettingsRow(
-                    HripsIcons.Key, "Сервис автозаполнения", "Выбрать менеджер паролей в настройках Android", s,
+                    SymbolIcons.Key, "Сервис автозаполнения", "Выбрать менеджер паролей в настройках Android", s,
                     onClick = { openAutofillSettings(context) },
                 )
             },
@@ -526,7 +635,7 @@ private fun PermissionsPage(onSitePermissions: () -> Unit, onBack: () -> Unit) {
         Group(
             { s ->
                 SettingsRow(
-                    HripsIcons.Globe, "Разрешения сайтов", "Что вы разрешили или запретили сайтам. Можно отозвать", s,
+                    SymbolIcons.Language, "Разрешения сайтов", "Что вы разрешили или запретили сайтам. Можно отозвать", s,
                     onClick = onSitePermissions,
                 )
             },
@@ -576,9 +685,9 @@ private fun DesktopPage(browser: Browser, onBack: () -> Unit) {
         } else {
             GroupOf(sites) { host, s ->
                 SettingsRow(
-                    HripsIcons.Desktop, host, "Версия для ПК включена", s,
+                    SymbolIcons.Desktop, host, "Версия для ПК включена", s,
                     trailing = {
-                        IconButton(onClick = { browser.setSiteDesktop(host, false) }) { Icon(HripsIcons.Trash, "Выключить") }
+                        IconButton(onClick = { browser.setSiteDesktop(host, false) }) { Icon(SymbolIcons.Delete, "Выключить") }
                     },
                 )
             }
@@ -594,21 +703,21 @@ private fun MediaPage(store: Store, hover: HoverPreview, onBack: () -> Unit) {
         Group(
             { s ->
                 SwitchRow(
-                    HripsIcons.Bell, "Управление в уведомлении",
+                    SymbolIcons.Notifications, "Управление в уведомлении",
                     "Пауза, перемотка и треки в шторке и на экране блокировки. Звук продолжает играть при выключенном экране",
                     store.mediaControls, true, s,
                 ) { store.updateMediaControls(it) }
             },
             { s ->
                 SwitchRow(
-                    HripsIcons.Pip, "Картинка в картинке",
+                    SymbolIcons.Pip, "Картинка в картинке",
                     "Видео на весь экран уходит в маленькое окно, когда вы выходите на главный экран",
                     store.pipEnabled, true, s,
                 ) { store.updatePip(it) }
             },
             { s ->
                 SwitchRow(
-                    HripsIcons.Sparkles, "Оживление миниатюр",
+                    SymbolIcons.Motion, "Оживление миниатюр",
                     "Удерживайте палец на миниатюре видео: сайт запустит предпросмотр, как при наведении мыши. Работает там, где он есть у самого сайта",
                     hover.enabled, hover.extension != null, s,
                 ) { hover.setHoverEnabled(it) }
@@ -624,7 +733,7 @@ private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
         Group(
             { shape ->
                 SwitchRow(
-                    HripsIcons.Layers,
+                    SymbolIcons.Layers,
                     "Экономия памяти",
                     "При сильной нехватке памяти фоновые вкладки временно выгружаются. При возврате страница восстанавливается.",
                     store.suspendTabsOnMemoryPressure,
@@ -634,7 +743,7 @@ private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
             },
             { shape ->
                 SwitchRow(
-                    HripsIcons.Layers,
+                    SymbolIcons.Layers,
                     "Держать страницу при сворачивании",
                     "Текущая страница остаётся в памяти до 20 минут после сворачивания, чтобы не перезагружаться при возврате. Занимает больше памяти в фоне.",
                     store.keepPageInBackground,
@@ -662,7 +771,7 @@ private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads:
         Group(
             { s ->
                 SwitchRow(
-                    HripsIcons.HelpCircle, "Спрашивать перед загрузкой",
+                    SymbolIcons.Help, "Спрашивать перед загрузкой",
                     "Показывать имя файла и размер, чтобы подтвердить или отменить",
                     store.askBeforeDownload, true, s,
                 ) { store.updateAskBeforeDownload(it) }
@@ -670,14 +779,14 @@ private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads:
         )
         SectionTitle("Файлы")
         Group(
-            { s -> SettingsRow(HripsIcons.File, "Список загрузок", "Скачанные файлы и текущие загрузки", s, onClick = onOpenDownloads) },
+            { s -> SettingsRow(SymbolIcons.Description, "Список загрузок", "Скачанные файлы и текущие загрузки", s, onClick = onOpenDownloads) },
             { s ->
                 SettingsRow(
-                    HripsIcons.Trash, "Очистить список", "Сами файлы останутся на устройстве", s,
+                    SymbolIcons.Delete, "Очистить список", "Сами файлы останутся на устройстве", s,
                     enabled = hasFinished, onClick = { downloads.clearFinished() },
                 )
             },
-            { s -> SettingsRow(HripsIcons.Folder, "Папка", "Файлы сохраняются в «Загрузки» на устройстве", s) },
+            { s -> SettingsRow(SymbolIcons.Folder, "Папка", "Файлы сохраняются в «Загрузки» на устройстве", s) },
         )
     }
 }
@@ -695,14 +804,14 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
     }
     PageScaffold("О программе", onBack) {
         Group(
-            { s -> SettingsRow(HripsIcons.Tag, "hrips", if (version.isBlank()) "Версия неизвестна" else "Версия $version", s) },
-            { s -> SettingsRow(HripsIcons.Chip, "Движок", if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko", s) },
+            { s -> SettingsRow(SymbolIcons.Tag, "hrips", if (version.isBlank()) "Версия неизвестна" else "Версия $version", s) },
+            { s -> SettingsRow(SymbolIcons.Memory, "Движок", if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko", s) },
             { s ->
                 SettingsRow(
-                    HripsIcons.Block, "Блокировка рекламы", "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "", s,
+                    SymbolIcons.Block, "Блокировка рекламы", "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "", s,
                 )
             },
-            { s -> SettingsRow(HripsIcons.Phone, "Android", "Версия ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}", s) },
+            { s -> SettingsRow(SymbolIcons.Mobile, "Android", "Версия ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}", s) },
         )
         if (Updater.available) {
             Spacer(Modifier.height(16.dp))
@@ -710,7 +819,7 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
                 { s -> UpdateRow(app, s) },
                 { s ->
                     SwitchRow(
-                        HripsIcons.BarRefresh, "Проверять автоматически", "Раз в сутки при запуске. Запрос идёт на github.com",
+                        SymbolIcons.Refresh, "Проверять автоматически", "Раз в сутки при запуске. Запрос идёт на github.com",
                         app.store.autoUpdate, true, s,
                     ) { app.store.updateAutoUpdate(it) }
                 },
@@ -751,7 +860,7 @@ private fun DiagnosticsGroup(app: HripsApp) {
     Group(
         { s ->
             SwitchRow(
-                HripsIcons.FileDoc, "Записывать журнал",
+                SymbolIcons.Description, "Записывать журнал",
                 "Для поиска ошибок: действия, сбои и зависания пишутся в файл. Адреса приватных вкладок не сохраняются",
                 app.store.logging, true, s,
             ) {
@@ -762,7 +871,7 @@ private fun DiagnosticsGroup(app: HripsApp) {
         },
         { s ->
             SettingsRow(
-                HripsIcons.Share, "Отправить журнал", sizeText, s,
+                SymbolIcons.Share, "Отправить журнал", sizeText, s,
                 enabled = !busy && size > 0L,
                 onClick = {
                     busy = true
@@ -793,10 +902,10 @@ private fun DiagnosticsGroup(app: HripsApp) {
                 },
             )
         },
-        { s -> SettingsRow(HripsIcons.Folder, "Файл журнала", path, s) },
+        { s -> SettingsRow(SymbolIcons.Folder, "Файл журнала", path, s) },
         { s ->
             SettingsRow(
-                HripsIcons.Trash, "Очистить журнал", null, s,
+                SymbolIcons.Delete, "Очистить журнал", null, s,
                 enabled = size > 0L,
                 onClick = {
                     AppLog.clear(context)
@@ -811,27 +920,27 @@ private fun DiagnosticsGroup(app: HripsApp) {
 private fun UpdateRow(app: HripsApp, shape: Shape) {
     val context = LocalContext.current
     when (val st = Updater.state) {
-        is Updater.State.Checking -> SettingsRow(HripsIcons.BarRefresh, "Обновления", "Проверяю…", shape)
+        is Updater.State.Checking -> SettingsRow(SymbolIcons.Refresh, "Обновления", "Проверяю…", shape)
         is Updater.State.Available -> SettingsRow(
-            HripsIcons.Download, "Доступна версия ${st.info.versionName}",
+            SymbolIcons.Download, "Доступна версия ${st.info.versionName}",
             "Нажмите, чтобы скачать" + if (st.info.size > 0) " (${st.info.size / 1_000_000} МБ)" else "", shape,
             onClick = { Updater.download(app, st.info) },
         )
-        is Updater.State.Downloading -> SettingsRow(HripsIcons.Download, "Скачиваю ${st.info.versionName}", "${st.percent}%", shape)
+        is Updater.State.Downloading -> SettingsRow(SymbolIcons.Download, "Скачиваю ${st.info.versionName}", "${st.percent}%", shape)
         is Updater.State.Ready -> SettingsRow(
-            HripsIcons.Package, "Установить ${st.info.versionName}", "Файл загружен и проверен. Нажмите, чтобы установить", shape,
+            SymbolIcons.Package, "Установить ${st.info.versionName}", "Файл загружен и проверен. Нажмите, чтобы установить", shape,
             onClick = { Updater.install(context) },
         )
         is Updater.State.UpToDate -> SettingsRow(
-            HripsIcons.Check, "Установлена последняя версия", "Нажмите, чтобы проверить ещё раз", shape,
+            SymbolIcons.Check, "Установлена последняя версия", "Нажмите, чтобы проверить ещё раз", shape,
             onClick = { Updater.check(app, manual = true) },
         )
         is Updater.State.Failed -> SettingsRow(
-            HripsIcons.Alert, st.message.ifBlank { "Не удалось проверить обновления" }, "Нажмите, чтобы повторить", shape,
+            SymbolIcons.Error, st.message.ifBlank { "Не удалось проверить обновления" }, "Нажмите, чтобы повторить", shape,
             onClick = { Updater.check(app, manual = true) },
         )
         else -> SettingsRow(
-            HripsIcons.BarRefresh, "Проверить обновления", null, shape,
+            SymbolIcons.Refresh, "Проверить обновления", null, shape,
             onClick = { Updater.check(app, manual = true) },
         )
     }
@@ -840,6 +949,37 @@ private fun UpdateRow(app: HripsApp, shape: Shape) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    if (LocalSettingsPane.current) {
+        // Правая панель планшета: стрелка и название в одной строке, дальше прокручиваемое содержимое (как в системных настройках).
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                ) { Icon(HripsIcons.BarChevronBack, "Закрыть настройки") }
+                Spacer(Modifier.width(16.dp))
+                Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(
+                    Modifier.widthIn(max = 840.dp).fillMaxWidth().padding(bottom = 32.dp),
+                    content = content,
+                )
+            }
+        }
+        return
+    }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier
@@ -891,10 +1031,9 @@ internal fun Group(vararg rows: @Composable (Shape) -> Unit) {
 
 @Composable
 private fun IconTile(icon: ImageVector) {
-    Surface(shape = HripsShapes.M, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(44.dp)) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
+    val cs = MaterialTheme.colorScheme
+    Box(Modifier.size(40.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+        Icon(icon, null, Modifier.size(24.dp), tint = cs.onPrimaryContainer)
     }
 }
 
@@ -908,6 +1047,8 @@ internal fun SettingsRow(
     enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
     value: String? = null,
+    // Строка списка разделов на планшете, открытая справа: полностью скруглённая и темнее остальных.
+    selected: Boolean = false,
 ) {
     val content: @Composable () -> Unit = {
         Row(
@@ -930,13 +1071,18 @@ internal fun SettingsRow(
     }
     val modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f)
     val cs = MaterialTheme.colorScheme
+    val rowShape: Shape = if (selected) HripsShapes.L else shape
+    val rowColor by animateColorAsState(
+        if (selected) cs.surfaceContainerLowest else cs.surfaceContainerHigh,
+        MaterialTheme.motionScheme.fastEffectsSpec<Color>(), label = "rowColor",
+    )
     if (onClick != null) {
         PressSurface(
-            onClick = onClick, corners = shape.asCorners(), color = cs.surfaceContainerHigh, contentColor = cs.onSurface,
+            onClick = onClick, corners = rowShape.asCorners(), color = rowColor, contentColor = cs.onSurface,
             pressedCorner = 20.dp, pressScale = 0.985f, modifier = modifier, enabled = enabled, content = content,
         )
     } else {
-        Surface(shape = shape, color = cs.surfaceContainerHigh, modifier = modifier, content = content)
+        Surface(shape = rowShape, color = rowColor, modifier = modifier, content = content)
     }
 }
 

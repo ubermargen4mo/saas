@@ -49,21 +49,21 @@ internal fun NetworkPrivacySection(browser: Browser) {
     Group(
         { s ->
             SwitchRow(
-                HripsIcons.Signal, "Сигнал Global Privacy Control",
+                SymbolIcons.Signal, "Сигнал Global Privacy Control",
                 "Сайты получают просьбу не продавать и не передавать данные о вас",
                 store.gpc, true, s,
             ) { store.updateGpc(it); browser.applyPrivacy() }
         },
         { s ->
             SwitchRow(
-                HripsIcons.LinkOff, "Удалять tracking-параметры",
+                SymbolIcons.LinkOff, "Удалять tracking-параметры",
                 "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
                 store.stripTrackingParams, true, s,
             ) { store.updateStripTrackingParams(it); browser.applyPrivacy() }
         },
         { s ->
             SwitchRow(
-                HripsIcons.Image, "Картинки страниц в карточках вкладок",
+                SymbolIcons.Image, "Картинки страниц в карточках вкладок",
                 "Если нет снимка экрана, браузер сам запрашивает у сайта превью (og:image). Приватные вкладки не затрагиваются",
                 store.pageImages, true, s,
             ) { store.updatePageImages(it) }

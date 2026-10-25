@@ -1661,14 +1661,15 @@ private fun SwitcherBar(
                         scaleY = sc
                     },
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 BarPill(palette, Modifier.size(SWITCHER_BAR_H)) {
                     BarButton(onClick = onSearch) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
                 }
-                BarPill(palette, Modifier.height(SWITCHER_BAR_H)) {
-                    Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                        ModeToggle(privatePage, count, onSelectPrivate)
+                // Средняя капсула занимает всё место между кнопками, до самых краёв; сегменты делят её пополам.
+                BarPill(palette, Modifier.weight(1f).height(SWITCHER_BAR_H)) {
+                    Box(Modifier.fillMaxSize()) {
+                        ModeToggle(privatePage, count, onSelectPrivate, Modifier.fillMaxSize())
                     }
                 }
                 AccentAddButton(fabBg, fabFg, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", SWITCHER_BAR_H) {
@@ -1685,7 +1686,7 @@ private fun SwitcherBar(
  * которая скользит к соседнему: положение и ширина анимируются пружиной темы. Закрывать обзор он не умеет.
  */
 @Composable
-private fun ModeToggle(privatePage: Boolean, count: Int, onSelectPrivate: (Boolean) -> Unit) {
+private fun ModeToggle(privatePage: Boolean, count: Int, onSelectPrivate: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val haptic = LocalHapticFeedback.current
@@ -1697,37 +1698,46 @@ private fun ModeToggle(privatePage: Boolean, count: Int, onSelectPrivate: (Boole
     val w by animateFloatAsState((if (privatePage) privW else tabsW).toFloat(), motion.defaultSpatialSpec(), label = "toggleW")
     val pill by animateColorAsState(if (privatePage) cs.tertiaryContainer else cs.onSurface.copy(alpha = 0.12f), motion.defaultEffectsSpec(), label = "togglePill")
     val privFg by animateColorAsState(if (privatePage) cs.onTertiaryContainer else cs.onSurface, motion.defaultEffectsSpec(), label = "togglePrivFg")
-    Box(contentAlignment = Alignment.CenterStart) {
+    Box(modifier, contentAlignment = Alignment.CenterStart) {
         Box(
             Modifier
                 .layout { m, c ->
-                    val p = m.measure(Constraints.fixed(w.roundToInt().coerceAtLeast(0), 34.dp.roundToPx()))
+                    // Подсветка выбранного сегмента занимает всю высоту капсулы.
+                    val p = m.measure(Constraints.fixed(w.roundToInt().coerceAtLeast(0), c.maxHeight.coerceAtLeast(0)))
                     layout(0, p.height) { p.place(x.roundToInt(), 0) }
                 }
                 .background(pill, CircleShape),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.onPlaced { tabsX = it.positionInParent().x.roundToInt(); tabsW = it.size.width }
+                Modifier.weight(1f).fillMaxHeight()
+                    .onPlaced { tabsX = it.positionInParent().x.roundToInt(); tabsW = it.size.width }
                     .semantics { selected = !privatePage },
             ) {
-                BarButton(onClick = { if (privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(false) } }, wrap = true) {
+                BarButton(
+                    onClick = { if (privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(false) } },
+                    modifier = Modifier.fillMaxSize(), wrap = true,
+                ) {
                     Text(
                         tabsCountText(count), maxLines = 1, softWrap = false,
                         style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(horizontal = 14.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
             }
             Box(
-                Modifier.onPlaced { privX = it.positionInParent().x.roundToInt(); privW = it.size.width }
+                Modifier.weight(1f).fillMaxHeight()
+                    .onPlaced { privX = it.positionInParent().x.roundToInt(); privW = it.size.width }
                     .semantics { selected = privatePage },
             ) {
-                BarButton(onClick = { if (!privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(true) } }, wrap = true) {
+                BarButton(
+                    onClick = { if (!privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(true) } },
+                    modifier = Modifier.fillMaxSize(), wrap = true,
+                ) {
                     Text(
                         "Приватные", color = privFg, maxLines = 1, softWrap = false,
                         style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(horizontal = 14.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
             }
