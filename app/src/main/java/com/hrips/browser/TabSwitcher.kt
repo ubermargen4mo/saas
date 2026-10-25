@@ -33,6 +33,7 @@ import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -265,7 +266,8 @@ private const val SWIPE_MS = 150
 
 private fun tabKey(t: Tab) = t.id
 
-private fun Tab.matches(q: String) = q.isEmpty() || matchesQuery(label(), url, q)
+// Поиск по содержимому страниц. Вкладка, текст которой ещё не получен (не загружалась с запуска, главная), ищется по названию и адресу.
+private fun Tab.matches(q: String) = q.isEmpty() || if (PageText.has(id)) PageText.matches(id, q) else matchesQuery(label(), url, q)
 
 private fun tabSubtitle(tab: Tab): String = when {
     tab.isPrivate && tab.home -> "История не сохраняется"
@@ -313,6 +315,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     val current = browser.currentIndex
     val q = query.trim()
     val qState = rememberUpdatedState(q)
+    LaunchedEffect(Unit) { PageText.retain(browser.tabs.mapTo(HashSet()) { it.id }) }
 
     val store = browser.store
     // Открываем обзор на группе текущей вкладки.
@@ -512,9 +515,9 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 if (list.isEmpty()) {
                     EmptyTabs(m == 1, searching = q.isNotEmpty(), onNew = { onNew(m == 1) })
                 } else when (view) {
-                    1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, aspect = aspect)
-                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, aspect = aspect, barReserve = barReserve)
-                    else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve)
+                    1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, aspect = aspect, query = q)
+                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, aspect = aspect, barReserve = barReserve, query = q)
+                    else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, query = q)
                 }
             }
         }
@@ -575,6 +578,7 @@ private fun TabGridPage(
     onSettled: () -> Unit,
     barReserve: Dp,
     aspect: Float,
+    query: String = "",
 ) {
     val start = (list.indexOfFirst { it.first == current } - 2).coerceAtLeast(0)
     val state = rememberLazyGridState(initialFirstVisibleItemIndex = start)
@@ -618,7 +622,7 @@ private fun TabGridPage(
                         clean = true,
                         corner = 20.dp,
                     )
-                    TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp))
+                    TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp), query)
                 }
             }
         }
@@ -634,6 +638,7 @@ private fun TabListPage(
     onClose: (Tab) -> Unit,
     onSettled: () -> Unit,
     barReserve: Dp,
+    query: String = "",
 ) {
     val start = (list.indexOfFirst { it.first == current } - 1).coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = start)
@@ -657,7 +662,7 @@ private fun TabListPage(
                         .fillMaxWidth()
                         .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)),
                 ) {
-                    TabRow(tab = t, selected = i == current, env = env, onOpen = { onOpen(i) }, onClose = { onClose(t) })
+                    TabRow(tab = t, selected = i == current, env = env, onOpen = { onOpen(i) }, onClose = { onClose(t) }, query = query)
                 }
             }
         }
@@ -680,6 +685,7 @@ private fun TabCardsPage(
     onSettled: () -> Unit,
     aspect: Float,
     barReserve: Dp,
+    query: String = "",
 ) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = list.indexOfFirst { it.first == current }.coerceAtLeast(0))
     val fling = rememberSnapFlingBehavior(state)
@@ -734,7 +740,7 @@ private fun TabCardsPage(
                                 modifier = Modifier.fillMaxWidth().height(ch),
                                 big = true,
                             )
-                            TabTitleRow(t, Modifier.fillMaxWidth().height(titleH))
+                            TabTitleRow(t, Modifier.fillMaxWidth().height(titleH), query)
                         }
                     }
                 }
@@ -754,14 +760,17 @@ private fun TabCardsPage(
 
 /** Подпись под карточкой: значок сайта и название, как под превью вкладок в Safari. */
 @Composable
-private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier) {
+private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier, query: String = "") {
     val cs = MaterialTheme.colorScheme
+    // Пока идёт поиск, под карточкой показываем найденный на странице фрагмент вместо названия.
+    val snippet = if (query.isNotBlank()) PageText.snippet(tab.id, query) else null
     Row(modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         TabIcon(tab, 20.dp)
         Spacer(Modifier.width(8.dp))
         Text(
-            tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.labelLarge, color = cs.onSurface,
+            snippet ?: tab.label(), maxLines = if (snippet != null) 2 else 1, overflow = TextOverflow.Ellipsis,
+            style = if (snippet != null) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge,
+            color = if (snippet != null) cs.onSurfaceVariant else cs.onSurface,
             modifier = Modifier.weight(1f, fill = false),
         )
     }
@@ -924,10 +933,10 @@ private fun GridSwipeUpToClose(enabled: Boolean, onClose: () -> Unit, modifier: 
                     }
                     if (slop == null || !claimed) return@awaitEachGesture
                     val tracker = VelocityTracker()
-                    tracker.addPosition(slop.uptimeMillis, slop.position)
+                    tracker.addPointerInputChange(slop)
                     offset = (offset + slop.positionChange().y).coerceAtMost(0f)
                     val finished = verticalDrag(slop.id) { change ->
-                        tracker.addPosition(change.uptimeMillis, change.position)
+                        tracker.addPointerInputChange(change)
                         offset = (offset + change.positionChange().y).coerceAtMost(0f)
                         change.consume()
                     }
@@ -1089,6 +1098,7 @@ private fun TabRow(
     env: SwitcherEnv,
     onOpen: () -> Unit,
     onClose: () -> Unit,
+    query: String = "",
 ) {
     val cs = MaterialTheme.colorScheme
     val holder = remember { CoordsHolder() }
@@ -1113,7 +1123,8 @@ private fun TabRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, color = titleColor)
-            Text(tabSubtitle(tab), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = subColor)
+            val found = if (query.isNotBlank()) PageText.snippet(tab.id, query) else null
+            Text(found ?: tabSubtitle(tab), maxLines = if (found != null) 2 else 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = subColor)
         }
         IconButton(onClick = onClose) {
             Icon(HripsIcons.Close, "Закрыть вкладку ${tab.label()}", tint = titleColor)
@@ -1233,7 +1244,7 @@ private fun SwitcherHeader(
                         Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 14.dp)) {
                             if (query.isEmpty()) {
                                 Text(
-                                    "Поиск по вкладкам", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge,
+                                    "Поиск по содержимому вкладок", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge,
                                     maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -1617,13 +1628,12 @@ private fun SwitcherBar(
                 },
         ) {
             val s = slot
-            val fullW = if (s != null) with(density) { s.width.toDp() } else 0.dp
+            // Адресная строка вырастает в широкую пилюлю и к концу растворяется: на её месте проявляются три отдельных элемента.
             BarPill(
                 palette,
                 Modifier
                     .morphFrom(from, s, reveal)
-                    // Пока итоговое место неизвестно, не рисуем; без исходной строки панель просто проявляется.
-                    .graphicsLayer { alpha = if (s == null) 0f else if (from == null) stage(reveal(), 0f, 0.5f) else 1f },
+                    .graphicsLayer { alpha = if (s == null || from == null) 0f else 1f - stage(reveal(), 0.5f, 0.85f) },
                 pressHost = false,
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1637,30 +1647,33 @@ private fun SwitcherBar(
                             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         )
                     }
-                    // Кнопки всегда измеряются на итоговую ширину, а пилюля их обрезает: ничего не сжимается по пути.
-                    Row(
-                        Modifier
-                            .requiredWidth(fullW)
-                            .fillMaxHeight()
-                            .padding(horizontal = 4.dp)
-                            .graphicsLayer {
-                                val c = stage(reveal(), 0.3f, 0.85f)
-                                alpha = c
-                                val sc = 0.9f + 0.1f * c
-                                scaleX = sc
-                                scaleY = sc
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        BarButton(onClick = onSearch) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
-                        Spacer(Modifier.weight(1f))
+                }
+            }
+            // Как в образце: лупа и «+» отдельные круглые кнопки, посередине капсула-переключатель.
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val c = stage(reveal(), if (from == null) 0f else 0.45f, if (from == null) 0.5f else 0.9f)
+                        alpha = c
+                        val sc = 0.92f + 0.08f * c
+                        scaleX = sc
+                        scaleY = sc
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                BarPill(palette, Modifier.size(SWITCHER_BAR_H)) {
+                    BarButton(onClick = onSearch) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
+                }
+                BarPill(palette, Modifier.height(SWITCHER_BAR_H)) {
+                    Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
                         ModeToggle(privatePage, count, onSelectPrivate)
-                        Spacer(Modifier.weight(1f))
-                        AccentAddButton(fabBg, fabFg, if (privatePage) "Новая приватная вкладка" else "Новая вкладка") {
-                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                            onNew()
-                        }
                     }
+                }
+                AccentAddButton(fabBg, fabFg, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", SWITCHER_BAR_H) {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onNew()
                 }
             }
         }
@@ -1695,24 +1708,24 @@ private fun ModeToggle(privatePage: Boolean, count: Int, onSelectPrivate: (Boole
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.onPlaced { privX = it.positionInParent().x.roundToInt(); privW = it.size.width }
-                    .semantics { selected = privatePage },
-            ) {
-                BarButton(onClick = { if (!privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(true) } }, wrap = true) {
-                    Text(
-                        "Приватные", color = privFg, maxLines = 1, softWrap = false,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                    )
-                }
-            }
-            Box(
                 Modifier.onPlaced { tabsX = it.positionInParent().x.roundToInt(); tabsW = it.size.width }
                     .semantics { selected = !privatePage },
             ) {
                 BarButton(onClick = { if (privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(false) } }, wrap = true) {
                     Text(
                         tabsCountText(count), maxLines = 1, softWrap = false,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
+                }
+            }
+            Box(
+                Modifier.onPlaced { privX = it.positionInParent().x.roundToInt(); privW = it.size.width }
+                    .semantics { selected = privatePage },
+            ) {
+                BarButton(onClick = { if (!privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(true) } }, wrap = true) {
+                    Text(
+                        "Приватные", color = privFg, maxLines = 1, softWrap = false,
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(horizontal = 14.dp),
                     )
@@ -1753,7 +1766,7 @@ private fun Modifier.morphFrom(start: UiRect?, slot: UiRect?, progress: () -> Fl
 
 /** Круглая кнопка «+» цвета режима. Нажимается целиком (сжимается весь кружок) с пружинным возвратом. */
 @Composable
-private fun AccentAddButton(bg: Color, fg: Color, label: String, onClick: () -> Unit) {
+private fun AccentAddButton(bg: Color, fg: Color, label: String, size: Dp = 44.dp, onClick: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1763,7 +1776,7 @@ private fun AccentAddButton(bg: Color, fg: Color, label: String, onClick: () -> 
     )
     Box(
         Modifier
-            .size(44.dp)
+            .size(size)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(MaterialShapes.Cookie9Sided.toShape())
             .background(bg)
@@ -1771,6 +1784,6 @@ private fun AccentAddButton(bg: Color, fg: Color, label: String, onClick: () -> 
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(HripsIcons.Add, null, Modifier.size(24.dp), tint = fg)
+        Icon(HripsIcons.Add, null, Modifier.size(26.dp), tint = fg)
     }
 }

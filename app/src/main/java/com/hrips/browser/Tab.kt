@@ -330,9 +330,11 @@ class Tab(
                 .usePrivateMode(isPrivate)
                 .build()
         )
+        PageText.register(s, id)
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(sess: GeckoSession, pageUrl: String) {
                 if (sess !== session) return
+                PageText.forget(id)
                 AppLog.i("Page") { "начало загрузки ${AppLog.url(pageUrl, isPrivate)}" }
                 navStartedAt = SystemClock.elapsedRealtime()
                 paintLogged = false

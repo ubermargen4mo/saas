@@ -121,6 +121,10 @@ internal fun AddressBar(
     }
 }
 
+/** Вкладки того же контекста, что и [of]: приватные только с приватными, обычные только своей группы. */
+internal fun Browser.contextTabs(of: Tab): List<Tab> =
+    tabs.filter { it.isPrivate == of.isPrivate && (of.isPrivate || store.groupOf(it.id) == store.groupOf(of.id)) }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TabStrip(browser: Browser) {
@@ -146,14 +150,16 @@ internal fun TabStrip(browser: Browser) {
         }
     }
 
-    val seen = remember { browser.tabs.map { it.id }.toMutableSet() }
-    val lastSize = remember { intArrayOf(browser.tabs.size) }
+    // Только вкладки текущей группы (или только приватные): чужие группы в полосе не показываем.
+    val shown = browser.contextTabs(browser.current)
+    val seen = remember { shown.map { it.id }.toMutableSet() }
+    val lastSize = remember { intArrayOf(shown.size) }
 
-    LaunchedEffect(browser.current.id, browser.tabs.size) {
-        seen.retainAll(browser.tabs.mapTo(HashSet()) { it.id })
-        val grew = browser.tabs.size > lastSize[0]
-        lastSize[0] = browser.tabs.size
-        val index = browser.tabs.indexOfFirst { it.id == browser.current.id }
+    LaunchedEffect(browser.current.id, shown.size) {
+        seen.retainAll(shown.mapTo(HashSet()) { it.id })
+        val grew = shown.size > lastSize[0]
+        lastSize[0] = shown.size
+        val index = shown.indexOfFirst { it.id == browser.current.id }
         if (index < 0) return@LaunchedEffect
         if (!grew) {
             val visible = listState.layoutInfo.visibleItemsInfo.any { it.index == index }
@@ -181,7 +187,7 @@ internal fun TabStrip(browser: Browser) {
 
     Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            itemsIndexed(browser.tabs, key = { _, t -> t.id }) { i, t ->
+            itemsIndexed(shown, key = { _, t -> t.id }) { i, t ->
                 val id = t.id
                 val grow = remember(id) { Animatable(if (seen.add(id)) 0f else 1f) }
                 LaunchedEffect(id) {
@@ -189,7 +195,7 @@ internal fun TabStrip(browser: Browser) {
                 }
                 val dragging = draggingId == id
                 val held = dragging || settlingId == id
-                val isCurrent = i == browser.currentIndex
+                val isCurrent = t.id == browser.current.id
                 val tabColor by animateColorAsState(
                     if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
                     MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
@@ -232,12 +238,15 @@ internal fun TabStrip(browser: Browser) {
                                     dragOffset += amount.x
                                     val infos = listState.layoutInfo.visibleItemsInfo
                                     val me = infos.firstOrNull { it.key == id } ?: return@detectDragGesturesAfterLongPress
-                                    val from = browser.tabs.indexOfFirst { it.id == id }
-                                    if (from < 0 || me.index != from) return@detectDragGesturesAfterLongPress
+                                    val from = me.index
+                                    if (shown.getOrNull(from)?.id != id) return@detectDragGesturesAfterLongPress
                                     val center = me.offset + me.size / 2f + dragOffset
                                     val target = infos.firstOrNull { it.key != id && center >= it.offset && center <= it.offset + it.size }
                                     if (target != null) {
-                                        browser.moveTab(from, target.index)
+                                        val fullFrom = browser.tabs.indexOfFirst { it.id == id }
+                                        val fullTo = browser.tabs.indexOfFirst { it.id == target.key }
+                                        if (fullFrom < 0 || fullTo < 0) return@detectDragGesturesAfterLongPress
+                                        browser.moveTab(fullFrom, fullTo)
                                         val newOffset = if (target.index > from) target.offset + target.size - me.size else target.offset
                                         dragOffset += me.offset - newOffset
                                     }

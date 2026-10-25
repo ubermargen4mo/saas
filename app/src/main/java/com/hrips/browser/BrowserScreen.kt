@@ -409,8 +409,8 @@ fun BrowserScreen(browser: Browser) {
             shown = barText,
             collapsed = collapsed,
             backEnabled = backEnabled,
-            tabCount = browser.tabs.size,
-            tabIndex = browser.currentIndex,
+            tabCount = browser.contextTabs(tab).size,
+            tabIndex = browser.contextTabs(tab).indexOfFirst { it.id == tab.id }.coerceAtLeast(0),
             engine = shownEngine,
             onPickEngine = pickEngine,
             onSearchImage = { pickImage.launch(imageRequest) },
@@ -446,7 +446,7 @@ fun BrowserScreen(browser: Browser) {
             },
             onCloseTab = { browser.closeTab(browser.currentIndex) },
             onCloseAll = { browser.closeAllTabs() },
-            quickTabs = { browser.tabs.filter { it.isPrivate == tab.isPrivate } },
+            quickTabs = { browser.contextTabs(tab) },
             onPickTab = { target ->
                 val i = browser.tabs.indexOf(target)
                 if (i >= 0 && i != browser.currentIndex) {
@@ -457,7 +457,9 @@ fun BrowserScreen(browser: Browser) {
                 }
             },
             onSwipeSide = { d ->
-                val i = browser.currentIndex + d
+                val inContext = browser.contextTabs(tab).map { it.id }.toSet()
+                var i = browser.currentIndex + d
+                while (i in browser.tabs.indices && browser.tabs[i].id !in inContext) i += d
                 if (i in browser.tabs.indices) {
                     // Снимок уходящей вкладки начинаем до переключения; ответ принимается и после ухода.
                     if (!tab.home && !TabThumbs.isFresh(tab.id)) {
