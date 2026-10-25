@@ -924,10 +924,10 @@ private fun GridSwipeUpToClose(enabled: Boolean, onClose: () -> Unit, modifier: 
                     }
                     if (slop == null || !claimed) return@awaitEachGesture
                     val tracker = VelocityTracker()
-                    tracker.addPointerInputChange(slop)
+                    tracker.addPosition(slop.uptimeMillis, slop.position)
                     offset = (offset + slop.positionChange().y).coerceAtMost(0f)
                     val finished = verticalDrag(slop.id) { change ->
-                        tracker.addPointerInputChange(change)
+                        tracker.addPosition(change.uptimeMillis, change.position)
                         offset = (offset + change.positionChange().y).coerceAtMost(0f)
                         change.consume()
                     }
