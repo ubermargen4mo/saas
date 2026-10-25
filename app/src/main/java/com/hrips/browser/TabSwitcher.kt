@@ -1378,6 +1378,115 @@ private fun GroupDialog(
     )
 }
 
+@Composable
+private fun TabIcon(tab: Tab, size: Dp) {
+    val cs = MaterialTheme.colorScheme
+    when {
+        tab.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(size * 0.8f), tint = cs.primary)
+        tab.home -> Icon(HripsIcons.Home, null, Modifier.size(size * 0.8f), tint = cs.onSurfaceVariant)
+        else -> TabSiteIcon(tab, size, shape = CircleShape)
+    }
+}
+
+@Composable
+private fun TabPlaceholder(tab: Tab, mini: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val dark = cs.background.luminance() < 0.5f
+    val (bg, fg) = when {
+        tab.isPrivate -> cs.tertiaryContainer to cs.onTertiaryContainer
+        tab.home -> cs.primaryContainer to cs.onPrimaryContainer
+        else -> siteColors(tab.url, dark)
+    }
+    val icon = if (mini) 28.dp else 48.dp
+    Box(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bg, bg.copy(alpha = 0.78f).compositeOver(cs.surfaceContainerLowest)))),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (mini) {
+            TabGlyph(tab, icon, fg)
+        } else {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(96.dp).background(fg.copy(alpha = 0.16f), MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                    TabGlyph(tab, icon, fg)
+                }
+                if (!tab.isPrivate) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        tab.label(), color = fg, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 36.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabGlyph(tab: Tab, size: Dp, tint: Color) {
+    when {
+        tab.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(size), tint = tint)
+        tab.home -> Icon(HripsIcons.Home, null, Modifier.size(size), tint = tint)
+        else -> TabSiteIcon(tab, size)
+    }
+}
+
+private data class TabThumbResult(val image: ImageBitmap?, val resolved: Boolean)
+
+@Composable
+private fun rememberTabThumb(tab: Tab, small: Boolean): TabThumbResult {
+    val context = LocalContext.current.applicationContext
+    val activeImage = tab.thumbnail
+    val cachedImage = TabThumbs.peek(tab.id, small)
+    val initial = TabThumbResult(
+        image = activeImage ?: cachedImage,
+        resolved = activeImage != null || cachedImage != null || tab.isPrivate || tab.home,
+    )
+    val loaded by produceState(initial, tab.id, activeImage, small, tab.isPrivate, tab.home) {
+        value = when {
+            activeImage != null -> TabThumbResult(activeImage, resolved = true)
+            tab.isPrivate || tab.home -> TabThumbResult(null, resolved = true)
+            else -> TabThumbResult(TabThumbs.load(context, tab.id, small), resolved = true)
+        }
+    }
+    val result = if (activeImage != null) TabThumbResult(activeImage, resolved = true) else loaded
+    LaunchedEffect(result.image) {
+        val bitmap = result.image ?: return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            runCatching { bitmap.asAndroidBitmap().prepareToDraw() }
+        }
+    }
+    return result
+}
+
+@Composable
+private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modifier: Modifier = Modifier.fillMaxSize().padding(bottom = 104.dp)) {
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        EmptyState(
+            icon = if (priv) HripsIcons.Mask else HripsIcons.Search,
+            title = when {
+                searching -> "Ничего не найдено"
+                priv -> "Нет приватных вкладок"
+                else -> "Нет открытых вкладок"
+            },
+            text = when {
+                searching -> "Попробуйте другой запрос"
+                priv -> "История и cookies приватных вкладок не сохраняются"
+                else -> "Откройте новую вкладку, чтобы начать"
+            },
+            badge = if (priv) Badge.CLOVER else Badge.COOKIE9,
+        )
+        if (!searching) {
+            FilledTonalButton(shapes = ButtonDefaults.shapes(), onClick = onNew) { Text(if (priv) "Приватная вкладка" else "Новая вкладка") }
+        }
+    }
+}
+
 /**
  * Нижняя панель экрана вкладок, как в Safari на айфоне: «+», «Приватные», счётчик вкладок, лупа.
  * Начинается ровно как адресная строка браузера (её прямоугольник), а по мере открытия вырастает на всю ширину,
