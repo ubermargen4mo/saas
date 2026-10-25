@@ -510,7 +510,7 @@ fun BrowserScreen(browser: Browser) {
             onOpenDownloads = { showSettings = false; showDownloads = true },
         )
     }
-    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = !wide) {
+    RevealHost(visible = showTabs, group = "tabs", startColor = MaterialTheme.colorScheme.surfaceContainer, onDismiss = { showTabs = false }, fadeOnly = !wide, selfAnimated = !wide) {
         TabSwitcher(
             browser = browser,
             onClose = { showTabs = false },
@@ -584,7 +584,13 @@ fun BrowserScreen(browser: Browser) {
     }
     }
 
-    browser.contextMenu?.let { info -> ContextMenuSheet(info, browser) { browser.contextMenu = null } }
+    browser.contextMenu?.let { info ->
+        // Точка нажатия в экранных координатах: превью картинки вылетает из неё и возвращается обратно в неё.
+        val touch = (viewRef[0] as? HripsGeckoView)?.let { v ->
+            if (v.lastDownRawX.isNaN() || v.lastDownRawY.isNaN()) null else androidx.compose.ui.geometry.Offset(v.lastDownRawX, v.lastDownRawY)
+        } ?: androidx.compose.ui.geometry.Offset.Unspecified
+        ContextMenuSheet(info, browser, touch) { browser.contextMenu = null }
+    }
 
     PromptHost(browser.prompts)
 

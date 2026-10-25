@@ -95,6 +95,21 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.util.lerp as lerpF
+import kotlinx.coroutines.flow.first
 
 private const val CAPTURE_WIDTH = 720
 
@@ -247,6 +262,12 @@ private fun tabSubtitle(tab: Tab): String = when {
     else -> plainHost(tab.url) ?: tab.url
 }
 
+/** Доля отрезка [from, to] прогресса: 0 до его начала, 1 после конца. Для ступенчатого появления частей экрана. */
+private fun stage(p: Float, from: Float, to: Float): Float = ((p - from) / (to - from)).coerceIn(0f, 1f)
+
+private val SWITCHER_BAR_H = 56.dp
+private const val STRIP_REACH = 9
+
 private class CoordsHolder {
     var c: LayoutCoordinates? = null
     fun rect(): UiRect = c?.takeIf { it.isAttached }?.boundsInRoot() ?: UiRect.Zero
@@ -357,31 +378,91 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         if (i >= 0) closeWithUndo(i)
     }
 
+    val reveal = LocalRevealProgress.current
+    val wide = isWideWindow()
+    val density = LocalDensity.current
+    val window = LocalWindowInfo.current.containerSize
+    val statusPx = WindowInsets.statusBars.getTop(density)
+    // Карточки карусели повторяют форму окна: на телефоне это телефон, на планшете планшет.
+    val aspect = remember(window, statusPx, wide) {
+        val chrome = if (wide) with(density) { 112.dp.roundToPx() } else 0
+        (window.width.toFloat() / (window.height - statusPx - chrome).coerceAtLeast(1)).coerceIn(0.35f, 2.2f)
+    }
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val barReserve = navBottom + SWITCHER_BAR_H + HripsLayout.BarGap * 2
+    // Откуда «вырастает» нижняя панель: прямоугольник адресной строки. На широком окне такой строки внизу нет.
+    val fromRect = remember { if (wide) null else origins.resolve("tabs") }
+    val fromText = remember {
+        val t = browser.current
+        if (t.home) "Поиск" else t.siteHost() ?: plainHost(t.url) ?: t.url
+    }
+    // Карточка могла сдвинуться, пока шло появление: после его конца сообщаем итоговый прямоугольник.
+    LaunchedEffect(Unit) {
+        snapshotFlow { reveal() >= 0.999f }.first { it }
+        reportRect()
+    }
+    val closeAll: () -> Unit = {
+        closeTick++
+        if (mode == 1) {
+            browser.closePrivateTabs(deferEngine = true)
+        } else {
+            val toClose = browser.tabs.count { !it.isPrivate }
+            browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it, deferEngine = true) }
+            val undoable = minOf(toClose, browser.closedTabs.size)
+            if (undoable > 0) {
+                Notices.show("Закрыто вкладок: $toClose", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
+            }
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-        Box(Modifier.fillMaxSize().drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress())) })
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = reveal().coerceIn(0f, 1f) }
+                .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress())) },
+        )
 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            SwitcherHeader(
-                searching = searching,
-                onSearching = { searching = it },
-                query = query,
-                onQuery = { query = it },
-                focus = focus,
-                progress = progress,
-                normal = normalCount,
-                priv = privateCount,
-                onSelect = { mode = it },
-            )
+            Box(
+                Modifier.graphicsLayer {
+                    val r = stage(reveal(), 0.08f, 0.55f)
+                    alpha = r
+                    translationY = -(1f - r) * 14.dp.toPx()
+                },
+            ) {
+                SwitcherHeader(
+                    searching = searching,
+                    onSearching = { searching = it },
+                    query = query,
+                    onQuery = { query = it },
+                    focus = focus,
+                    progress = progress,
+                    normal = normalCount,
+                    priv = privateCount,
+                    onSelect = { mode = it },
+                    privatePage = mode == 1,
+                    closedCount = browser.closedTabs.size,
+                    onClosed = { showClosed = true },
+                    onCloseAll = closeAll,
+                )
+            }
 
             AnimatedContent(
                 targetState = mode,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    // Только прозрачность, без масштаба и сдвига: карточка не должна менять свой прямоугольник,
+                    // иначе страница, сжимающаяся в карточку, целится не туда.
+                    .graphicsLayer {
+                        alpha = stage(reveal(), 0.12f, 0.6f)
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
                     // Карточка, смахнутая вверх, уходит под пилюлю режимов, а не поверх неё.
                     .clipToBounds()
                     .nestedScroll(modeSwipe)
@@ -407,7 +488,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                     EmptyTabs(m == 1, searching = q.isNotEmpty(), onNew = { onNew(m == 1) })
                 } else when (view) {
                     1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
-                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
+                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, aspect = aspect, barReserve = barReserve)
                     else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect)
                 }
             }
@@ -416,6 +497,10 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         SwitcherBar(
             view = view,
             count = browser.tabs.size,
+            privatePage = mode == 1,
+            reveal = reveal,
+            from = fromRect,
+            fromText = fromText,
             onCycleView = {
                 view = (view + 1) % 3
                 browser.store.updateTabsView(view)
@@ -423,22 +508,6 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             onHistory = onHistory,
             onNew = { onNew(mode == 1) },
             onDone = onClose,
-            privatePage = mode == 1,
-            onCloseAll = {
-                closeTick++
-                if (mode == 1) {
-                    browser.closePrivateTabs(deferEngine = true)
-                } else {
-                    val toClose = browser.tabs.count { !it.isPrivate }
-                    browser.tabs.indices.reversed().filter { !browser.tabs[it].isPrivate }.forEach { browser.closeTab(it, deferEngine = true) }
-                    val undoable = minOf(toClose, browser.closedTabs.size)
-                    if (undoable > 0) {
-                        Notices.show("Закрыто вкладок: $toClose", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
-                    }
-                }
-            },
-            closedCount = browser.closedTabs.size,
-            onClosed = { showClosed = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
@@ -556,8 +625,10 @@ private fun TabListPage(
 }
 
 /**
- * Крупные карточки в один ряд. Листаются горизонтально с примагничиванием, смахивание карточки вверх закрывает вкладку.
- * Никакого наклона и масштабирования соседей: карточка двигается только по Y и гаснет, всё в graphicsLayer.
+ * Карусель крупных карточек формы окна (телефон или планшет) и лента-миниатюра всех вкладок снизу.
+ * Лента двигается вместе с каруселью покадрово: позиция берётся из состояния LazyRow и читается только
+ * в graphicsLayer, то есть без перекомпозиций. Жест по ленте листает карусель, касание прыгает к вкладке.
+ * Смахивание карточки вверх закрывает вкладку, соседние карточки чуть меньше и прозрачнее.
  */
 @Composable
 private fun TabCardsPage(
@@ -567,43 +638,180 @@ private fun TabCardsPage(
     onOpen: (Int) -> Unit,
     onClose: (Tab) -> Unit,
     onSettled: () -> Unit,
+    aspect: Float,
+    barReserve: Dp,
 ) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = list.indexOfFirst { it.first == current }.coerceAtLeast(0))
     val fling = rememberSnapFlingBehavior(state)
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     PrefetchVisibleTabThumbnails(list, small = false, stateKey = state) {
         state.layoutInfo.visibleItemsInfo.map { it.index }
     }
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = 104.dp)) {
-        val cw = minOf(maxWidth * 0.78f, 380.dp)
-        val ch = minOf(cw * (if (maxWidth > 600.dp) 1.0f else 1.4f), maxHeight - 16.dp)
-        val side = (maxWidth - cw) / 2
-        LazyRow(
-            state = state,
-            flingBehavior = fling,
-            contentPadding = PaddingValues(horizontal = side),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
-                SwipeUpToClose(
-                    onClose = { onClose(t) },
-                    modifier = Modifier
-                        .size(cw, ch)
-                        .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = null),
-                ) {
-                    TabCard(
-                        tab = t,
-                        selected = i == current,
-                        env = env,
-                        onOpen = { onOpen(i) },
+    // Шаг карусели в пикселях (ширина карточки + зазор): по нему лента считает, где сейчас карусель.
+    val stride = remember { mutableFloatStateOf(1f) }
+    Column(Modifier.fillMaxSize().padding(bottom = barReserve)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val titleH = 40.dp
+            val spacing = 14.dp
+            val maxCh = (maxHeight - titleH - 8.dp).coerceAtLeast(120.dp)
+            val cw = minOf(maxCh * aspect, maxWidth * 0.78f)
+            val ch = cw / aspect
+            val side = (maxWidth - cw) / 2
+            SideEffect { stride.floatValue = with(density) { (cw + spacing).toPx() } }
+            LazyRow(
+                state = state,
+                flingBehavior = fling,
+                contentPadding = PaddingValues(horizontal = side),
+                horizontalArrangement = Arrangement.spacedBy(spacing),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                itemsIndexed(list, key = { _, item -> tabKey(item.second) }, contentType = { _, _ -> "tab" }) { idx, (i, t) ->
+                    SwipeUpToClose(
                         onClose = { onClose(t) },
-                        modifier = Modifier.fillMaxSize(),
-                        big = true,
-                    )
+                        modifier = Modifier
+                            .size(cw, ch + titleH)
+                            .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = null)
+                            .graphicsLayer {
+                                val st = stride.floatValue
+                                val d = abs(idx - (state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset / st)).coerceIn(0f, 1f)
+                                val sc = 1f - 0.07f * d
+                                scaleX = sc
+                                scaleY = sc
+                            },
+                    ) {
+                        Column(Modifier.fillMaxSize()) {
+                            TabCard(
+                                tab = t,
+                                selected = i == current,
+                                env = env,
+                                onOpen = { onOpen(i) },
+                                onClose = { onClose(t) },
+                                modifier = Modifier.fillMaxWidth().height(ch),
+                                big = true,
+                            )
+                            TabTitleRow(t, Modifier.fillMaxWidth().height(titleH))
+                        }
+                    }
+                }
+            }
+        }
+        if (list.size > 1) {
+            TabStrip(
+                list = list,
+                state = state,
+                mainStride = { stride.floatValue },
+                aspect = aspect,
+                onJump = { idx -> scope.launch { state.animateScrollToItem(idx) } },
+            )
+        }
+    }
+}
+
+/** Подпись под карточкой: значок сайта и название, как под превью вкладок в Safari. */
+@Composable
+private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Row(modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        TabIcon(tab, 20.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelLarge, color = cs.onSurface,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
+/**
+ * Лента маленьких копий всех вкладок. Текущая крупнее и обведена, остальные приглушены. Лента всегда центрирует
+ * позицию карусели: на последней вкладке последняя миниатюра по центру. Композятся только соседние миниатюры.
+ */
+@Composable
+private fun TabStrip(
+    list: List<Pair<Int, Tab>>,
+    state: LazyListState,
+    mainStride: () -> Float,
+    aspect: Float,
+    onJump: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val primary = MaterialTheme.colorScheme.primary
+    val itemH = 52.dp
+    val itemW = (itemH * aspect).coerceIn(26.dp, 88.dp)
+    val itemWPx = with(density) { itemW.toPx() }
+    val stridePx = with(density) { (itemW + 8.dp).toPx() }
+    val cornerPx = with(density) { 8.dp.toPx() }
+    val strokePx = with(density) { 2.dp.toPx() }
+    val last = list.lastIndex
+    val pos: () -> Float = {
+        val s = mainStride()
+        if (s <= 1f) 0f else (state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset / s).coerceIn(0f, last.toFloat())
+    }
+    val center by remember(state, list.size) { derivedStateOf { pos().roundToInt().coerceIn(0, last) } }
+    LaunchedEffect(center, list) {
+        val ids = ((center - STRIP_REACH)..(center + STRIP_REACH))
+            .filter { it in 0..last }
+            .mapNotNull { list[it].second.takeIf { t -> !t.isPrivate && !t.home }?.id }
+        TabThumbs.prefetch(context, ids, small = true)
+    }
+    var width by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(itemH + 20.dp)
+            .onSizeChanged { width = it.width.toFloat() }
+            .pointerInput(state, list.size) {
+                val settle: () -> Unit = {
+                    scope.launch { state.animateScrollToItem(pos().roundToInt().coerceIn(0, last)) }
+                }
+                detectHorizontalDragGestures(
+                    onDragEnd = settle,
+                    onDragCancel = settle,
+                    onHorizontalDrag = { change, dx ->
+                        change.consume()
+                        // Палец по ленте двигает карусель в пересчёте на её шаг: миниатюры ведут за пальцем.
+                        state.dispatchRawDelta(-dx * (mainStride() / stridePx))
+                    },
+                )
+            },
+    ) {
+        for (idx in (center - STRIP_REACH)..(center + STRIP_REACH)) {
+            if (idx < 0 || idx > last) continue
+            val tab = list[idx].second
+            key(tab.id) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .size(itemW, itemH)
+                        .graphicsLayer {
+                            val d = idx - pos()
+                            translationX = width / 2f - itemWPx / 2f + d * stridePx
+                            val near = (1f - abs(d)).coerceIn(0f, 1f)
+                            val sc = 1f + 0.2f * near
+                            scaleX = sc
+                            scaleY = sc
+                            alpha = 0.6f + 0.4f * near
+                            shape = RoundedCornerShape(8.dp)
+                            clip = true
+                        }
+                        .drawWithContent {
+                            drawContent()
+                            val near = (1f - abs(idx - pos())).coerceIn(0f, 1f)
+                            if (near > 0.02f) {
+                                drawRoundRect(primary.copy(alpha = near), cornerRadius = CornerRadius(cornerPx), style = Stroke(strokePx))
+                            }
+                        }
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onJump(idx) },
+                ) {
+                    TabPreview(tab, mini = true, small = true, modifier = Modifier.fillMaxSize())
                 }
             }
         }
@@ -724,6 +932,23 @@ private fun TabCard(
     val cs = MaterialTheme.colorScheme
     val holder = remember { CoordsHolder() }
     if (selected) SideEffect { env.currentHolder = holder }
+    if (big) {
+        // Карточка карусели: чистый «экран» со скруглёнными углами, без подписи внутри (она под карточкой).
+        val screen = RoundedCornerShape(28.dp)
+        Box(
+            modifier
+                .onPlaced { holder.c = it }
+                .clip(screen)
+                .background(cs.surfaceContainerLowest)
+                .border(if (selected) 3.dp else 0.5.dp, if (selected) cs.primary else cs.onSurface.copy(alpha = 0.14f), screen)
+                .semantics { this.selected = selected }
+                .clickable(onClick = onOpen),
+        ) {
+            TabPreview(tab, mini = false, small = false, modifier = Modifier.fillMaxSize())
+            CloseTabButton(tab, Modifier.align(Alignment.TopEnd).padding(6.dp), onClose)
+        }
+        return
+    }
     Box(
         modifier
             .onPlaced { holder.c = it }
@@ -881,6 +1106,10 @@ private fun SwitcherHeader(
     normal: Int,
     priv: Int,
     onSelect: (Int) -> Unit,
+    privatePage: Boolean,
+    closedCount: Int,
+    onClosed: () -> Unit,
+    onCloseAll: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     AnimatedContent(
@@ -891,15 +1120,16 @@ private fun SwitcherHeader(
         },
         label = "switcherHeader",
     ) { isSearching ->
+        // Одна компактная строка: меню, режимы, поиск. Меню переехало сюда из нижней панели, чтобы она осталась лёгкой.
         Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isSearching) {
                 Surface(shape = CircleShape, color = cs.surfaceContainerHigh, modifier = Modifier.weight(1f)) {
                     Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(HripsIcons.Search, null, tint = cs.onSurfaceVariant)
-                        Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 16.dp)) {
+                        Box(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 14.dp)) {
                             if (query.isEmpty()) {
                                 Text(
                                     "Поиск по вкладкам", color = cs.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge,
@@ -919,6 +1149,8 @@ private fun SwitcherHeader(
                     }
                 }
             } else {
+                SwitcherMenu(privatePage, closedCount, onClosed, onCloseAll)
+                Spacer(Modifier.width(10.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     ModeToggle(
                         progress = progress,
@@ -928,11 +1160,37 @@ private fun SwitcherHeader(
                         modifier = Modifier.widthIn(max = HripsLayout.SegmentedMaxWidth).fillMaxWidth(),
                     )
                 }
-                Spacer(Modifier.width(12.dp))
-                FilledTonalIconButton(onClick = { onSearching(true) }, modifier = Modifier.size(56.dp)) {
-                    Icon(HripsIcons.Search, "Поиск по вкладкам")
+                Spacer(Modifier.width(10.dp))
+                BarPill(rememberBarPalette(), Modifier.size(44.dp)) {
+                    BarButton(onClick = { onSearching(true) }) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
                 }
             }
+        }
+    }
+}
+
+/** Кружок «⋯» с недавно закрытыми и закрытием всех вкладок. Нажимается целиком, как кнопки нижней панели браузера. */
+@Composable
+private fun SwitcherMenu(privatePage: Boolean, closedCount: Int, onClosed: () -> Unit, onCloseAll: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        BarPill(rememberBarPalette(), Modifier.size(44.dp)) {
+            BarButton(onClick = { menu = true }) { Icon(HripsIcons.MoreVert, "Ещё") }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = HripsShapes.L) {
+            if (!privatePage) {
+                DropdownMenuItem(
+                    text = { Text(if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые") },
+                    leadingIcon = { Icon(HripsIcons.History, null) },
+                    enabled = closedCount > 0,
+                    onClick = { menu = false; onClosed() },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки") },
+                leadingIcon = { Icon(HripsIcons.Trash, null) },
+                onClick = { menu = false; onCloseAll() },
+            )
         }
     }
 }
@@ -942,7 +1200,7 @@ private fun ModeToggle(progress: () -> Float, normal: Int, priv: Int, onSelect: 
     val cs = MaterialTheme.colorScheme
     val progressState by rememberUpdatedState(progress)
     val p by remember { derivedStateOf { (progressState().coerceIn(0f, 1f) * 16f).roundToInt() / 16f } }
-    Box(modifier.height(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(4.dp)) {
+    Box(modifier.height(44.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(3.dp)) {
         Box(
             Modifier
                 .fillMaxWidth(0.5f)
@@ -1092,68 +1350,144 @@ private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modi
     }
 }
 
+/**
+ * Нижняя панель экрана вкладок. Начинается ровно как адресная строка браузера (её прямоугольник), а по мере
+ * открытия вырастает на всю ширину, и в ней проявляются кнопки: строка поиска превращается в панель вкладок.
+ * Размер и положение считаются в layout по прогрессу открытия, поэтому за кадр нет перекомпозиции.
+ */
 @Composable
 private fun SwitcherBar(
     view: Int,
     count: Int,
     privatePage: Boolean,
+    reveal: () -> Float,
+    from: UiRect?,
+    fromText: String,
     onCycleView: () -> Unit,
     onHistory: () -> Unit,
     onNew: () -> Unit,
     onDone: () -> Unit,
-    onCloseAll: () -> Unit,
-    closedCount: Int,
-    onClosed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
-    var menu by remember { mutableStateOf(false) }
+    val palette = rememberBarPalette()
+    val density = LocalDensity.current
     val fabBg by animateColorAsState(if (privatePage) cs.tertiary else cs.primary, tween(MOVE_MS), label = "fabBg")
     val fabFg by animateColorAsState(if (privatePage) cs.onTertiary else cs.onPrimary, tween(MOVE_MS), label = "fabFg")
-    Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HripsIsland {
-                BarButton(onClick = onCycleView) {
-                    when (view) {
-                        0 -> Icon(HripsIcons.Grid, "Показать сеткой")
-                        1 -> Icon(HripsIcons.Layers, "Показать карточками")
-                        else -> Icon(HripsIcons.Rows, "Показать списком")
-                    }
-                }
-                BarButton(onClick = onHistory) { Icon(HripsIcons.History, "История") }
-                TabCounterButton(count, onClick = onDone)
-                Box {
-                    BarButton(onClick = { menu = true }) { Icon(HripsIcons.MoreVert, "Ещё") }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = HripsShapes.L) {
-                        if (!privatePage) {
-                            DropdownMenuItem(
-                                text = { Text(if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые") },
-                                leadingIcon = { Icon(HripsIcons.History, null) },
-                                enabled = closedCount > 0,
-                                onClick = { menu = false; onClosed() },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text(if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки") },
-                            leadingIcon = { Icon(HripsIcons.Trash, null) },
-                            onClick = { menu = false; onCloseAll() },
+    var slot by remember { mutableStateOf<UiRect?>(null) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = HripsLayout.BarMargin, vertical = HripsLayout.BarGap),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Box(
+            Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .height(SWITCHER_BAR_H)
+                .onGloballyPositioned {
+                    val r = it.boundsInRoot()
+                    if (slot != r) slot = r
+                },
+        ) {
+            val s = slot
+            val fullW = if (s != null) with(density) { s.width.toDp() } else 0.dp
+            BarPill(
+                palette,
+                Modifier
+                    .morphFrom(from, s, reveal)
+                    // Пока итоговое место неизвестно, не рисуем; без исходной строки панель просто проявляется.
+                    .graphicsLayer { alpha = if (s == null) 0f else if (from == null) stage(reveal(), 0f, 0.5f) else 1f },
+                pressHost = false,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (from != null && fromText.isNotEmpty()) {
+                        // Надпись адресной строки гаснет первой, пока панель только начинает расти.
+                        Text(
+                            fromText,
+                            Modifier.graphicsLayer { alpha = 1f - stage(reveal(), 0f, 0.3f) },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         )
                     }
+                    // Кнопки всегда измеряются на итоговую ширину, а пилюля их обрезает: ничего не сжимается по пути.
+                    Row(
+                        Modifier
+                            .requiredWidth(fullW)
+                            .fillMaxHeight()
+                            .padding(horizontal = 6.dp)
+                            .graphicsLayer {
+                                val c = stage(reveal(), 0.3f, 0.85f)
+                                alpha = c
+                                val sc = 0.9f + 0.1f * c
+                                scaleX = sc
+                                scaleY = sc
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AccentAddButton(fabBg, fabFg, if (privatePage) "Новая приватная вкладка" else "Новая вкладка") {
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onNew()
+                        }
+                        Spacer(Modifier.weight(1f))
+                        BarButton(onClick = onCycleView) {
+                            when (view) {
+                                0 -> Icon(HripsIcons.Grid, "Показать сеткой")
+                                1 -> Icon(HripsIcons.Layers, "Показать карточками")
+                                else -> Icon(HripsIcons.Rows, "Показать списком")
+                            }
+                        }
+                        BarButton(onClick = onHistory) { Icon(HripsIcons.History, "История") }
+                        Spacer(Modifier.weight(1f))
+                        TabCounterButton(count, onClick = onDone)
+                    }
                 }
             }
-            FloatingActionButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onNew()
-                },
-                shape = MaterialShapes.Cookie9Sided.toShape(),
-                containerColor = fabBg,
-                contentColor = fabFg,
-                modifier = Modifier.size(56.dp),
-            ) {
-                Icon(HripsIcons.Add, if (privatePage) "Новая приватная вкладка" else "Новая вкладка", Modifier.size(26.dp))
-            }
         }
+    }
+}
+
+/** Рост пилюли из исходного прямоугольника (адресная строка) в итоговый: ширина, высота и позиция по прогрессу. */
+private fun Modifier.morphFrom(start: UiRect?, slot: UiRect?, progress: () -> Float): Modifier = layout { measurable, constraints ->
+    val fw = constraints.maxWidth
+    val fh = constraints.maxHeight
+    val e = progress().coerceIn(0f, 1f)
+    if (start == null || slot == null || e >= 1f) {
+        val p = measurable.measure(Constraints.fixed(fw, fh))
+        return@layout layout(fw, fh) { p.place(0, 0) }
+    }
+    val w = lerpF(start.width, fw.toFloat(), e).roundToInt().coerceAtLeast(1)
+    val h = lerpF(start.height, fh.toFloat(), e).roundToInt().coerceAtLeast(1)
+    val x = lerpF(start.left - slot.left, 0f, e).roundToInt()
+    val y = lerpF(start.top - slot.top, 0f, e).roundToInt()
+    val p = measurable.measure(Constraints.fixed(w, h))
+    layout(fw, fh) { p.place(x, y) }
+}
+
+/** Круглая кнопка «+» цвета режима. Нажимается целиком (сжимается весь кружок) с пружинным возвратом. */
+@Composable
+private fun AccentAddButton(bg: Color, fg: Color, label: String, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) 0.86f else 1f,
+        if (pressed) HripsMotion.pressDown() else HripsMotion.pressRelease(),
+        label = "addPress",
+    )
+    Box(
+        Modifier
+            .size(44.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(MaterialShapes.Cookie9Sided.toShape())
+            .background(bg)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(HripsIcons.Add, null, Modifier.size(24.dp), tint = fg)
     }
 }

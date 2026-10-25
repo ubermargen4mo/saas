@@ -165,6 +165,7 @@ fun DownloadsButton(
     description: String = "Загрузки",
     size: Dp = 48.dp,
     reportTarget: Boolean = true,
+    barStyle: Boolean = false,
 ) {
     val fx = downloads.fx
     val busy = downloads.items.any { downloads.isActive(it) }
@@ -220,7 +221,12 @@ fun DownloadsButton(
                     .graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = ringAlpha },
             )
         }
-        IconButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description, Modifier.size(ICON_SIZE)) }
+        // В нижней панели кнопка нажимается вместе с пилюлей, как остальные; в остальных местах обычная.
+        if (barStyle) {
+            BarButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description, Modifier.size(ICON_SIZE)) }
+        } else {
+            IconButton(onClick = onClick, modifier = Modifier.size(size)) { Icon(icon, description, Modifier.size(ICON_SIZE)) }
+        }
     }
 }
 
@@ -430,6 +436,7 @@ fun AnimatedDownloadsSlot(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
     centered: Boolean = false,
+    barStyle: Boolean = false,
 ) {
     val fx = downloads.fx
     val live = downloads.items.any { downloads.isOngoing(it) } || fx.flight != null
@@ -474,7 +481,7 @@ fun AnimatedDownloadsSlot(
                     alpha = appear.coerceIn(0f, 1f)
                 },
         ) {
-            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false, icon = HripsIcons.BarDownload)
+            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false, icon = HripsIcons.BarDownload, barStyle = barStyle)
         }
     }
 }

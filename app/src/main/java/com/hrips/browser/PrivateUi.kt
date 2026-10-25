@@ -53,6 +53,10 @@ class HripsGeckoView(context: Context) : GeckoView(context) {
 
     var onSearchText: ((String) -> Unit)? = null
 
+    /** Экранные координаты последнего касания (rawX/rawY): от них «вылетает» превью картинки и к ним же возвращается. */
+    var lastDownRawX = Float.NaN
+    var lastDownRawY = Float.NaN
+
     var pullEnabled = false
     var onPull: ((Float) -> Unit)? = null
     var onPullRelease: ((Float) -> Unit)? = null
@@ -96,6 +100,8 @@ class HripsGeckoView(context: Context) : GeckoView(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                lastDownRawX = event.rawX
+                lastDownRawY = event.rawY
                 downX = event.x
                 downY = event.y
                 pulling = false

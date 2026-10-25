@@ -66,6 +66,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -125,7 +126,7 @@ internal class BarPalette(
 )
 
 @Composable
-private fun rememberBarPalette(): BarPalette {
+internal fun rememberBarPalette(): BarPalette {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val container by animateColorAsState(cs.surfaceContainerHigh, motion.defaultEffectsSpec<Color>(), label = "barContainer")
@@ -134,20 +135,32 @@ private fun rememberBarPalette(): BarPalette {
 }
 
 @Composable
-private fun BarPill(
+internal fun BarPill(
     palette: BarPalette,
     modifier: Modifier = Modifier,
+    // Пилюля с кнопками сжимается целиком при нажатии кнопки; адресная строка управляет нажатием сама.
+    pressHost: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val host = remember { PillPress() }
     Surface(
-        modifier = modifier,
+        modifier = if (pressHost) {
+            modifier.graphicsLayer {
+                val s = host.scale.value
+                scaleX = s
+                scaleY = s
+            }
+        } else {
+            modifier
+        },
         shape = CircleShape,
         color = palette.container,
         contentColor = palette.content,
         shadowElevation = 6.dp,
         border = BorderStroke(0.5.dp, palette.edge),
-        content = content,
-    )
+    ) {
+        CompositionLocalProvider(LocalPillPress provides if (pressHost) host else null, content = content)
+    }
 }
 
 /**
@@ -426,7 +439,8 @@ internal fun BottomBar(
 
         BarPill(
             palette,
-            Modifier
+            pressHost = false,
+            modifier = Modifier
                 .weight(1f)
                 .barHeight(t)
                 .originAnchor("tabs")
@@ -681,7 +695,7 @@ internal fun BottomBar(
         Box(Modifier.collapseWidth(t)) {
             BarPill(palette, Modifier.appearLayer(appearRight, rise)) {
                 Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AnimatedDownloadsSlot(downloads, onClick = onDownloads, size = 40.dp, centered = true)
+                    AnimatedDownloadsSlot(downloads, onClick = onDownloads, size = 40.dp, centered = true, barStyle = true)
                     BarButton(onClick = onMore, modifier = Modifier.size(40.dp)) {
                         Icon(HripsIcons.BarMore, "Меню", Modifier.size(22.dp))
                     }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +86,12 @@ class OriginTracker {
 
 val LocalOrigins = staticCompositionLocalOf { OriginTracker() }
 
+/**
+ * Прогресс открытия RevealHost (0 закрыт, 1 открыт) для содержимого, которое анимирует себя само
+ * (RevealHost с selfAnimated). Читать только внутри graphicsLayer/layout, чтобы не перекомпоновывать.
+ */
+val LocalRevealProgress = staticCompositionLocalOf<() -> Float> { { 1f } }
+
 @Composable
 fun Modifier.originAnchor(group: String): Modifier {
     val tracker = LocalOrigins.current
@@ -107,6 +114,8 @@ private const val OPEN_MS = 420
 private const val CLOSE_MS = 300
 private const val FADE_OPEN_MS = 200
 private const val FADE_CLOSE_MS = 160
+private const val SELF_OPEN_MS = 340
+private const val SELF_CLOSE_MS = 260
 
 object HripsMotion {
     const val ChromeMs = 220
@@ -151,6 +160,8 @@ fun RevealHost(
     startColor: Color = Color.Unspecified,
     onDismiss: (() -> Unit)? = null,
     fadeOnly: Boolean = false,
+    // Содержимое само рисует появление (фон, перенос элементов), RevealHost только ведёт прогресс.
+    selfAnimated: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val tracker = LocalOrigins.current
@@ -187,13 +198,27 @@ fun RevealHost(
             shown = true
             withFrameNanos { }
             withFrameNanos { }
-            progress.animateTo(1f, if (fadeOnly) tween(FADE_OPEN_MS, easing = FastOutSlowInEasing) else tween(OPEN_MS, easing = OpenEasing))
+            progress.animateTo(
+                1f,
+                when {
+                    selfAnimated -> tween(SELF_OPEN_MS, easing = OpenEasing)
+                    fadeOnly -> tween(FADE_OPEN_MS, easing = FastOutSlowInEasing)
+                    else -> tween(OPEN_MS, easing = OpenEasing)
+                },
+            )
         } else if (shown) {
             if (tracker.instantClose) {
                 tracker.instantClose = false
                 progress.snapTo(0f)
             } else {
-                progress.animateTo(0f, if (fadeOnly) tween(FADE_CLOSE_MS, easing = FastOutSlowInEasing) else tween(CLOSE_MS, easing = CloseEasing))
+                progress.animateTo(
+                    0f,
+                    when {
+                        selfAnimated -> tween(SELF_CLOSE_MS, easing = CloseEasing)
+                        fadeOnly -> tween(FADE_CLOSE_MS, easing = FastOutSlowInEasing)
+                        else -> tween(CLOSE_MS, easing = CloseEasing)
+                    },
+                )
             }
             shown = false
             back.snapTo(0f)
@@ -216,7 +241,10 @@ fun RevealHost(
                 scaleX = bs
                 scaleY = bs
                 translationX = (if (backEdge == BackEventCompat.EDGE_LEFT) 1f else -1f) * b * 12.dp.toPx()
-                if (fadeOnly) {
+                if (selfAnimated) {
+                    shape = RevealShape(full, b * 32.dp.toPx())
+                    clip = b > 0f
+                } else if (fadeOnly) {
                     alpha = p.coerceIn(0f, 1f)
                     compositingStrategy = CompositingStrategy.ModulateAlpha
                     shape = RevealShape(full, b * 32.dp.toPx())
@@ -227,21 +255,26 @@ fun RevealHost(
                     clip = p < 1f || b > 0f
                 }
             }
-            .drawBehind {
-                val t = (progress.value * 3f).coerceIn(0f, 1f)
-                drawRect(lerpColor(fromColor, endColor, t))
-            },
+            .then(
+                if (selfAnimated) Modifier else Modifier.drawBehind {
+                    val t = (progress.value * 3f).coerceIn(0f, 1f)
+                    drawRect(lerpColor(fromColor, endColor, t))
+                },
+            ),
     ) {
+        val reveal = remember(progress) { { progress.value } }
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    val p = progress.value
-                    alpha = if (fadeOnly) 1f else (p / 0.3f).coerceIn(0f, 1f)
-                    val sc = if (fadeOnly) 1f else 0.94f + 0.06f * p.coerceIn(0f, 1f)
-                    scaleX = sc
-                    scaleY = sc
-                },
-        ) { content() }
+                .then(
+                    if (selfAnimated) Modifier else Modifier.graphicsLayer {
+                        val p = progress.value
+                        alpha = if (fadeOnly) 1f else (p / 0.3f).coerceIn(0f, 1f)
+                        val sc = if (fadeOnly) 1f else 0.94f + 0.06f * p.coerceIn(0f, 1f)
+                        scaleX = sc
+                        scaleY = sc
+                    },
+                ),
+        ) { CompositionLocalProvider(LocalRevealProgress provides reveal) { content() } }
     }
 }

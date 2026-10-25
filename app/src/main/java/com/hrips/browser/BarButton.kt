@@ -1,6 +1,7 @@
 package com.hrips.browser
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.setValue
@@ -29,6 +31,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+
+/**
+ * Общее состояние нажатия пилюли. Кнопка внутри пилюли не сжимает себя, а сжимает пилюлю целиком
+ * (кружок вместе с иконкой): значение читается в graphicsLayer пилюли, поэтому без перекомпозиции.
+ */
+internal class PillPress {
+    val scale = Animatable(1f)
+}
+
+internal val LocalPillPress = compositionLocalOf<PillPress?> { null }
+
+private const val PILL_PRESSED = 0.88f
 
 /**
  * Кнопка панели без подложки: на нажатие реагирует сама иконка. Вниз она быстро сжимается и тускнеет,
@@ -51,12 +65,22 @@ fun BarButton(
         if (pressed) held = true else { delay(90); held = false }
     }
     val motion = MaterialTheme.motionScheme
+    val host = LocalPillPress.current
+    if (host != null) {
+        LaunchedEffect(host, held) {
+            host.scale.animateTo(
+                if (held) PILL_PRESSED else 1f,
+                if (held) HripsMotion.pressDown() else HripsMotion.pressRelease(),
+            )
+        }
+    }
+    // Внутри пилюли сжимается она вся; без пилюли (кнопки в адресной строке) сжимается иконка.
     val press by animateFloatAsState(
-        if (held) 0.7f else 1f,
+        if (held && host == null) 0.7f else 1f,
         if (held) HripsMotion.pressDown() else HripsMotion.pressRelease(),
         label = "barBtnPress",
     )
-    val dim by animateFloatAsState(if (held) 0.5f else 1f, motion.fastEffectsSpec(), label = "barBtnDim")
+    val dim by animateFloatAsState(if (held) (if (host != null) 0.7f else 0.5f) else 1f, motion.fastEffectsSpec(), label = "barBtnDim")
     val base = LocalContentColor.current
     val tint by animateColorAsState(if (enabled) base else base.copy(alpha = 0.38f), motion.defaultEffectsSpec(), label = "barBtnTint")
     Box(

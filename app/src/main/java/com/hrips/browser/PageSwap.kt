@@ -19,6 +19,17 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
+import androidx.compose.ui.util.lerp as lerpF
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.statusBarsPadding
 
 @Composable
 fun TabSwapCover(tab: Tab, modifier: Modifier = Modifier) {
@@ -62,13 +73,22 @@ fun FadeInBox(modifier: Modifier = Modifier, durationMs: Int = HripsMotion.PageS
     Box(modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value }) { content() }
 }
 
-/** Снимок страницы просто гаснет, пока переключатель проявляется: одна прозрачность, без обрезки и масштаба. */
+/**
+ * Снимок страницы сжимается в карточку текущей вкладки и в конце растворяется, пока карточка проявляется.
+ * Карточка своей формы (как у экрана) совпадает по пропорциям со снимком, поэтому движение выглядит цельным.
+ * Если карточка не успела сообщить прямоугольник, снимок просто гаснет.
+ */
 @Composable
 fun TabsCollapseOverlay(thumb: ImageBitmap, modifier: Modifier = Modifier) {
-    val fade = remember { Animatable(1f) }
+    val origins = LocalOrigins.current
+    val p = remember { Animatable(0f) }
     var done by remember { mutableStateOf(false) }
+    var base by remember { mutableStateOf(Offset.Unspecified) }
     LaunchedEffect(Unit) {
-        fade.animateTo(0f, tween(HripsMotion.PageSwapMs, easing = FastOutSlowInEasing))
+        // Прямоугольник с прошлого открытия не подходит: сбрасываем и ждём новый от переключателя.
+        origins.currentCardRect = null
+        withTimeoutOrNull(180) { snapshotFlow { origins.currentCardRect }.first { it != null } }
+        p.animateTo(1f, tween(HripsMotion.PageSwapMs + 160, easing = FastOutSlowInEasing))
         done = true
     }
     if (done) return
@@ -77,9 +97,32 @@ fun TabsCollapseOverlay(thumb: ImageBitmap, modifier: Modifier = Modifier) {
         contentDescription = null,
         contentScale = ContentScale.Crop,
         alignment = Alignment.TopCenter,
-        modifier = modifier.fillMaxSize().graphicsLayer {
-            alpha = fade.value
-            compositingStrategy = CompositingStrategy.ModulateAlpha
-        },
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            // Центр читаем до собственного слоя: так в него не попадает анимация этого же слоя.
+            .onGloballyPositioned {
+                val c = it.boundsInRoot().center
+                if (c != base) base = c
+            }
+            .graphicsLayer {
+                val e = p.value
+                val r = origins.currentCardRect
+                if (r != null && base.isSpecified && size.width > 0f && size.height > 0f) {
+                    val sx = lerpF(1f, r.width / size.width, e)
+                    val sy = lerpF(1f, r.height / size.height, e)
+                    scaleX = sx
+                    scaleY = sy
+                    translationX = lerpF(0f, r.center.x - base.x, e)
+                    translationY = lerpF(0f, r.center.y - base.y, e)
+                    // Радиус делим на масштаб: после сжатия углы получаются 28 dp, как у карточки.
+                    shape = RoundedCornerShape((28.dp.toPx() * e / sx.coerceAtLeast(0.05f)).coerceAtLeast(0f))
+                    clip = e > 0f
+                    alpha = 1f - ((e - 0.7f) / 0.3f).coerceIn(0f, 1f)
+                } else {
+                    alpha = 1f - e
+                }
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
     )
 }

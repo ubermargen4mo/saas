@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -54,13 +55,13 @@ class ContextInfo(
     val baseUri: String?,
 )
 
-private class Act(val icon: ImageVector, val label: String, val run: () -> Unit)
+internal class MenuAct(val icon: ImageVector, val label: String, val run: () -> Unit)
 
 private fun isHttp(u: String) = u.startsWith("http://", ignoreCase = true) || u.startsWith("https://", ignoreCase = true)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit) {
+fun ContextMenuSheet(info: ContextInfo, browser: Browser, origin: Offset = Offset.Unspecified, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val link = info.linkUri?.takeIf { it.isNotBlank() }
@@ -87,14 +88,14 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
     val linkActs = buildList {
         if (link != null) {
             if (!link.startsWith("javascript:")) {
-                add(Act(HripsIcons.Add, "Открыть ссылку в новой вкладке") { browser.newTab(link, incognito = priv) })
+                add(MenuAct(HripsIcons.Add, "Открыть ссылку в новой вкладке") { browser.newTab(link, incognito = priv) })
                 if (!priv) {
-                    add(Act(HripsIcons.Mask, "Открыть ссылку в приватной вкладке") { browser.newTab(link, incognito = true) })
+                    add(MenuAct(HripsIcons.Mask, "Открыть ссылку в приватной вкладке") { browser.newTab(link, incognito = true) })
                 }
             }
-            add(Act(HripsIcons.Share, "Поделиться ссылкой") { share(link) })
-            add(Act(HripsIcons.Link, "Копировать адрес ссылки") { copy(link, "Адрес ссылки скопирован") })
-            if (isHttp(link)) add(Act(HripsIcons.Download, "Скачать по ссылке") { browser.saveUrl(link, info.baseUri, priv) })
+            add(MenuAct(HripsIcons.Share, "Поделиться ссылкой") { share(link) })
+            add(MenuAct(HripsIcons.Link, "Копировать адрес ссылки") { copy(link, "Адрес ссылки скопирован") })
+            if (isHttp(link)) add(MenuAct(HripsIcons.Download, "Скачать по ссылке") { browser.saveUrl(link, info.baseUri, priv) })
         }
     }
     val mediaActs = buildList {
@@ -102,17 +103,17 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
             if (isImage && mediaHttp) {
                 val searchEngine = ImageSearch.effectiveEngine(SearchEngines.current)
                 val name = if (searchEngine.host == "www.google.com") "Google Lens" else searchEngine.name
-                add(Act(HripsIcons.Search, "Найти это изображение в $name") {
+                add(MenuAct(HripsIcons.Search, "Найти это изображение в $name") {
                     browser.newTab(ImageSearch.byUrl(SearchEngines.current, media), incognito = priv)
                 })
             }
-            if (mediaHttp) add(Act(HripsIcons.Add, "Открыть $noun в новой вкладке") { browser.newTab(media, incognito = priv) })
-            if (mediaHttp) add(Act(HripsIcons.Download, "Сохранить $noun…") { browser.saveUrl(media, info.baseUri, priv) })
+            if (mediaHttp) add(MenuAct(HripsIcons.Add, "Открыть $noun в новой вкладке") { browser.newTab(media, incognito = priv) })
+            if (mediaHttp) add(MenuAct(HripsIcons.Download, "Сохранить $noun…") { browser.saveUrl(media, info.baseUri, priv) })
             if (isImage && mediaHttp) {
-                add(Act(HripsIcons.Copy, "Скопировать изображение") { copyImage(ctx.applicationContext, browser, media, info.baseUri) })
+                add(MenuAct(HripsIcons.Copy, "Скопировать изображение") { copyImage(ctx.applicationContext, browser, media, info.baseUri) })
             }
-            add(Act(HripsIcons.Share, "Поделиться адресом $nounOf") { share(media) })
-            add(Act(HripsIcons.Link, "Копировать адрес $nounOf") { copy(media, "Адрес скопирован") })
+            add(MenuAct(HripsIcons.Share, "Поделиться адресом $nounOf") { share(media) })
+            add(MenuAct(HripsIcons.Link, "Копировать адрес $nounOf") { copy(media, "Адрес скопирован") })
         }
     }
 
@@ -123,6 +124,12 @@ fun ContextMenuSheet(info: ContextInfo, browser: Browser, onDismiss: () -> Unit)
             ?: Uri.parse(media).lastPathSegment ?: media.orEmpty()
     }
     val sub = link ?: media.orEmpty()
+    // Удержание картинки: большое превью из точки нажатия и меню под ним, как в iOS.
+    // Приватные вкладки остаются на шторке: превью грузится отдельным запросом вне приватной сессии.
+    if (isImage && mediaHttp && !priv && media != null) {
+        ImagePreviewMenu(media, info.baseUri, linkActs, mediaActs, origin, onDismiss)
+        return
+    }
     val thumb by produceState<ImageBitmap?>(null, media) {
         value = if (media != null && isImage && mediaHttp && !priv) withContext(Dispatchers.IO) { loadThumb(media, info.baseUri) } else null
     }
@@ -256,7 +263,7 @@ private fun VideoPreview(url: String, referrer: String?, onFail: () -> Unit) {
 }
 
 @Composable
-private fun ActGroup(acts: List<Act>, onDone: () -> Unit) {
+private fun ActGroup(acts: List<MenuAct>, onDone: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         acts.forEachIndexed { i, a ->
             Surface(
@@ -339,7 +346,7 @@ private fun copyImage(app: Context, browser: Browser, url: String, referrer: Str
     }
 }
 
-private fun loadThumb(url: String, referrer: String?): ImageBitmap? = try {
+internal fun loadThumb(url: String, referrer: String?, maxDim: Int = 512, byteCap: Int = 3_000_000): ImageBitmap? = try {
     val c = URL(url).openConnection() as HttpURLConnection
     try {
         c.connectTimeout = 5000
@@ -354,7 +361,7 @@ private fun loadThumb(url: String, referrer: String?): ImageBitmap? = try {
             val out = ByteArrayOutputStream()
             c.inputStream.use { input ->
                 val buf = ByteArray(8192)
-                while (out.size() < 3_000_000) {
+                while (out.size() < byteCap) {
                     val n = input.read(buf)
                     if (n < 0) break
                     out.write(buf, 0, n)
@@ -369,7 +376,7 @@ private fun loadThumb(url: String, referrer: String?): ImageBitmap? = try {
                 null
             } else {
                 var sample = 1
-                while (bounds.outWidth / (sample * 2) > 512 || bounds.outHeight / (sample * 2) > 512) sample *= 2
+                while (bounds.outWidth / (sample * 2) > maxDim || bounds.outHeight / (sample * 2) > maxDim) sample *= 2
                 BitmapFactory.decodeByteArray(
                     data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = sample }
                 )?.asImageBitmap()
