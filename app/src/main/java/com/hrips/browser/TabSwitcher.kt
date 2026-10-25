@@ -27,6 +27,14 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -74,6 +82,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -267,7 +276,8 @@ private fun tabSubtitle(tab: Tab): String = when {
 /** Доля отрезка [from, to] прогресса: 0 до его начала, 1 после конца. Для ступенчатого появления частей экрана. */
 private fun stage(p: Float, from: Float, to: Float): Float = ((p - from) / (to - from)).coerceIn(0f, 1f)
 
-private val SWITCHER_BAR_H = 56.dp
+private val SWITCHER_BAR_H = 52.dp
+private val SWITCHER_TOP_H = 40.dp
 private const val STRIP_REACH = 9
 
 private class CoordsHolder {
@@ -510,14 +520,13 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         }
 
         SwitcherBar(
-            count = if (mode == 1) privateCount else normalCount,
+            count = normalCount,
             privatePage = mode == 1,
             reveal = reveal,
             from = fromRect,
             fromText = fromText,
             onNew = { onNew(mode == 1) },
-            onTogglePrivate = { mode = if (mode == 1) 0 else 1 },
-            onDone = onClose,
+            onSelectPrivate = { mode = if (it) 1 else 0 },
             onSearch = { searching = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -575,6 +584,9 @@ private fun TabGridPage(
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
     }
+    // Смах вверх закрывает вкладку, пока сетка не может прокрутиться дальше вниз (всё помещается или список упёрся в конец).
+    // Иначе тот же жест листает сетку: у вертикальной прокрутки и у смаха вверх один и тот же жест, и две вещи сразу он не умеет.
+    val swipeClose by remember(state) { derivedStateOf { !state.canScrollForward } }
     // На телефоне всегда две колонки (раньше Adaptive(160) на узком экране давал одну), на широком окне по ширине.
     val phone = LocalConfiguration.current.screenWidthDp < 600
     // Карточки чуть вытянуты вверх, как миниатюры в Safari; крайние значения не дают ни «спичек», ни квадратов.
@@ -588,22 +600,26 @@ private fun TabGridPage(
         modifier = Modifier.fillMaxSize(),
     ) {
         gridItems(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
-            Column(
-                Modifier
+            GridSwipeUpToClose(
+                enabled = swipeClose,
+                onClose = { onClose(t) },
+                modifier = Modifier
                     .fillMaxWidth()
                     .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)),
             ) {
-                TabCard(
-                    tab = t,
-                    selected = i == current,
-                    env = env,
-                    onOpen = { onOpen(i) },
-                    onClose = { onClose(t) },
-                    modifier = Modifier.fillMaxWidth().aspectRatio(cardAspect),
-                    clean = true,
-                    corner = 20.dp,
-                )
-                TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp))
+                Column(Modifier.fillMaxWidth()) {
+                    TabCard(
+                        tab = t,
+                        selected = i == current,
+                        env = env,
+                        onOpen = { onOpen(i) },
+                        onClose = { onClose(t) },
+                        modifier = Modifier.fillMaxWidth().aspectRatio(cardAspect),
+                        clean = true,
+                        corner = 20.dp,
+                    )
+                    TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp))
+                }
             }
         }
     }
@@ -872,6 +888,64 @@ private fun SwipeUpToClose(onClose: () -> Unit, modifier: Modifier = Modifier, c
                     }
                 },
             )
+            .graphicsLayer {
+                translationY = offset
+                alpha = 1f - 0.85f * (-offset / height).coerceIn(0f, 1f)
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
+    ) { content() }
+}
+
+/**
+ * Смахивание вверх для карточки в сетке. От [SwipeUpToClose] отличается тем, что забирает жест себе только когда он
+ * направлен вверх, преимущественно вертикален и [enabled]; движение вниз и в стороны остаются за прокруткой сетки.
+ * Бросок или проход за порог закрывает вкладку, иначе карточка возвращается на место.
+ */
+@Composable
+private fun GridSwipeUpToClose(enabled: Boolean, onClose: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    var offset by remember { mutableFloatStateOf(0f) }
+    var height by remember { mutableFloatStateOf(1f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val closeNow by rememberUpdatedState(onClose)
+    val enabledNow by rememberUpdatedState(enabled)
+    Box(
+        modifier
+            .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var claimed = false
+                    val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
+                        if (enabledNow && over < 0f) {
+                            change.consume()
+                            claimed = true
+                        }
+                    }
+                    if (slop == null || !claimed) return@awaitEachGesture
+                    val tracker = VelocityTracker()
+                    tracker.addPointerInputChange(slop)
+                    offset = (offset + slop.positionChange().y).coerceAtMost(0f)
+                    val finished = verticalDrag(slop.id) { change ->
+                        tracker.addPointerInputChange(change)
+                        offset = (offset + change.positionChange().y).coerceAtMost(0f)
+                        change.consume()
+                    }
+                    val velocity = if (finished) tracker.calculateVelocity().y else 0f
+                    val from = offset
+                    scope.launch {
+                        if (from < -height * 0.22f || velocity < -1200f) {
+                            animate(from, -height * 1.15f, 0f, tween(SWIPE_MS)) { v, _ -> offset = v }
+                            runCatching { haptic.performHapticFeedback(HapticFeedbackType.Confirm) }
+                            closeNow()
+                            delay(300)
+                            offset = 0f
+                        } else {
+                            animate(from, 0f, 0f, tween(MOVE_MS, easing = FastOutSlowInEasing)) { v, _ -> offset = v }
+                        }
+                    }
+                }
+            }
             .graphicsLayer {
                 translationY = offset
                 alpha = 1f - 0.85f * (-offset / height).coerceIn(0f, 1f)
@@ -1181,7 +1255,7 @@ private fun SwitcherHeader(
                     GroupPill(privatePage, store, onGroup)
                 }
                 // Пустой кружок справа держит пилюлю группы строго по центру.
-                Spacer(Modifier.size(44.dp))
+                Spacer(Modifier.size(SWITCHER_TOP_H))
             }
         }
     }
@@ -1203,47 +1277,63 @@ private fun SwitcherMenu(
 ) {
     var menu by remember { mutableStateOf(false) }
     Box {
-        BarPill(rememberBarPalette(), Modifier.size(44.dp)) {
+        BarPill(rememberBarPalette(), Modifier.size(SWITCHER_TOP_H)) {
             BarButton(onClick = { menu = true }) { Icon(HripsIcons.BarMore, "Ещё") }
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = HripsShapes.L) {
+        SegMenu(expanded = menu, onDismiss = { menu = false }) {
             val views = listOf(
                 Triple(0, "Список", HripsIcons.Rows),
                 Triple(1, "Сетка", HripsIcons.Grid),
                 Triple(2, "Карточки", HripsIcons.Layers),
             )
-            views.forEach { (v, label, icon) ->
-                DropdownMenuItem(
-                    text = { Text(label, fontWeight = if (v == view) FontWeight.SemiBold else FontWeight.Normal) },
-                    leadingIcon = { Icon(icon, null) },
-                    trailingIcon = { if (v == view) Icon(HripsIcons.Check, null, Modifier.size(20.dp)) },
-                    onClick = { menu = false; onView(v) },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                views.forEachIndexed { i, (v, label, icon) ->
+                    ToolRow(
+                        icon, label, segCorners(views.size, 1, i, 22.dp, 6.dp),
+                        selected = v == view,
+                        trailing = if (v == view) HripsIcons.Check else null,
+                    ) { menu = false; onView(v) }
+                }
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("История") },
-                leadingIcon = { Icon(HripsIcons.History, null) },
-                onClick = { menu = false; onHistory() },
-            )
-            if (!privatePage) {
-                DropdownMenuItem(
-                    text = { Text(if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые") },
-                    leadingIcon = { Icon(HripsIcons.History, null) },
-                    enabled = closedCount > 0,
-                    onClick = { menu = false; onClosed() },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val hasClosed = !privatePage
+                val n = if (hasClosed) 2 else 1
+                ToolRow(HripsIcons.History, "История", segCorners(n, 1, 0, 22.dp, 6.dp)) { menu = false; onHistory() }
+                if (hasClosed) {
+                    ToolRow(
+                        HripsIcons.History,
+                        if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые",
+                        segCorners(n, 1, 1, 22.dp, 6.dp),
+                        enabled = closedCount > 0,
+                    ) { menu = false; onClosed() }
+                }
             }
-            DropdownMenuItem(
-                text = { Text(if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки") },
-                leadingIcon = { Icon(HripsIcons.Trash, null) },
-                onClick = { menu = false; onCloseAll() },
-            )
+            ToolRow(
+                HripsIcons.Trash, if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки",
+                Corners.all(22.dp), danger = true,
+            ) { menu = false; onCloseAll() }
         }
     }
 }
 
-private val GROUP_ICONS get() = listOf(HripsIcons.Home, HripsIcons.Folder, HripsIcons.Star, HripsIcons.Globe, HripsIcons.Layers, HripsIcons.Grid)
+/**
+ * Меню экрана вкладок в стиле меню инструментов: панель surfaceContainer с большим скруглением, внутри сегментные
+ * группы строк (внешние углы большие, внутренние маленькие, при нажатии строка округляется).
+ */
+@Composable
+private fun SegMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val width = minOf(280.dp, (LocalConfiguration.current.screenWidthDp - 32).dp)
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = HripsShapes.XL,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(Modifier.width(width).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+private val GROUP_ICONS get() = listOf(HripsIcons.Home, HripsIcons.Folder, HripsIcons.Star, HripsIcons.Globe, HripsIcons.Layers, HripsIcons.Grid, HripsIcons.Person)
 
 private fun groupIcon(i: Int) = GROUP_ICONS[i.coerceIn(0, GROUP_ICONS.lastIndex)]
 
@@ -1263,7 +1353,7 @@ private fun GroupPill(privatePage: Boolean, store: Store, onGroup: (String) -> U
     val title = if (privatePage) "Приватные" else activeGroup?.name ?: store.personalName
     val icon = if (privatePage) HripsIcons.Mask else groupIcon(activeGroup?.icon ?: store.personalIcon)
     Box {
-        BarPill(rememberBarPalette(), Modifier.height(44.dp)) {
+        BarPill(rememberBarPalette(), Modifier.height(SWITCHER_TOP_H)) {
             BarButton(
                 onClick = { menu = true },
                 onLongClick = if (privatePage) null else {
@@ -1271,33 +1361,29 @@ private fun GroupPill(privatePage: Boolean, store: Store, onGroup: (String) -> U
                 },
                 wrap = true,
             ) {
-                Row(Modifier.padding(horizontal = 16.dp).widthIn(max = 220.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icon, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
+                Row(Modifier.padding(horizontal = 14.dp).widthIn(max = 220.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     Spacer(Modifier.width(4.dp))
-                    Icon(HripsIcons.ChevronDown, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                    Icon(HripsIcons.ChevronDown, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
                 }
             }
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = HripsShapes.L) {
+        SegMenu(expanded = menu, onDismiss = { menu = false }) {
             val all = listOf(TabGroupRow("", store.personalName, store.personalIcon)) +
                 store.tabGroups.map { TabGroupRow(it.id, it.name, it.icon) }
-            all.forEach { g ->
-                val selected = !privatePage && g.id == active
-                DropdownMenuItem(
-                    text = { Text(g.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = { Icon(groupIcon(g.icon), null) },
-                    trailingIcon = { if (selected) Icon(HripsIcons.Check, null, Modifier.size(20.dp)) },
-                    onClick = { menu = false; onGroup(g.id) },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                all.forEachIndexed { i, g ->
+                    val selected = !privatePage && g.id == active
+                    ToolRow(
+                        groupIcon(g.icon), g.name, segCorners(all.size, 1, i, 22.dp, 6.dp),
+                        selected = selected,
+                        trailing = if (selected) HripsIcons.Check else null,
+                    ) { menu = false; onGroup(g.id) }
+                }
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Новая группа") },
-                leadingIcon = { Icon(HripsIcons.Add, null) },
-                onClick = { menu = false; creating = true },
-            )
+            ToolRow(HripsIcons.Add, "Новая группа", Corners.all(22.dp)) { menu = false; creating = true }
         }
     }
     editing?.let { id ->
@@ -1326,6 +1412,7 @@ private fun GroupPill(privatePage: Boolean, store: Store, onGroup: (String) -> U
 private class TabGroupRow(val id: String, val name: String, val icon: Int)
 
 /** Название и значок группы; для созданных пользователем групп есть ещё удаление (вкладки уходят в «Личные»). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GroupDialog(
     title: String,
@@ -1349,7 +1436,7 @@ private fun GroupDialog(
                     label = { Text("Название") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     GROUP_ICONS.forEachIndexed { i, ic ->
                         val sel = i == icon
                         Box(
@@ -1488,7 +1575,7 @@ private fun EmptyTabs(priv: Boolean, searching: Boolean, onNew: () -> Unit, modi
 }
 
 /**
- * Нижняя панель экрана вкладок, как в Safari на айфоне: «+», «Приватные», счётчик вкладок, лупа.
+ * Нижняя панель экрана вкладок, как в Safari на айфоне: лупа, «Приватные», счётчик вкладок, «+» (на месте «Готово»).
  * Начинается ровно как адресная строка браузера (её прямоугольник), а по мере открытия вырастает на всю ширину,
  * и в ней проявляются кнопки: строка поиска превращается в панель вкладок.
  * Размер и положение считаются в layout по прогрессу открытия, поэтому за кадр нет перекомпозиции.
@@ -1501,8 +1588,7 @@ private fun SwitcherBar(
     from: UiRect?,
     fromText: String,
     onNew: () -> Unit,
-    onTogglePrivate: () -> Unit,
-    onDone: () -> Unit,
+    onSelectPrivate: (Boolean) -> Unit,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1512,8 +1598,6 @@ private fun SwitcherBar(
     val density = LocalDensity.current
     val fabBg by animateColorAsState(if (privatePage) cs.tertiary else cs.primary, tween(MOVE_MS), label = "fabBg")
     val fabFg by animateColorAsState(if (privatePage) cs.onTertiary else cs.onPrimary, tween(MOVE_MS), label = "fabFg")
-    val chipBg by animateColorAsState(if (privatePage) cs.tertiaryContainer else Color.Transparent, tween(MOVE_MS), label = "chipBg")
-    val chipFg by animateColorAsState(if (privatePage) cs.onTertiaryContainer else cs.onSurface, tween(MOVE_MS), label = "chipFg")
     var slot by remember { mutableStateOf<UiRect?>(null) }
     Box(
         modifier
@@ -1558,7 +1642,7 @@ private fun SwitcherBar(
                         Modifier
                             .requiredWidth(fullW)
                             .fillMaxHeight()
-                            .padding(horizontal = 6.dp)
+                            .padding(horizontal = 4.dp)
                             .graphicsLayer {
                                 val c = stage(reveal(), 0.3f, 0.85f)
                                 alpha = c
@@ -1568,36 +1652,70 @@ private fun SwitcherBar(
                             },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        BarButton(onClick = onSearch) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
+                        Spacer(Modifier.weight(1f))
+                        ModeToggle(privatePage, count, onSelectPrivate)
+                        Spacer(Modifier.weight(1f))
                         AccentAddButton(fabBg, fabFg, if (privatePage) "Новая приватная вкладка" else "Новая вкладка") {
                             haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                             onNew()
                         }
-                        Spacer(Modifier.weight(1f))
-                        // «Приватные»: включает и выключает приватный режим; в приватном режиме подсвечен.
-                        BarButton(onClick = onTogglePrivate, wrap = true) {
-                            Box(
-                                Modifier.clip(CircleShape).background(chipBg).padding(horizontal = 14.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    "Приватные", color = chipFg, maxLines = 1,
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        // Сколько вкладок в текущей группе; нажатие закрывает обзор (как «Готово»).
-                        BarButton(onClick = onDone, wrap = true) {
-                            Box(
-                                Modifier.clip(CircleShape).background(cs.onSurface.copy(alpha = 0.12f)).padding(horizontal = 14.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(tabsCountText(count), maxLines = 1, style = MaterialTheme.typography.titleSmall)
-                            }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        BarButton(onClick = onSearch) { Icon(HripsIcons.Search, "Поиск по вкладкам") }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Переключатель «Приватные» / «N вкладок» (обычные вкладки текущей группы). Выбранный сегмент подсвечен капсулой,
+ * которая скользит к соседнему: положение и ширина анимируются пружиной темы. Закрывать обзор он не умеет.
+ */
+@Composable
+private fun ModeToggle(privatePage: Boolean, count: Int, onSelectPrivate: (Boolean) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val haptic = LocalHapticFeedback.current
+    var privX by remember { mutableIntStateOf(0) }
+    var privW by remember { mutableIntStateOf(0) }
+    var tabsX by remember { mutableIntStateOf(0) }
+    var tabsW by remember { mutableIntStateOf(0) }
+    val x by animateFloatAsState((if (privatePage) privX else tabsX).toFloat(), motion.defaultSpatialSpec(), label = "toggleX")
+    val w by animateFloatAsState((if (privatePage) privW else tabsW).toFloat(), motion.defaultSpatialSpec(), label = "toggleW")
+    val pill by animateColorAsState(if (privatePage) cs.tertiaryContainer else cs.onSurface.copy(alpha = 0.12f), motion.defaultEffectsSpec(), label = "togglePill")
+    val privFg by animateColorAsState(if (privatePage) cs.onTertiaryContainer else cs.onSurface, motion.defaultEffectsSpec(), label = "togglePrivFg")
+    Box(contentAlignment = Alignment.CenterStart) {
+        Box(
+            Modifier
+                .layout { m, c ->
+                    val p = m.measure(Constraints.fixed(w.roundToInt().coerceAtLeast(0), 34.dp.roundToPx()))
+                    layout(0, p.height) { p.place(x.roundToInt(), 0) }
+                }
+                .background(pill, CircleShape),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.onPlaced { privX = it.positionInParent().x.roundToInt(); privW = it.size.width }
+                    .semantics { selected = privatePage },
+            ) {
+                BarButton(onClick = { if (!privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(true) } }, wrap = true) {
+                    Text(
+                        "Приватные", color = privFg, maxLines = 1, softWrap = false,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
+                }
+            }
+            Box(
+                Modifier.onPlaced { tabsX = it.positionInParent().x.roundToInt(); tabsW = it.size.width }
+                    .semantics { selected = !privatePage },
+            ) {
+                BarButton(onClick = { if (privatePage) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelectPrivate(false) } }, wrap = true) {
+                    Text(
+                        tabsCountText(count), maxLines = 1, softWrap = false,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
                 }
             }
         }

@@ -337,6 +337,8 @@ internal fun ToolRow(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     trailing: ImageVector? = null,
+    enabled: Boolean = true,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -344,19 +346,24 @@ internal fun ToolRow(
         onClick,
         corners,
         color = if (selected) cs.primaryContainer else cs.surfaceContainerHigh,
-        contentColor = if (selected) cs.onPrimaryContainer else cs.onSurface,
+        contentColor = when {
+            danger -> cs.error
+            selected -> cs.onPrimaryContainer
+            else -> cs.onSurface
+        },
         pressedCorner = 18.dp,
         pressScale = 0.985f,
-        modifier = modifier.fillMaxWidth().height(46.dp),
+        modifier = modifier.fillMaxWidth().height(46.dp).alpha(if (enabled) 1f else 0.4f),
+        enabled = enabled,
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(icon, null, Modifier.size(21.dp), tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
+            Icon(icon, null, Modifier.size(21.dp), tint = if (danger) cs.error else if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
             Text(label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            if (trailing != null) Icon(trailing, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+            if (trailing != null) Icon(trailing, null, Modifier.size(18.dp), tint = if (selected) cs.primary else cs.onSurfaceVariant)
         }
     }
 }

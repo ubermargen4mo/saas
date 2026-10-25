@@ -251,6 +251,20 @@ object HripsIcons {
     }
     val MoreVert by lazy { BarMore }
 
+    /** Человек (голова и плечи): значок группы «Личные» по умолчанию. */
+    val Person by lazy {
+        icon("Person", filled = true) {
+            circle(12f, 7.6f, 3.9f)
+            moveTo(4.6f, 19.6f)
+            curveTo(4.6f, 16.3f, 7.9f, 14.2f, 12f, 14.2f)
+            curveTo(16.1f, 14.2f, 19.4f, 16.3f, 19.4f, 19.6f)
+            curveTo(19.4f, 20.1f, 19f, 20.5f, 18.5f, 20.5f)
+            horizontalLineTo(5.5f)
+            curveTo(5f, 20.5f, 4.6f, 20.1f, 4.6f, 19.6f)
+            close()
+        }
+    }
+
     val Pencil by lazy {
         icon("Pencil") {
             moveTo(16f, 4f); lineToRelative(4f, 4f); lineTo(8f, 20f); lineTo(3.5f, 20.5f); lineTo(4f, 16f); close()

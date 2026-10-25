@@ -298,7 +298,8 @@ class Store(context: Context) {
         private set
 
     /** Вид переключателя вкладок: 0 - список, 1 - сетка, 2 - крупные карточки. Старая настройка `tabs_grid` переносится один раз. */
-    var tabsView by mutableIntStateOf(prefs.getInt("tabs_view", if (prefs.getBoolean("tabs_grid", false)) 1 else 0).coerceIn(0, 2))
+    // По умолчанию сетка (1). Вид, выбранный вручную в меню «⋯», сохраняется и дальше имеет приоритет.
+    var tabsView by mutableIntStateOf(prefs.getInt("tabs_view", 1).coerceIn(0, 2))
         private set
 
     fun updateTabsView(v: Int) {
@@ -314,7 +315,8 @@ class Store(context: Context) {
 
     var personalName by mutableStateOf(prefs.getString("tab_group_personal_name", null) ?: "Личные")
         private set
-    var personalIcon by mutableIntStateOf(prefs.getInt("tab_group_personal_icon", 0))
+    // 6 - значок «человек» (последний в списке значков групп), как у группы «Личные» в образце.
+    var personalIcon by mutableIntStateOf(prefs.getInt("tab_group_personal_icon", 6))
         private set
     val tabGroups = mutableStateListOf<TabGroup>().also { list ->
         runCatching {
