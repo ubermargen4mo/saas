@@ -47,30 +47,6 @@ internal fun Tab.label() = when {
     else -> title.ifBlank { url }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun PageProgressBar(tab: Tab) {
-    Box(Modifier.fillMaxWidth().height(10.dp), contentAlignment = Alignment.Center) {
-        val shownProgress by animateFloatAsState(
-            tab.progress / 100f,
-            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
-            label = "pageProgress",
-        )
-        val finishing = !tab.loading && tab.progress >= 100 && shownProgress < 0.99f
-        val barAlpha by animateFloatAsState(
-            if ((tab.loading || finishing) && !tab.home) 1f else 0f,
-            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
-            label = "pageProgressAlpha",
-        )
-        if (barAlpha > 0.01f) {
-            LinearProgressIndicator(
-                progress = { shownProgress },
-                modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = barAlpha },
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun BrowserScreen(browser: Browser) {
@@ -310,7 +286,6 @@ fun BrowserScreen(browser: Browser) {
         SiteHeaderTheme(siteColor) {
         Column(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).statusBarsPadding()) {
-            if (wide) TabStrip(browser)
             AnimatedVisibility(
                 visible = wide,
                 enter = fadeIn(tween(HripsMotion.ChromeMs)),
@@ -318,30 +293,28 @@ fun BrowserScreen(browser: Browser) {
             ) {
             Row(
                 Modifier.fillMaxWidth().padding(
-                    start = if (wide) 4.dp else 12.dp,
-                    end = if (wide) 4.dp else 12.dp,
-                    top = 4.dp,
-                    bottom = if (wide) 1.dp else 4.dp,
+                    start = if (wide) 6.dp else 12.dp,
+                    end = if (wide) 6.dp else 12.dp,
+                    top = if (wide) 2.dp else 4.dp,
+                    bottom = if (wide) 3.dp else 4.dp,
                 ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Как в Safari: группы кнопок на плоских подложках, одного размера и с одинаковыми значками.
                 if (wide) {
-                    // Слева стрелки и «домой» на подложке цвета адресной строки.
-                    ToolbarCapsule {
-                        BarButton(modifier = Modifier.size(40.dp), onClick = goBack, enabled = backEnabled) {
-                            Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(26.dp))
+                    ToolbarGroup {
+                        BarButton(modifier = Modifier.size(36.dp), onClick = goBack, enabled = backEnabled) {
+                            Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(24.dp))
                         }
-                        BarButton(modifier = Modifier.size(40.dp), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(26.dp))
+                        BarButton(modifier = Modifier.size(36.dp), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
+                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(24.dp))
                         }
                     }
-                    Spacer(Modifier.width(4.dp))
-                    // У «домой» своя круглая подложка.
-                    ToolbarCapsule(horizontalPadding = 0.dp) {
-                        BarButton(modifier = Modifier.size(40.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(24.dp)) }
+                    Spacer(Modifier.width(6.dp))
+                    ToolbarGroup(horizontalPadding = 2.dp) {
+                        BarButton(modifier = Modifier.size(36.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(22.dp)) }
                     }
                 }
-                // Адресная строка занимает всё свободное место между группами кнопок.
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp), contentAlignment = Alignment.Center) {
                     AddressBar(
                         tab = tab,
@@ -354,23 +327,23 @@ fun BrowserScreen(browser: Browser) {
                     )
                 }
                 if (wide) {
-                    // Значки разной ширины (рамка 22 dp, пазл 20 dp, три точки 4 dp): у «ещё» кнопка уже,
-                    // тогда просветы между самими значками и до краёв подложки визуально равны.
-                    ToolbarCapsule(horizontalPadding = 0.dp) {
-                        Spacer(Modifier.width(2.dp))
-                        TabCounterButton(browser.tabs.size, Modifier.size(40.dp).originAnchor("tabs")) { requestTabs() }
-                        BarButton(modifier = Modifier.size(40.dp), onClick = { showExtManager = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
-                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = 40.dp)
-                        BarButton(modifier = Modifier.size(width = 26.dp, height = 40.dp), onClick = { showTools = true }) {
-                            Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
+                    ToolbarGroup {
+                        BarButton(modifier = Modifier.size(36.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка", Modifier.size(22.dp)) }
+                        TabCounterButton(browser.tabs.size, Modifier.size(36.dp).originAnchor("tabs")) { requestTabs() }
+                        BarButton(modifier = Modifier.size(36.dp), onClick = { showExtManager = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(22.dp)) }
+                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = 36.dp)
+                        BarButton(modifier = Modifier.size(36.dp), onClick = { showTools = true }) {
+                            Icon(HripsIcons.BarMoreH, "Инструменты", Modifier.size(22.dp))
                         }
                     }
-                    Spacer(Modifier.width(4.dp))
                 }
             }
             }
+            // Как панель вкладок в Safari: появляется под панелью, когда вкладок больше одной; с одной вкладкой шапка в один ряд.
+            if (wide) {
+                AnimatedVisibility(visible = browser.contextTabs(browser.current).size > 1) { TabStrip(browser) }
+            }
         }
-        if (wide) PageProgressBar(tab)
         }
         }
 

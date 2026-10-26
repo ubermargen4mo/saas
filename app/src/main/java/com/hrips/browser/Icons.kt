@@ -558,6 +558,7 @@ object HripsIcons {
     }
 
     val BarMore by lazy { fillIcon("BarMore") { circle(12f, 6f, 2f); circle(12f, 12f, 2f); circle(12f, 18f, 2f) } }
+    val BarMoreH by lazy { fillIcon("BarMoreH") { circle(5f, 12f, 1.9f); circle(12f, 12f, 1.9f); circle(19f, 12f, 1.9f) } }
 
     val BarHome by lazy { icon("BarHome", stroke = 2f, scale = 0.8f) { home() } }
     val Pause by lazy {

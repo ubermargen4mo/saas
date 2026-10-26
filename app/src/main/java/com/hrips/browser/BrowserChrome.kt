@@ -9,6 +9,12 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shape
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -56,53 +62,69 @@ internal fun AddressBar(
     val fxOut = motion.fastEffectsSpec<Float>()
     val popIn = motion.fastSpatialSpec<Float>()
     val cs = MaterialTheme.colorScheme
+    // Как в Safari: плоская капсула, адрес по центру, замок рядом с ним, справа обновление.
     val barHeight = (if (wide) 40.dp else 44.dp) * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
-    Surface(
-        shape = CircleShape,
-        color = cs.surfaceContainerHigh,
-        modifier = modifier.height(barHeight).originAnchor("search"),
-    ) {
+
+    // Загрузка как в нижней панели телефона: заливка адресной строки с бегущим бликом и кольцо на кнопке «обновить».
+    val progressState = remember { Animatable(0f) }
+    LaunchedEffect(tab) {
+        snapshotFlow { if (tab.home) 0f else if (tab.loading) tab.progress / 100f else 1f }.collectLatest { v ->
+            if (v < progressState.value && tab.loading) progressState.snapTo(v) else progressState.animateTo(v, motion.defaultEffectsSpec<Float>())
+        }
+    }
+    var fillOn by remember { mutableStateOf(false) }
+    LaunchedEffect(tab.loading, tab.home) {
+        if (tab.loading && !tab.home) {
+            fillOn = true
+        } else if (fillOn) {
+            delay(450)
+            fillOn = false
+        }
+    }
+    val fillAlpha = animateFloatAsState(if (fillOn) 1f else 0f, motion.defaultEffectsSpec<Float>(), label = "barFillAlpha")
+
+    FlatCapsule(modifier = modifier.height(barHeight).originAnchor("search")) {
+      Box(Modifier.fillMaxSize()) {
+        if (fillOn || fillAlpha.value > 0.01f) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
         Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            AnimatedContent(
-                targetState = withPicker,
-                transitionSpec = {
-                    (fadeIn(fxIn) + scaleIn(popIn, initialScale = 0.7f)) togetherWith (fadeOut(fxOut) + scaleOut(popIn, targetScale = 0.7f)) using
-                        SizeTransform(clip = false) { _, _ -> snap() }
-                },
-                label = "barLeading",
-            ) { picker ->
-                if (picker) {
-                    Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-                } else {
-                    BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
-                            "Безопасность соединения",
-                            tint = if (tab.trust == Trust.WARNING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            if (withPicker) {
+                Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+            } else {
+                Spacer(Modifier.width(36.dp))
             }
             Row(
                 Modifier.weight(1f).fillMaxHeight().clickable(onClickLabel = "Ввести запрос или адрес") { onSearch() },
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
+                if (!withPicker) {
+                    Box(Modifier.size(24.dp).clickable(onClickLabel = "Безопасность соединения") { showSecurity = true }, contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
+                            "Безопасность соединения",
+                            Modifier.size(18.dp),
+                            tint = if (tab.trust == Trust.WARNING) cs.error else cs.onSurfaceVariant,
+                        )
+                    }
+                }
                 AnimatedContent(
                     targetState = shown,
                     transitionSpec = {
                         fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
                             SizeTransform(clip = false) { _, _ -> snap() }
                     },
-                    contentAlignment = Alignment.CenterStart,
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.weight(1f, fill = false),
                     label = "barText",
                 ) { text ->
                     Text(
                         text.ifEmpty { "Искать или задать вопрос" },
-                        modifier = Modifier.padding(start = if (withPicker) 8.dp else 4.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (text.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (text.isEmpty()) cs.onSurfaceVariant else cs.onSurface,
                     )
                 }
             }
@@ -115,11 +137,13 @@ internal fun AddressBar(
                     },
                     label = "barReload",
                 ) { loading ->
-                    Icon(if (loading) HripsIcons.BarClose else HripsIcons.BarRefresh, "Обновить")
+                    if (loading) LoadRing(tab.progress / 100f, LocalContentColor.current)
+                    else Icon(HripsIcons.BarRefresh, "Обновить", Modifier.size(18.dp))
                 }
             }
             if (showSecurity) SecurityDialog(tab) { showSecurity = false }
         }
+      }
     }
 }
 
@@ -187,8 +211,8 @@ internal fun TabStrip(browser: Browser) {
         }
     }
 
-    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(Modifier.weight(1f, fill = false), state = listState, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        LazyRow(Modifier.weight(1f), state = listState, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(shown, key = { _, t -> t.id }) { i, t ->
                 val id = t.id
                 val grow = remember(id) { Animatable(if (seen.add(id)) 0f else 1f) }
@@ -199,7 +223,7 @@ internal fun TabStrip(browser: Browser) {
                 val held = dragging || settlingId == id
                 val isCurrent = t.id == browser.current.id
                 val tabColor by animateColorAsState(
-                    if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+                    if (isCurrent) flatFill() else Color.Transparent,
                     MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
                     label = "tabStripColor",
                 )
@@ -207,11 +231,11 @@ internal fun TabStrip(browser: Browser) {
                 val shadow by animateDpAsState(if (dragging) 8.dp else 0.dp, label = "tabShadow")
                 Surface(
                     onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.currentIndex = it } },
-                    shape = CircleShape,
+                    shape = RoundedCornerShape(9.dp),
                     color = tabColor,
                     shadowElevation = shadow,
                     modifier = Modifier
-                        .height(40.dp).widthIn(min = 120.dp, max = 220.dp)
+                        .height(30.dp).widthIn(min = 120.dp, max = 240.dp)
                         .semantics { this.selected = isCurrent }
                         .layout { m, c ->
                             val p = m.measure(c)
@@ -264,7 +288,7 @@ internal fun TabStrip(browser: Browser) {
                         } else if (t.home) {
                             Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            TabSiteIcon(t, 18.dp, shape = CircleShape)
+                            TabSiteIcon(t, 16.dp, shape = CircleShape)
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -277,15 +301,14 @@ internal fun TabStrip(browser: Browser) {
                         )
                         IconButton(
                             onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.closeTab(it) } },
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(28.dp),
                         ) {
-                            Icon(HripsIcons.Close, "Закрыть вкладку: ${t.label()}", Modifier.size(16.dp))
+                            Icon(HripsIcons.Close, "Закрыть вкладку: ${t.label()}", Modifier.size(14.dp))
                         }
                     }
                 }
             }
         }
-        BarButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
     }
 }
 
@@ -374,10 +397,19 @@ internal fun SiteHeaderTheme(site: Color?, content: @Composable () -> Unit) {
     }
 }
 
-/** Подложка группы кнопок панели планшета: капсула цвета адресной строки. */
+/** Плоская тональная подложка: чуть темнее светлой шапки и чуть светлее тёмной. Без границ, бликов и теней. */
 @Composable
-internal fun ToolbarCapsule(horizontalPadding: androidx.compose.ui.unit.Dp = 2.dp, content: @Composable RowScope.() -> Unit) {
-    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+internal fun flatFill(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+
+@Composable
+internal fun FlatCapsule(modifier: Modifier = Modifier, shape: Shape = CircleShape, content: @Composable () -> Unit) {
+    Surface(modifier = modifier, shape = shape, color = flatFill(), content = content)
+}
+
+/** Группа кнопок планшета на плоской подложке. */
+@Composable
+internal fun ToolbarGroup(horizontalPadding: androidx.compose.ui.unit.Dp = 2.dp, content: @Composable RowScope.() -> Unit) {
+    FlatCapsule {
         Row(
             Modifier.height(40.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)).padding(horizontal = horizontalPadding),
             verticalAlignment = Alignment.CenterVertically,

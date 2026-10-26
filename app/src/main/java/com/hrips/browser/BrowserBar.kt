@@ -898,7 +898,7 @@ private fun PillMenu(
  * бесконечная анимация блика не тратит кадры, когда страница уже загружена.
  */
 @Composable
-private fun LoadFill(
+internal fun LoadFill(
     progress: State<Float>,
     alpha: State<Float>,
     loading: Boolean,
@@ -946,7 +946,7 @@ private fun LoadFill(
 }
 
 @Composable
-private fun LoadRing(progress: Float, color: Color) {
+internal fun LoadRing(progress: Float, color: Color) {
     val shown by animateFloatAsState(progress, MaterialTheme.motionScheme.defaultEffectsSpec<Float>(), label = "ring")
     val spin = rememberInfiniteTransition(label = "ringSpin").animateFloat(
         initialValue = 0f,
