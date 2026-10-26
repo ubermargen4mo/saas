@@ -153,12 +153,14 @@ fun BrowserScreen(browser: Browser) {
         }
     }
 
-    val canReturnToPage = tab.home && tab.url.isNotBlank()
+    val canReturnToPage = tab.home && tab.hasReturn
     val opener = browser.openerOf(tab)
     val goBack: () -> Unit = {
         when {
-            canReturnToPage -> { tab.stalePage = false; tab.home = false }
+            canReturnToPage -> tab.returnToPage()
             tab.canGoBack -> tab.goBack()
+            // После «домой» и перехода на новый адрес «назад» возвращает закрытую страницу.
+            tab.hasReturn -> tab.returnToPage()
             opener == null && tab.fromApp -> {
                 val index = browser.tabs.indexOf(tab)
                 if (index >= 0) browser.closeTab(index)
@@ -167,8 +169,8 @@ fun BrowserScreen(browser: Browser) {
             else -> browser.returnToOpener(tab)
         }
     }
-    val backEnabled = !tab.home && (tab.canGoBack || opener != null)
-    BackHandler(enabled = canReturnToPage || tab.canGoBack || opener != null || tab.fromApp) { goBack() }
+    val backEnabled = !tab.home && (tab.canGoBack || opener != null || tab.hasReturn)
+    BackHandler(enabled = canReturnToPage || tab.canGoBack || tab.hasReturn || opener != null || tab.fromApp) { goBack() }
 
     DisposableEffect(tab.id) {
         tab.ensureLoaded()
@@ -354,6 +356,11 @@ fun BrowserScreen(browser: Browser) {
                 // Плоская шапка: группы кнопок на тональных подложках. Классическая: «назад/вперёд» и «домой» отдельно.
                 val bs = if (classic) 40.dp else 36.dp
                 if (wide) {
+                    // Порядок как в Safari: сначала «домой», затем «назад» и «вперёд».
+                    ToolbarGroup(classic = classic) {
+                        BarButton(modifier = Modifier.size(bs), onClick = { tab.goHome() }) { Icon(HripsIcons.TbHome, "Домой") }
+                    }
+                    Spacer(Modifier.width(if (classic) 4.dp else 6.dp))
                     ToolbarGroup(classic = classic) {
                         BarButton(modifier = Modifier.size(bs), onClick = goBack, enabled = backEnabled) {
                             Icon(HripsIcons.TbBack, "Назад")
@@ -361,10 +368,6 @@ fun BrowserScreen(browser: Browser) {
                         BarButton(modifier = Modifier.size(bs), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
                             Icon(HripsIcons.TbForward, "Вперёд")
                         }
-                    }
-                    Spacer(Modifier.width(if (classic) 4.dp else 6.dp))
-                    ToolbarGroup(classic = classic) {
-                        BarButton(modifier = Modifier.size(bs), onClick = { tab.goHome() }) { Icon(HripsIcons.TbHome, "Домой") }
                     }
                 }
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp), contentAlignment = Alignment.Center) {
@@ -428,7 +431,7 @@ fun BrowserScreen(browser: Browser) {
                 )
             } } else if (tab.home) key("start") { FadeInBox {
                 StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
-            } } else Box(Modifier.fillMaxSize()) {
+            } } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx -> HripsGeckoView(ctx).also { viewRef[0] = it } },
@@ -455,12 +458,6 @@ fun BrowserScreen(browser: Browser) {
                     onRelease = { it.release() },
                 )
                 TabSwapCover(tab)
-                // После «домой» под начальным экраном лежала прежняя страница: пока новая не отрисовалась, её закрываем.
-                // Без AnimatedVisibility: внутри Column он берёт неявный ColumnScope и ломает сборку (DSL_SCOPE_VIOLATION).
-                val coverAlpha by animateFloatAsState(if (tab.coverStale) 1f else 0f, tween(if (tab.coverStale) 0 else 140), label = "staleCover")
-                if (coverAlpha > 0.01f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha }.background(MaterialTheme.colorScheme.surface))
-                }
                 PullIndicator({ pullPx }, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
         }

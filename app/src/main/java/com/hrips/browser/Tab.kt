@@ -104,13 +104,13 @@ class Tab(
     var home by mutableStateOf(!popup && startUrl.isBlank())
 
     /**
-     * После «домой» под начальным экраном остаётся прежняя страница. Когда из дома открывают новый адрес, она бы
-     * просвечивала до первой отрисовки. Пока `coverStale` включён, поверх вида показывается пустая заслонка.
+     * «Домой» работает как закрытие страницы: сессия заменяется пустой, поэтому новый адрес не показывает прежний сайт.
+     * Состояние закрытой страницы хранится здесь, и вернуться к ней можно кнопкой «назад».
      */
-    var coverStale by mutableStateOf(false)
-    /** Прежняя страница ещё лежит под начальным экраном (после «домой»). */
-    var stalePage = false
-    private var coverStarted = false
+    private var returnState: GeckoSession.SessionState? = null
+    private var returnUrl: String = ""
+    var hasReturn by mutableStateOf(false)
+        private set
     var url by mutableStateOf(startUrl)
     var title by mutableStateOf(savedTitle)
     var errorPage by mutableStateOf(false)
@@ -351,7 +351,6 @@ class Tab(
                 AppLog.i("Page") { "начало загрузки ${AppLog.url(pageUrl, isPrivate)}" }
                 navStartedAt = SystemClock.elapsedRealtime()
                 paintLogged = false
-                if (coverStale) coverStarted = true
                 resetTranslation()
                 loading = true
                 progress = 0
@@ -361,7 +360,6 @@ class Tab(
                 if (sess !== session) return
                 AppLog.i("Page") { "конец загрузки успех=$success за ${SystemClock.elapsedRealtime() - navStartedAt} мс ${AppLog.url(url, isPrivate)}" }
                 loading = false
-                if (coverStarted) coverStale = false
                 if (success && !errorPage) {
                     recoverStreak = 0
                     lastRecoverAt = 0L
@@ -482,7 +480,6 @@ class Tab(
                 if (sess === session) title = newTitle.orEmpty()
             }
             override fun onFirstContentfulPaint(sess: GeckoSession) {
-                if (sess === session && coverStarted) coverStale = false
                 if (sess !== session || paintLogged) return
                 paintLogged = true
                 AppLog.i("Page") { "первая отрисовка через ${SystemClock.elapsedRealtime() - navStartedAt} мс после начала загрузки" }
@@ -811,23 +808,19 @@ class Tab(
     private var skipVisit = false
     private var imageSearchPending = false
 
-    private fun armCover() {
-        if (!stalePage) return
-        stalePage = false
-        coverStarted = false
-        coverStale = true
-        // Предохранитель: заслонка не должна остаться, если страница не сообщила ни о старте, ни об отрисовке.
-        mainHandler.postDelayed({ coverStale = false }, 6000L)
-    }
-
     fun load(input: String, engine: SearchEngine = SearchEngines.current) {
-        armCover()
+        val target = toUrl(input, engine)
+        if (home) {
+            // Адрес сразу показывает новую цель, а не адрес закрытой страницы.
+            url = target
+            title = ""
+            errorPage = false
+        }
         home = false
-        session.loadUri(toUrl(input, engine))
+        session.loadUri(target)
     }
 
     fun loadImageSearch(page: String) {
-        armCover()
         home = false
         loading = true
         imageSearchPending = true
@@ -835,8 +828,72 @@ class Tab(
     }
 
     fun goHome() {
+        if (home) return
+        // Что показывать при возврате: живое состояние сессии, иначе отложенное, иначе просто адрес.
+        returnState = sessionState ?: lazyState
+        returnUrl = url
+        hasReturn = returnState != null || returnUrl.isNotBlank()
+        val old = session
+        val wasLive = old.isOpen && !isSuspended
         home = true
-        stalePage = true
+        if (!wasLive) {
+            // Сессии уже нет (вкладка усыплена): при пробуждении ensureLoaded создаст пустую, а не загрузит страницу.
+            lazyState = null
+            return
+        }
+        val fresh = try {
+            newSession().also {
+                it.open(runtime)
+                it.setFocused(visible && focused)
+                it.setPriorityHint(if (visible && focused) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Не удалось создать пустую сессию для «домой»", e)
+            return
+        }
+        if (pendingSuspendSession === old) pendingSuspendSession = null
+        mainHandler.removeCallbacksAndMessages(old)
+        session = fresh
+        media.forget(old)
+        old.setActive(false)
+        old.setFocused(false)
+        runCatching { old.close() }
+        loading = false
+        progress = 0
+        canGoBack = false
+        canGoForward = false
+        fullscreen = false
+        errorPage = false
+        errorTarget = null
+        themeColor = null
+        lazyState = null
+        sessionState = null
+        sessionStateVersion++
+        onStateChanged()
+    }
+
+    /** Вернуться к странице, которую закрыло «домой» (с историей, как была). */
+    fun returnToPage() {
+        val st = returnState
+        val target = returnUrl
+        returnState = null
+        returnUrl = ""
+        hasReturn = false
+        if (st == null && target.isBlank()) { home = false; return }
+        if (target.isNotBlank()) { url = target; errorPage = false }
+        val live = session.isOpen && !isSuspended
+        if (live) {
+            try {
+                if (st != null) session.restoreState(st) else session.loadUri(target)
+            } catch (e: Exception) {
+                if (target.isNotBlank()) runCatching { session.loadUri(target) }
+                Log.w(TAG, "Не удалось вернуть закрытую страницу", e)
+            }
+        } else {
+            // Сессии нет: ensureLoaded восстановит состояние или откроет адрес.
+            lazyState = st
+        }
+        home = false
     }
 
     fun siteHost(): String? = if (home) null else siteKey(url)

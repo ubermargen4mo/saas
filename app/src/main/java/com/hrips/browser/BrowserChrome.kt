@@ -11,6 +11,9 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import kotlinx.coroutines.delay
@@ -107,16 +110,13 @@ internal fun AddressBar(
                 fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
                     SizeTransform(clip = false) { _, _ -> snap() }
             },
-            contentAlignment = if (classic) Alignment.CenterStart else Alignment.Center,
+            contentAlignment = Alignment.CenterStart,
             modifier = textModifier,
             label = "barText",
         ) { text ->
             val style = MaterialTheme.typography.bodyLarge
             if (text.isEmpty()) {
-                Row(
-                    Modifier.padding(start = if (classic) 8.dp else 4.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(Modifier.padding(start = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(HripsIcons.TbSearch, null, tint = cs.onSurfaceVariant)
                     Spacer(Modifier.width(2.dp))
                     Text("Искать или задать вопрос", maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = cs.onSurfaceVariant)
@@ -124,10 +124,10 @@ internal fun AddressBar(
             } else {
                 Text(
                     text,
-                    modifier = if (classic) Modifier.padding(start = if (withPicker) 8.dp else 4.dp) else Modifier.padding(horizontal = 4.dp),
+                    modifier = Modifier.padding(start = if (withPicker) 8.dp else 4.dp, end = 4.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = if (classic) TextAlign.Start else TextAlign.Center,
+                    textAlign = TextAlign.Start,
                     style = style,
                     color = cs.onSurface,
                 )
@@ -155,13 +155,14 @@ internal fun AddressBar(
         }
     }
 
-    FlatCapsule(
-        modifier = modifier.height(barHeight).originAnchor("search"),
-        color = if (classic) cs.surfaceContainerHigh else flatFill(),
-    ) {
-      Box(Modifier.fillMaxSize()) {
-        if (!classic && (fillOn || fillAlpha.value > 0.01f)) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
-        if (classic) {
+    @Composable
+    fun BarBody(capsuleModifier: Modifier) {
+        FlatCapsule(
+            modifier = capsuleModifier.height(barHeight).originAnchor("search"),
+            color = if (classic) cs.surfaceContainerHigh else flatFill(),
+        ) {
+          Box(Modifier.fillMaxSize()) {
+            if (!classic && (fillOn || fillAlpha.value > 0.01f)) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
             Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 if (withPicker) {
                     Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
@@ -181,41 +182,35 @@ internal fun AddressBar(
                 ) { AddressText(Modifier.weight(1f, fill = false)) }
                 ReloadButton()
             }
-        } else {
-            // Как в Safari: надпись по центру всей строки, а не оставшегося места; движок и «обновить» лежат по краям.
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = if (withPicker) 76.dp else 44.dp)
-                    .combinedClickable(
-                        onClickLabel = "Ввести запрос или адрес",
-                        onLongClickLabel = "Действия с адресом",
-                        onLongClick = openMenu,
-                        onClick = onSearch,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                if (!withPicker) {
-                    Box(Modifier.size(28.dp).clickable(onClickLabel = "Безопасность соединения") { showSecurity = true }, contentAlignment = Alignment.Center) {
-                        Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
-                    }
-                }
-                AddressText(Modifier.weight(1f, fill = false))
-            }
-            if (withPicker) Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-            Box(Modifier.align(Alignment.CenterEnd)) { ReloadButton() }
+            PillMenu(
+                expanded = menuOpen,
+                onDismiss = { menuOpen = false },
+                hasPage = !tab.home,
+                onCopy = onCopy,
+                onShare = onShare,
+                onPasteGo = onPasteGo,
+                onCloseTab = onCloseTab,
+                onCloseAll = onCloseAll,
+            )
+            if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+          }
         }
-        PillMenu(
-            expanded = menuOpen,
-            onDismiss = { menuOpen = false },
-            hasPage = !tab.home,
-            onCopy = onCopy,
-            onShare = onShare,
-            onPasteGo = onPasteGo,
-            onCloseTab = onCloseTab,
-            onCloseAll = onCloseAll,
-        )
-        if (showSecurity) SecurityDialog(tab) { showSecurity = false }
-      }
+    }
+
+    if (classic) {
+        BarBody(modifier)
+    } else {
+        // Плоская шапка: строка короткая (от 560 dp), текст идёт слева; когда адрес не помещается, строка растёт до края.
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val label = shown.ifEmpty { "Искать или задать вопрос" }
+        val textStyle = MaterialTheme.typography.bodyLarge
+        val textDp = with(density) { measurer.measure(AnnotatedString(label), textStyle, maxLines = 1).size.width.toDp() }
+        val chrome = (if (withPicker) 84.dp else 44.dp) + 40.dp + 16.dp + (if (shown.isEmpty()) 28.dp else 0.dp)
+        val wanted by animateDpAsState(maxOf(560.dp, textDp + chrome), tween(220), label = "barWidth")
+        BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+            BarBody(Modifier.width(wanted.coerceAtMost(maxWidth)))
+        }
     }
 }
 
@@ -507,6 +502,12 @@ internal fun ToolbarGroup(
  * серый или белый фон остаётся с обычным чёрным или белым. Яркость подбирается так, чтобы контраст был не ниже 5:1.
  */
 internal fun siteInk(bg: Color, dark: Boolean): Color {
+    // Оттенок подмешивается лишь частично: сильная подкраска значков на ярких сайтах смотрится хуже, чем обычный чёрный или белый.
+    val neutral = if (dark) Color(0xFFF3F3F3) else Color(0xFF1A1A1A)
+    return lerp(neutral, siteInkRaw(bg, dark), 0.4f)
+}
+
+private fun siteInkRaw(bg: Color, dark: Boolean): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(bg.toArgb(), hsv)
     val k = (hsv[1] / 0.12f).coerceIn(0f, 1f)          // 0 у серого, 1 у заметно цветного фона
