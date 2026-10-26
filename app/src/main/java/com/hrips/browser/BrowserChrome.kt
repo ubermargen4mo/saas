@@ -359,6 +359,8 @@ internal fun SiteHeaderTheme(site: Color?, content: @Composable () -> Unit) {
         surfaceContainerHigh = lerp(bg, fg, 0.12f),
         surfaceContainerHighest = lerp(bg, fg, 0.18f),
         primary = fg,
+        onPrimary = bg,
+        secondaryContainer = lerp(bg, fg, 0.18f),
     )
     MaterialExpressiveTheme(
         colorScheme = scheme,
@@ -374,10 +376,10 @@ internal fun SiteHeaderTheme(site: Color?, content: @Composable () -> Unit) {
 
 /** Подложка группы кнопок панели планшета: капсула цвета адресной строки. */
 @Composable
-internal fun ToolbarCapsule(content: @Composable RowScope.() -> Unit) {
+internal fun ToolbarCapsule(horizontalPadding: androidx.compose.ui.unit.Dp = 2.dp, content: @Composable RowScope.() -> Unit) {
     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Row(
-            Modifier.height(40.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)).padding(horizontal = 2.dp),
+            Modifier.height(40.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)).padding(horizontal = horizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
         )

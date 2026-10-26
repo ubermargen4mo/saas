@@ -308,6 +308,7 @@ fun BrowserScreen(browser: Browser) {
     Column(Modifier.fillMaxSize().pageImePadding(overlayOpen)) {
         if (!fs) {
         SiteHeaderTheme(siteColor) {
+        Column(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).statusBarsPadding()) {
             if (wide) TabStrip(browser)
             AnimatedVisibility(
@@ -333,10 +334,14 @@ fun BrowserScreen(browser: Browser) {
                         BarButton(modifier = Modifier.size(40.dp), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
                             Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(26.dp))
                         }
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    // У «домой» своя круглая подложка.
+                    ToolbarCapsule(horizontalPadding = 0.dp) {
                         BarButton(modifier = Modifier.size(40.dp), onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(24.dp)) }
                     }
                 }
-                // Адресная строка по центру, не шире 560 dp: свободное место делят поровну края.
+                // Адресная строка занимает всё свободное место между группами кнопок.
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp), contentAlignment = Alignment.Center) {
                     AddressBar(
                         tab = tab,
@@ -344,16 +349,19 @@ fun BrowserScreen(browser: Browser) {
                         engine = shownEngine,
                         query = parsed?.second,
                         onPickEngine = pickEngine,
-                        modifier = Modifier.then(if (wide) Modifier.widthIn(max = 560.dp) else Modifier).fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         wide = wide,
                     )
                 }
                 if (wide) {
-                    ToolbarCapsule {
+                    // Значки разной ширины (рамка 22 dp, пазл 20 dp, три точки 4 dp): у «ещё» кнопка уже,
+                    // тогда просветы между самими значками и до краёв подложки визуально равны.
+                    ToolbarCapsule(horizontalPadding = 0.dp) {
+                        Spacer(Modifier.width(2.dp))
                         TabCounterButton(browser.tabs.size, Modifier.size(40.dp).originAnchor("tabs")) { requestTabs() }
                         BarButton(modifier = Modifier.size(40.dp), onClick = { showExtManager = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(24.dp)) }
                         AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = 40.dp)
-                        BarButton(modifier = Modifier.size(40.dp), onClick = { showTools = true }) {
+                        BarButton(modifier = Modifier.size(width = 26.dp, height = 40.dp), onClick = { showTools = true }) {
                             Icon(HripsIcons.BarMore, "Инструменты", Modifier.size(24.dp))
                         }
                     }
@@ -362,9 +370,9 @@ fun BrowserScreen(browser: Browser) {
             }
             }
         }
-        }
-
         if (wide) PageProgressBar(tab)
+        }
+        }
 
         if (findOpen && !tab.home) {
             key(tab.id) { FindBar(tab, onClose = { findOpen = false }) }
