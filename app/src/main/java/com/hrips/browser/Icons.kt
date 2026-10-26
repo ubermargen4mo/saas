@@ -412,19 +412,7 @@ object HripsIcons {
         }
     }
 
-    val Puzzle by lazy {
-        icon("Puzzle") {
-            moveTo(18.88f, 11.57f); horizontalLineTo(17.59f); verticalLineTo(8.13f)
-            curveToRelative(0f, -0.946f, -0.774f, -1.72f, -1.72f, -1.72f); horizontalLineToRelative(-3.44f); verticalLineTo(5.12f)
-            curveTo(12.43f, 3.933f, 11.467f, 2.97f, 10.28f, 2.97f); curveTo(9.093f, 2.97f, 8.13f, 3.933f, 8.13f, 5.12f); verticalLineTo(6.41f); horizontalLineTo(4.69f)
-            curveToRelative(-0.946f, 0f, -1.72f, 0.774f, -1.72f, 1.72f); verticalLineToRelative(3.268f); horizontalLineTo(4.26f)
-            curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); curveToRelative(0f, 1.281f, -1.041f, 2.322f, -2.322f, 2.322f); horizontalLineTo(2.97f)
-            verticalLineTo(19.31f); curveToRelative(0f, 0.946f, 0.774f, 1.72f, 1.72f, 1.72f); horizontalLineToRelative(3.268f); verticalLineToRelative(-1.29f)
-            curveToRelative(0f, -1.281f, 1.041f, -2.322f, 2.322f, -2.322f); curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); verticalLineTo(21.03f)
-            horizontalLineTo(15.87f); curveToRelative(0.946f, 0f, 1.72f, -0.774f, 1.72f, -1.72f); verticalLineToRelative(-3.44f); horizontalLineToRelative(1.29f)
-            curveToRelative(1.187f, 0f, 2.15f, -0.963f, 2.15f, -2.15f); curveTo(21.03f, 12.533f, 20.067f, 11.57f, 18.88f, 11.57f); close()
-        }
-    }
+    val Puzzle by lazy { icon("Puzzle") { puzzlePath() } }
 
     val Translate by lazy {
         icon("Translate") {
@@ -559,6 +547,39 @@ object HripsIcons {
 
     val BarMore by lazy { fillIcon("BarMore") { circle(12f, 6f, 2f); circle(12f, 12f, 2f); circle(12f, 18f, 2f) } }
     val BarMoreH by lazy { fillIcon("BarMoreH") { circle(5f, 12f, 1.9f); circle(12f, 12f, 1.9f); circle(19f, 12f, 1.9f) } }
+
+
+    // ── Значки панели планшета ──────────────────────────────────────────────────────────────────────────
+    // Одна сетка 24×24, один штрих 2, круглые концы и углы. Все рисуются в рамке 24 dp без пересчёта размеров,
+    // чтобы вес и размер совпадали. Координаты целые или с шагом 0,5: при 2 px/dp линии ложатся ровно на пиксели.
+    // Мелкие значки внутри поля (замок, лупа, обновление) уменьшены через scale, штрих при этом остаётся 2.
+    private const val TB = 2f
+    val TbBack by lazy { icon("TbBack", stroke = TB) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
+    val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
+    val TbPlus by lazy { icon("TbPlus", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
+    val TbClose by lazy { icon("TbClose", stroke = TB) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
+    val TbCloseSmall by lazy { icon("TbCloseSmall", stroke = TB, scale = 0.75f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
+    val TbHome by lazy {
+        icon("TbHome", stroke = TB) {
+            moveTo(4f, 10f); lineTo(12f, 3.5f); lineTo(20f, 10f); verticalLineTo(18f)
+            quadTo(20f, 20f, 18f, 20f); horizontalLineTo(6f); quadTo(4f, 20f, 4f, 18f); close()
+            moveTo(9.5f, 20f); verticalLineTo(14.5f); horizontalLineTo(14.5f); verticalLineTo(20f)
+        }
+    }
+    val TbRefresh by lazy {
+        icon("TbRefresh", stroke = TB, scale = 0.8f) {
+            moveTo(21f, 12f); arcToRelative(9f, 9f, 0f, true, true, -9f, -9f)
+            curveToRelative(2.52f, 0f, 4.93f, 1f, 6.74f, 2.74f); lineTo(21f, 8f)
+            moveTo(21f, 3f); verticalLineToRelative(5f); horizontalLineToRelative(-5f)
+        }
+    }
+    val TbStop by lazy { icon("TbStop", stroke = TB, scale = 0.7f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
+    val TbDownload by lazy { icon("TbDownload", stroke = TB) { moveTo(12f, 5f); verticalLineTo(19f); moveTo(5f, 12f); lineTo(12f, 19f); lineTo(19f, 12f) } }
+    val TbPuzzle by lazy { icon("TbPuzzle", stroke = TB, scale = 1f) { puzzlePath() } }
+    val TbMore by lazy { fillIcon("TbMore") { circle(5f, 12f, 1.75f); circle(12f, 12f, 1.75f); circle(19f, 12f, 1.75f) } }
+    val TbShield by lazy { icon("TbShield", stroke = TB, scale = 0.85f) { shield() } }
+    val TbInfo by lazy { icon("TbInfo", stroke = TB, scale = 0.8f) { info() } }
+    val TbSearch by lazy { icon("TbSearch", stroke = TB, scale = 0.85f) { circle(10.5f, 10.5f, 6.5f); moveTo(15.5f, 15.5f); lineTo(20.5f, 20.5f) } }
 
     val BarHome by lazy { icon("BarHome", stroke = 2f, scale = 0.8f) { home() } }
     val Pause by lazy {
@@ -696,4 +717,16 @@ private fun PathBuilder.star() {
         if (i == 0) moveTo(x, y) else lineTo(x, y)
     }
     close()
+}
+
+private fun PathBuilder.puzzlePath() {
+            moveTo(18.88f, 11.57f); horizontalLineTo(17.59f); verticalLineTo(8.13f)
+            curveToRelative(0f, -0.946f, -0.774f, -1.72f, -1.72f, -1.72f); horizontalLineToRelative(-3.44f); verticalLineTo(5.12f)
+            curveTo(12.43f, 3.933f, 11.467f, 2.97f, 10.28f, 2.97f); curveTo(9.093f, 2.97f, 8.13f, 3.933f, 8.13f, 5.12f); verticalLineTo(6.41f); horizontalLineTo(4.69f)
+            curveToRelative(-0.946f, 0f, -1.72f, 0.774f, -1.72f, 1.72f); verticalLineToRelative(3.268f); horizontalLineTo(4.26f)
+            curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); curveToRelative(0f, 1.281f, -1.041f, 2.322f, -2.322f, 2.322f); horizontalLineTo(2.97f)
+            verticalLineTo(19.31f); curveToRelative(0f, 0.946f, 0.774f, 1.72f, 1.72f, 1.72f); horizontalLineToRelative(3.268f); verticalLineToRelative(-1.29f)
+            curveToRelative(0f, -1.281f, 1.041f, -2.322f, 2.322f, -2.322f); curveToRelative(1.281f, 0f, 2.322f, 1.041f, 2.322f, 2.322f); verticalLineTo(21.03f)
+            horizontalLineTo(15.87f); curveToRelative(0.946f, 0f, 1.72f, -0.774f, 1.72f, -1.72f); verticalLineToRelative(-3.44f); horizontalLineToRelative(1.29f)
+            curveToRelative(1.187f, 0f, 2.15f, -0.963f, 2.15f, -2.15f); curveTo(21.03f, 12.533f, 20.067f, 11.57f, 18.88f, 11.57f); close()
 }

@@ -102,6 +102,15 @@ class Tab(
     var themeColor by mutableStateOf<androidx.compose.ui.graphics.Color?>(null)
     var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     var home by mutableStateOf(!popup && startUrl.isBlank())
+
+    /**
+     * После «домой» под начальным экраном остаётся прежняя страница. Когда из дома открывают новый адрес, она бы
+     * просвечивала до первой отрисовки. Пока `coverStale` включён, поверх вида показывается пустая заслонка.
+     */
+    var coverStale by mutableStateOf(false)
+    /** Прежняя страница ещё лежит под начальным экраном (после «домой»). */
+    var stalePage = false
+    private var coverStarted = false
     var url by mutableStateOf(startUrl)
     var title by mutableStateOf(savedTitle)
     var errorPage by mutableStateOf(false)
@@ -342,6 +351,7 @@ class Tab(
                 AppLog.i("Page") { "начало загрузки ${AppLog.url(pageUrl, isPrivate)}" }
                 navStartedAt = SystemClock.elapsedRealtime()
                 paintLogged = false
+                if (coverStale) coverStarted = true
                 resetTranslation()
                 loading = true
                 progress = 0
@@ -351,6 +361,7 @@ class Tab(
                 if (sess !== session) return
                 AppLog.i("Page") { "конец загрузки успех=$success за ${SystemClock.elapsedRealtime() - navStartedAt} мс ${AppLog.url(url, isPrivate)}" }
                 loading = false
+                if (coverStarted) coverStale = false
                 if (success && !errorPage) {
                     recoverStreak = 0
                     lastRecoverAt = 0L
@@ -471,6 +482,7 @@ class Tab(
                 if (sess === session) title = newTitle.orEmpty()
             }
             override fun onFirstContentfulPaint(sess: GeckoSession) {
+                if (sess === session && coverStarted) coverStale = false
                 if (sess !== session || paintLogged) return
                 paintLogged = true
                 AppLog.i("Page") { "первая отрисовка через ${SystemClock.elapsedRealtime() - navStartedAt} мс после начала загрузки" }
@@ -799,12 +811,23 @@ class Tab(
     private var skipVisit = false
     private var imageSearchPending = false
 
+    private fun armCover() {
+        if (!stalePage) return
+        stalePage = false
+        coverStarted = false
+        coverStale = true
+        // Предохранитель: заслонка не должна остаться, если страница не сообщила ни о старте, ни об отрисовке.
+        mainHandler.postDelayed({ coverStale = false }, 6000L)
+    }
+
     fun load(input: String, engine: SearchEngine = SearchEngines.current) {
+        armCover()
         home = false
         session.loadUri(toUrl(input, engine))
     }
 
     fun loadImageSearch(page: String) {
+        armCover()
         home = false
         loading = true
         imageSearchPending = true
@@ -813,6 +836,7 @@ class Tab(
 
     fun goHome() {
         home = true
+        stalePage = true
     }
 
     fun siteHost(): String? = if (home) null else siteKey(url)

@@ -843,9 +843,9 @@ private fun QuickTabRow(tab: Tab, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Меню по удержанию пилюли: действия с адресом и вкладками. Только телефон. */
+/** Меню по удержанию адресной строки: действия с адресом и вкладками. */
 @Composable
-private fun PillMenu(
+internal fun PillMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     hasPage: Boolean,

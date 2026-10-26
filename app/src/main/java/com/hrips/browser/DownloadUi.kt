@@ -437,6 +437,7 @@ fun AnimatedDownloadsSlot(
     size: Dp = 48.dp,
     centered: Boolean = false,
     barStyle: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = HripsIcons.BarDownload,
 ) {
     val fx = downloads.fx
     val live = downloads.items.any { downloads.isOngoing(it) } || fx.flight != null
@@ -481,7 +482,7 @@ fun AnimatedDownloadsSlot(
                     alpha = appear.coerceIn(0f, 1f)
                 },
         ) {
-            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false, icon = HripsIcons.BarDownload, barStyle = barStyle)
+            DownloadsButton(downloads, onClick = onClick, size = size, reportTarget = false, icon = icon, barStyle = barStyle)
         }
     }
 }

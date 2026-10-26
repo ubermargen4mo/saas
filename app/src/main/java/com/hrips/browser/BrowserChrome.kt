@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
@@ -50,13 +51,24 @@ internal fun AddressBar(
     modifier: Modifier = Modifier,
     wide: Boolean = false,
     classic: Boolean = false,
+    onCopy: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onPasteGo: () -> Unit = {},
+    onCloseTab: () -> Unit = {},
+    onCloseAll: () -> Unit = {},
 ) {
     val withPicker = tab.home || query != null
     var showSecurity by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val openMenu = {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        menuOpen = true
+    }
     val shown = when {
         tab.home -> ""
         query != null -> query
-        else -> tab.url   // полный адрес, вместе со схемой (https:// и т. д.)
+        else -> tab.url.removePrefix("https://")
     }
     val motion = MaterialTheme.motionScheme
     val fxIn = motion.defaultEffectsSpec<Float>()
@@ -84,81 +96,125 @@ internal fun AddressBar(
     }
     val fillAlpha = animateFloatAsState(if (fillOn) 1f else 0f, motion.defaultEffectsSpec<Float>(), label = "barFillAlpha")
 
+    val shieldIcon = if (tab.trust == Trust.SECURE) HripsIcons.TbShield else HripsIcons.TbInfo
+    val shieldTint = if (tab.trust == Trust.WARNING) cs.error else cs.onSurfaceVariant
+
+    @Composable
+    fun AddressText(textModifier: Modifier) {
+        AnimatedContent(
+            targetState = shown,
+            transitionSpec = {
+                fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
+                    SizeTransform(clip = false) { _, _ -> snap() }
+            },
+            contentAlignment = if (classic) Alignment.CenterStart else Alignment.Center,
+            modifier = textModifier,
+            label = "barText",
+        ) { text ->
+            val style = MaterialTheme.typography.bodyLarge
+            if (text.isEmpty()) {
+                Row(
+                    Modifier.padding(start = if (classic) 8.dp else 4.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(HripsIcons.TbSearch, null, tint = cs.onSurfaceVariant)
+                    Spacer(Modifier.width(2.dp))
+                    Text("Искать или задать вопрос", maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = cs.onSurfaceVariant)
+                }
+            } else {
+                Text(
+                    text,
+                    modifier = if (classic) Modifier.padding(start = if (withPicker) 8.dp else 4.dp) else Modifier.padding(horizontal = 4.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = if (classic) TextAlign.Start else TextAlign.Center,
+                    style = style,
+                    color = cs.onSurface,
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun ReloadButton() {
+        BarButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
+            AnimatedContent(
+                targetState = tab.loading,
+                transitionSpec = {
+                    (fadeIn(fxIn) + scaleIn(popIn, initialScale = 0.6f)) togetherWith (fadeOut(fxOut) + scaleOut(popIn, targetScale = 0.6f)) using
+                        SizeTransform(clip = false) { _, _ -> snap() }
+                },
+                label = "barReload",
+            ) { loading ->
+                when {
+                    loading && classic -> Icon(HripsIcons.TbStop, "Остановить")
+                    loading -> LoadRing(tab.progress / 100f, LocalContentColor.current)
+                    else -> Icon(HripsIcons.TbRefresh, "Обновить")
+                }
+            }
+        }
+    }
+
     FlatCapsule(
         modifier = modifier.height(barHeight).originAnchor("search"),
         color = if (classic) cs.surfaceContainerHigh else flatFill(),
     ) {
       Box(Modifier.fillMaxSize()) {
         if (!classic && (fillOn || fillAlpha.value > 0.01f)) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
-        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            if (withPicker) {
-                Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-            } else if (classic) {
-                BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
-                        "Безопасность соединения",
-                        tint = if (tab.trust == Trust.WARNING) cs.error else cs.onSurfaceVariant,
-                    )
+        if (classic) {
+            Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                if (withPicker) {
+                    Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+                } else {
+                    BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
+                    }
                 }
-            } else {
-                Spacer(Modifier.width(36.dp))
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().combinedClickable(
+                        onClickLabel = "Ввести запрос или адрес",
+                        onLongClickLabel = "Действия с адресом",
+                        onLongClick = openMenu,
+                        onClick = onSearch,
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { AddressText(Modifier.weight(1f, fill = false)) }
+                ReloadButton()
             }
+        } else {
+            // Как в Safari: надпись по центру всей строки, а не оставшегося места; движок и «обновить» лежат по краям.
             Row(
-                Modifier.weight(1f).fillMaxHeight().clickable(onClickLabel = "Ввести запрос или адрес") { onSearch() },
+                Modifier.fillMaxSize().padding(horizontal = if (withPicker) 76.dp else 44.dp)
+                    .combinedClickable(
+                        onClickLabel = "Ввести запрос или адрес",
+                        onLongClickLabel = "Действия с адресом",
+                        onLongClick = openMenu,
+                        onClick = onSearch,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (classic) Arrangement.Start else Arrangement.Center,
+                horizontalArrangement = Arrangement.Center,
             ) {
-                if (!withPicker && !classic) {
-                    Box(Modifier.size(24.dp).clickable(onClickLabel = "Безопасность соединения") { showSecurity = true }, contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (tab.trust == Trust.SECURE) HripsIcons.BarShield else HripsIcons.BarInfo,
-                            "Безопасность соединения",
-                            Modifier.size(18.dp),
-                            tint = if (tab.trust == Trust.WARNING) cs.error else cs.onSurfaceVariant,
-                        )
+                if (!withPicker) {
+                    Box(Modifier.size(28.dp).clickable(onClickLabel = "Безопасность соединения") { showSecurity = true }, contentAlignment = Alignment.Center) {
+                        Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
                     }
                 }
-                AnimatedContent(
-                    targetState = shown,
-                    transitionSpec = {
-                        fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
-                            SizeTransform(clip = false) { _, _ -> snap() }
-                    },
-                    contentAlignment = if (classic) Alignment.CenterStart else Alignment.Center,
-                    modifier = Modifier.weight(1f, fill = false),
-                    label = "barText",
-                ) { text ->
-                    Text(
-                        text.ifEmpty { "Искать или задать вопрос" },
-                        modifier = if (classic) Modifier.padding(start = if (withPicker) 8.dp else 4.dp) else Modifier.padding(horizontal = 4.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = if (classic) TextAlign.Start else TextAlign.Center,
-                        style = if (classic) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-                        color = if (text.isEmpty()) cs.onSurfaceVariant else cs.onSurface,
-                    )
-                }
+                AddressText(Modifier.weight(1f, fill = false))
             }
-            BarButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) {
-                AnimatedContent(
-                    targetState = tab.loading,
-                    transitionSpec = {
-                        (fadeIn(fxIn) + scaleIn(popIn, initialScale = 0.6f)) togetherWith (fadeOut(fxOut) + scaleOut(popIn, targetScale = 0.6f)) using
-                            SizeTransform(clip = false) { _, _ -> snap() }
-                    },
-                    label = "barReload",
-                ) { loading ->
-                    when {
-                        loading && classic -> Icon(HripsIcons.BarClose, "Остановить")
-                        loading -> LoadRing(tab.progress / 100f, LocalContentColor.current)
-                        classic -> Icon(HripsIcons.BarRefresh, "Обновить")
-                        else -> Icon(HripsIcons.BarRefresh, "Обновить", Modifier.size(18.dp))
-                    }
-                }
-            }
-            if (showSecurity) SecurityDialog(tab) { showSecurity = false }
+            if (withPicker) Box(Modifier.align(Alignment.CenterStart).padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+            Box(Modifier.align(Alignment.CenterEnd)) { ReloadButton() }
         }
+        PillMenu(
+            expanded = menuOpen,
+            onDismiss = { menuOpen = false },
+            hasPage = !tab.home,
+            onCopy = onCopy,
+            onShare = onShare,
+            onPasteGo = onPasteGo,
+            onCloseTab = onCloseTab,
+            onCloseAll = onCloseAll,
+        )
+        if (showSecurity) SecurityDialog(tab) { showSecurity = false }
       }
     }
 }
@@ -322,20 +378,20 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                             onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.closeTab(it) } },
                             modifier = Modifier.size(if (classic) 40.dp else 28.dp),
                         ) {
-                            Icon(HripsIcons.Close, "Закрыть вкладку: ${t.label()}", Modifier.size(if (classic) 16.dp else 14.dp))
+                            Icon(HripsIcons.TbCloseSmall, "Закрыть вкладку: ${t.label()}")
                         }
                     }
                 }
             }
         }
         if (classic) {
-            BarButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка") }
+            BarButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlus, "Новая вкладка") }
         }
     }
 }
 
 @Composable
-fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun TabCounterButton(count: Int, modifier: Modifier = Modifier, tablet: Boolean = false, onClick: () -> Unit) {
     val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val slideSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val bump = remember { Animatable(1f) }
@@ -352,7 +408,8 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, onClick: () -> U
     ) {
         val color = LocalContentColor.current
         Box(
-            Modifier.size(22.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }.border(1.8.dp, color, HripsShapes.IconFrame),
+            Modifier.size(if (tablet) 19.dp else 22.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }
+                .border(if (tablet) 2.dp else 1.8.dp, color, if (tablet) RoundedCornerShape(6.dp) else HripsShapes.IconFrame),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(
@@ -391,7 +448,7 @@ internal fun SiteHeaderTheme(site: Color?, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val bg by animateColorAsState(site, tween(250), label = "siteHeaderBg")
     val dark = bg.luminance() < 0.5f
-    val fg = if (dark) Color(0xFFF3F3F3) else Color(0xFF1A1A1A)
+    val fg = siteInk(bg, dark)
     val scheme = cs.copy(
         surface = bg,
         background = bg,
@@ -442,4 +499,38 @@ internal fun ToolbarGroup(
     } else {
         FlatCapsule { Row(rowModifier, verticalAlignment = Alignment.CenterVertically, content = content) }
     }
+}
+
+/**
+ * Цвет текста и значков шапки: не просто чёрный или белый, а оттенок самого сайта. На светлом фоне цвет тёмный
+ * того же тона (кремовый сайт даёт коричневые значки), на тёмном светлый и слегка подкрашенный. Нейтральный
+ * серый или белый фон остаётся с обычным чёрным или белым. Яркость подбирается так, чтобы контраст был не ниже 5:1.
+ */
+internal fun siteInk(bg: Color, dark: Boolean): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(bg.toArgb(), hsv)
+    val k = (hsv[1] / 0.12f).coerceIn(0f, 1f)          // 0 у серого, 1 у заметно цветного фона
+    fun contrast(a: Float, b: Float) = (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
+    val bgLum = bg.luminance()
+    if (dark) {
+        hsv[1] = k * minOf(hsv[1], 0.28f)
+        hsv[2] = 0.95f
+        var ink = Color(android.graphics.Color.HSVToColor(hsv))
+        var guard = 0
+        while (contrast(ink.luminance(), bgLum) < 5f && hsv[2] < 1f && guard++ < 8) {
+            hsv[2] = minOf(1f, hsv[2] + 0.02f)
+            ink = Color(android.graphics.Color.HSVToColor(hsv))
+        }
+        return ink
+    }
+    hsv[1] = k * minOf(0.85f, hsv[1] * 0.6f + 0.4f)
+    hsv[2] = 0.26f
+    var ink = Color(android.graphics.Color.HSVToColor(hsv))
+    var guard = 0
+    while (contrast(ink.luminance(), bgLum) < 5f && hsv[2] > 0.04f && guard++ < 12) {
+        hsv[2] = maxOf(0.04f, hsv[2] - 0.03f)
+        ink = Color(android.graphics.Color.HSVToColor(hsv))
+    }
+    // Нейтральный фон: обычный почти чёрный, как раньше.
+    return if (k == 0f) Color(0xFF1A1A1A) else ink
 }

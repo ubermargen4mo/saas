@@ -131,11 +131,33 @@ fun BrowserScreen(browser: Browser) {
         if (parsed != null) tab.load(parsed.second, e) else oneOff = e
     }
 
+    // Действия меню адресной строки: общие для нижней панели телефона и адресной строки планшета.
+    val copyAddress: () -> Unit = {
+        val copied = runCatching {
+            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", tab.url))
+        }.isSuccess && clipboard != null
+        Notices.show(if (copied) "Адрес скопирован" else "Не удалось скопировать")
+    }
+    val shareAddress: () -> Unit = { PageActions.share(activity ?: appContext, tab) }
+    val pasteAndGo: () -> Unit = {
+        val text = runCatching {
+            clipboard?.primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(appContext)?.toString()?.trim()
+        }.getOrNull().orEmpty()
+        if (text.isEmpty()) {
+            Notices.show("Буфер обмена пуст")
+        } else {
+            if (isSearch(text) && !tab.isPrivate) store.addSearch(text)
+            tab.load(text, shownEngine)
+            oneOff = null
+        }
+    }
+
     val canReturnToPage = tab.home && tab.url.isNotBlank()
     val opener = browser.openerOf(tab)
     val goBack: () -> Unit = {
         when {
-            canReturnToPage -> tab.home = false
+            canReturnToPage -> { tab.stalePage = false; tab.home = false }
             tab.canGoBack -> tab.goBack()
             opener == null && tab.fromApp -> {
                 val index = browser.tabs.indexOf(tab)
@@ -334,15 +356,15 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     ToolbarGroup(classic = classic) {
                         BarButton(modifier = Modifier.size(bs), onClick = goBack, enabled = backEnabled) {
-                            Icon(HripsIcons.BarChevronBack, "Назад", Modifier.size(if (classic) 26.dp else 24.dp))
+                            Icon(HripsIcons.TbBack, "Назад")
                         }
                         BarButton(modifier = Modifier.size(bs), onClick = { tab.goForward() }, enabled = tab.canGoForward && !tab.home) {
-                            Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(if (classic) 26.dp else 24.dp))
+                            Icon(HripsIcons.TbForward, "Вперёд")
                         }
                     }
                     Spacer(Modifier.width(if (classic) 4.dp else 6.dp))
                     ToolbarGroup(classic = classic) {
-                        BarButton(modifier = Modifier.size(bs), onClick = { tab.goHome() }) { Icon(HripsIcons.BarHome, "Домой", Modifier.size(if (classic) 24.dp else 22.dp)) }
+                        BarButton(modifier = Modifier.size(bs), onClick = { tab.goHome() }) { Icon(HripsIcons.TbHome, "Домой") }
                     }
                 }
                 Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp), contentAlignment = Alignment.Center) {
@@ -355,18 +377,23 @@ fun BrowserScreen(browser: Browser) {
                         modifier = Modifier.fillMaxWidth(),
                         wide = wide,
                         classic = classic,
+                        onCopy = copyAddress,
+                        onShare = shareAddress,
+                        onPasteGo = pasteAndGo,
+                        onCloseTab = { browser.closeTab(browser.currentIndex) },
+                        onCloseAll = { browser.closeAllTabs() },
                     )
                 }
                 if (wide) {
                     ToolbarGroup(classic = classic) {
                         if (!classic) {
-                            BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.Add, "Новая вкладка", Modifier.size(22.dp)) }
+                            BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlus, "Новая вкладка") }
                         }
-                        TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs")) { requestTabs() }
-                        BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.Puzzle, "Расширения", Modifier.size(if (classic) 24.dp else 22.dp)) }
-                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs)
+                        TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
+                        BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
+                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                         BarButton(modifier = Modifier.size(bs), onClick = { showTools = true }) {
-                            Icon(HripsIcons.BarMoreH, "Инструменты", Modifier.size(if (classic) 24.dp else 22.dp))
+                            Icon(HripsIcons.TbMore, "Инструменты")
                         }
                     }
                     if (classic) Spacer(Modifier.width(4.dp))
@@ -401,7 +428,7 @@ fun BrowserScreen(browser: Browser) {
                 )
             } } else if (tab.home) key("start") { FadeInBox {
                 StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
-            } } else {
+            } } else Box(Modifier.fillMaxSize()) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx -> HripsGeckoView(ctx).also { viewRef[0] = it } },
@@ -428,6 +455,10 @@ fun BrowserScreen(browser: Browser) {
                     onRelease = { it.release() },
                 )
                 TabSwapCover(tab)
+                // После «домой» под начальным экраном лежала прежняя страница: пока новая не отрисовалась, её закрываем.
+                AnimatedVisibility(visible = tab.coverStale, enter = fadeIn(tween(0)), exit = androidx.compose.animation.fadeOut(tween(140))) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
+                }
                 PullIndicator({ pullPx }, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
         }
@@ -456,26 +487,9 @@ fun BrowserScreen(browser: Browser) {
             onExpand = { tab.expandChrome() },
             onSwipeUp = { if (collapsed) tab.expandChrome() else requestTabs() },
             onSwipeDown = { if (!tab.home) tab.collapseChrome() },
-            onCopy = {
-                val copied = runCatching {
-                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", tab.url))
-                }.isSuccess && clipboard != null
-                Notices.show(if (copied) "Адрес скопирован" else "Не удалось скопировать")
-            },
-            onShare = { PageActions.share(activity ?: appContext, tab) },
-            onPasteGo = {
-                val text = runCatching {
-                    clipboard?.primaryClip?.takeIf { it.itemCount > 0 }
-                        ?.getItemAt(0)?.coerceToText(appContext)?.toString()?.trim()
-                }.getOrNull().orEmpty()
-                if (text.isEmpty()) {
-                    Notices.show("Буфер обмена пуст")
-                } else {
-                    if (isSearch(text) && !tab.isPrivate) store.addSearch(text)
-                    tab.load(text, shownEngine)
-                    oneOff = null
-                }
-            },
+            onCopy = copyAddress,
+            onShare = shareAddress,
+            onPasteGo = pasteAndGo,
             onCloseTab = { browser.closeTab(browser.currentIndex) },
             onCloseAll = { browser.closeAllTabs() },
             quickTabs = { browser.contextTabs(tab) },
