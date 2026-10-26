@@ -245,8 +245,9 @@ internal fun AddressBar(
         val wanted by animateDpAsState(maxOf(560.dp, textDp + chrome), tween(220), label = "barWidth")
         val extraW by animateDpAsState(if (extras != null && showExtras) ExtrasWidth else 0.dp, tween(220), label = "barExtraW")
         BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+            val availW = maxWidth
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BarBody(Modifier.width(wanted.coerceAtMost(maxWidth - extraW)))
+                BarBody(Modifier.width(wanted.coerceAtMost(availW - extraW)))
                 if (extras != null) {
                     AnimatedVisibility(
                         visible = showExtras,
