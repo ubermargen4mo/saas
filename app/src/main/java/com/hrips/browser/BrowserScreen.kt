@@ -456,8 +456,10 @@ fun BrowserScreen(browser: Browser) {
                 )
                 TabSwapCover(tab)
                 // После «домой» под начальным экраном лежала прежняя страница: пока новая не отрисовалась, её закрываем.
-                AnimatedVisibility(visible = tab.coverStale, enter = fadeIn(tween(0)), exit = androidx.compose.animation.fadeOut(tween(140))) {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
+                // Без AnimatedVisibility: внутри Column он берёт неявный ColumnScope и ломает сборку (DSL_SCOPE_VIOLATION).
+                val coverAlpha by animateFloatAsState(if (tab.coverStale) 1f else 0f, tween(if (tab.coverStale) 0 else 140), label = "staleCover")
+                if (coverAlpha > 0.01f) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha }.background(MaterialTheme.colorScheme.surface))
                 }
                 PullIndicator({ pullPx }, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
