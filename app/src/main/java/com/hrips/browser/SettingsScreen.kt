@@ -125,6 +125,7 @@ private val index = listOf(
     SettingEntry("Обои главной страницы", "фон картинка фото", SettingsPage.HOME),
     SettingEntry("Значок приложения", "иконка лого креветка синяя оранжевая серая icon", SettingsPage.HOME),
     SettingEntry("Внешний вид", "оформление тема значок обои", SettingsPage.HOME),
+    SettingEntry("Вкладки на планшете", "панель вкладок сверху снизу слева скрыть показывать", SettingsPage.HOME),
     SettingEntry("Скриншоты в приватных вкладках", "приватный режим снимок экрана", SettingsPage.PRIVACY),
     SettingEntry("Очистить данные", "история cookies куки кэш удалить", SettingsPage.PRIVACY),
     SettingEntry("Global Privacy Control", "gpc не продавать данные сигнал приватность", SettingsPage.PRIVACY),
@@ -447,8 +448,40 @@ private fun HomePage(app: HripsApp, onBack: () -> Unit) {
     val wallpaper = app.wallpaper
     PageScaffold("Внешний вид", onBack) {
         if (isWideWindow()) {
-            SectionTitle("Шапка на планшете")
-            HeaderStylePicker(app.store.headerStyle) { app.store.updateHeaderStyle(it) }
+            val st = app.store
+            SectionTitle("Вкладки: вид")
+            GroupOf(
+                listOf(
+                    Triple(TABS_STYLE_STRIP, "Отдельная полоса", "Вкладки в своей строке или сбоку"),
+                    Triple(TABS_STYLE_INLINE, "В строке адреса", "Компактно: вкладки рядом со строкой, нажатая вкладка становится адресом"),
+                ),
+            ) { (v, name, hint), sh ->
+                SettingsRow(
+                    null, name, hint, sh,
+                    onClick = { st.updateTabsStyle(v) },
+                    trailing = { RadioButton(selected = st.tabsStyle == v, onClick = null) },
+                )
+            }
+            if (st.tabsStyle == TABS_STYLE_STRIP) {
+                SectionTitle("Вкладки: расположение")
+                GroupOf(listOf(TABS_BELOW to "Под строкой адреса", TABS_ABOVE to "Над строкой адреса", TABS_LEFT to "Слева")) { (v, name), sh ->
+                    SettingsRow(
+                        null, name, null, sh,
+                        onClick = { st.updateTabsPos(v) },
+                        trailing = { RadioButton(selected = st.tabsPos == v, onClick = null) },
+                    )
+                }
+            }
+            SectionTitle("Вкладки: когда показывать")
+            GroupOf(listOf(TABS_ALWAYS to "Всегда", TABS_MORE_THAN_TWO to "Когда вкладок две и больше", TABS_NEVER to "Никогда")) { (v, name), sh ->
+                SettingsRow(
+                    null, name,
+                    if (v == TABS_NEVER) "Панель можно открыть кнопкой слева в шапке" else null,
+                    sh,
+                    onClick = { st.updateTabsShow(v) },
+                    trailing = { RadioButton(selected = st.tabsShow == v, onClick = null) },
+                )
+            }
         }
         SectionTitle("Значок приложения")
         AppIconPicker()
@@ -1125,112 +1158,3 @@ private fun CheckRow(title: String, checked: Boolean, shape: Shape, subtitle: St
     )
 }
 
-/** Три варианта шапки планшета с наглядными превью; выбор нажатием на картинку. */
-@Composable
-private fun HeaderStylePicker(style: Int, onPick: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HeaderStyleCard("Плоская", "Как в Safari: шапка в цвет сайта, вкладки под панелью", HEADER_FLAT, style == HEADER_FLAT, Modifier.weight(1f)) { onPick(HEADER_FLAT) }
-            HeaderStyleCard("Классическая", "Вкладки над панелью, цвет шапки не меняется", HEADER_CLASSIC, style == HEADER_CLASSIC, Modifier.weight(1f)) { onPick(HEADER_CLASSIC) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HeaderStyleCard("Компактная", "Поиск на главной переезжает в шапку, текст по центру", HEADER_COMPACT, style == HEADER_COMPACT, Modifier.weight(1f)) { onPick(HEADER_COMPACT) }
-            Spacer(Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun HeaderStyleCard(title: String, subtitle: String, style: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val haptic = LocalHapticFeedback.current
-    androidx.compose.material3.Surface(
-        onClick = { if (!selected) haptic.performHapticFeedback(HapticFeedbackType.ToggleOn); onClick() },
-        modifier = modifier,
-        shape = HripsShapes.L,
-        color = cs.surfaceContainer,
-        border = androidx.compose.foundation.BorderStroke(if (selected) 2.dp else 1.dp, if (selected) cs.primary else cs.outlineVariant),
-    ) {
-        Column(Modifier.padding(10.dp)) {
-            HeaderPreview(style)
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                RadioButton(selected = selected, onClick = null)
-                Spacer(Modifier.width(8.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall, color = cs.onSurface)
-            }
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = cs.onSurfaceVariant,
-                modifier = Modifier.padding(start = 40.dp, top = 2.dp),
-            )
-        }
-    }
-}
-
-/** Миниатюра окна браузера. Плоская: шапка и страница одного цвета, вкладки под панелью. Классическая: вкладки сверху, кнопки без подложек. */
-@Composable
-private fun HeaderPreview(style: Int) {
-    val classic = style == HEADER_CLASSIC
-    val compact = style == HEADER_COMPACT
-    val cs = MaterialTheme.colorScheme
-    val ink = if (classic) cs.onSurface else Color(0xFF3B2A20)
-    val headerBg = if (classic) cs.surfaceContainerHigh else Color(0xFFEBD5C7)
-    val pageBg = if (classic) cs.surface else Color(0xFFEBD5C7)
-    val tone = ink.copy(alpha = 0.10f)
-    val line = ink.copy(alpha = 0.14f)
-    val dot = ink.copy(alpha = 0.55f)
-    val round = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
-    val tinyRound = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-
-    @Composable
-    fun Dot() = Box(Modifier.size(6.dp).background(dot, CircleShape))
-
-    @Composable
-    fun Bare(n: Int) = Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { repeat(n) { Dot() } }
-
-    @Composable
-    fun PillGroup(n: Int) = Row(
-        Modifier.height(13.dp).background(tone, CircleShape).padding(horizontal = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) { repeat(n) { Dot() } }
-
-    @Composable
-    fun RowScope.Address() = Box(
-        Modifier.weight(1f).height(13.dp).background(tone, CircleShape),
-        contentAlignment = if (classic) androidx.compose.ui.Alignment.CenterStart else androidx.compose.ui.Alignment.Center,
-    ) {
-        Box(Modifier.padding(start = if (classic) 8.dp else 0.dp).width(if (classic) 48.dp else 38.dp).height(3.dp).background(ink.copy(alpha = 0.45f), CircleShape))
-    }
-
-    Column(Modifier.fillMaxWidth().height(112.dp).clip(round)) {
-        Column(Modifier.fillMaxWidth().background(headerBg).padding(horizontal = 7.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            if (classic) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Box(Modifier.width(44.dp).height(12.dp).background(ink.copy(alpha = 0.16f), CircleShape))
-                    Box(Modifier.width(44.dp).height(12.dp).background(tone, CircleShape))
-                    Dot()
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (classic) Bare(3) else { PillGroup(2); PillGroup(1) }
-                Address()
-                if (compact) PillGroup(2)
-                if (classic) Bare(4) else PillGroup(4)
-            }
-            if (!classic) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Box(Modifier.width(48.dp).height(11.dp).background(ink.copy(alpha = 0.14f), tinyRound))
-                    Box(Modifier.width(48.dp).height(11.dp).padding(top = 4.dp, start = 6.dp, end = 14.dp).background(line, CircleShape))
-                }
-            }
-        }
-        Column(Modifier.fillMaxWidth().weight(1f).background(pageBg).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.fillMaxWidth(0.45f).height(7.dp).background(ink.copy(alpha = 0.28f), CircleShape))
-            Box(Modifier.fillMaxWidth().height(4.dp).background(line, CircleShape))
-            Box(Modifier.fillMaxWidth(0.8f).height(4.dp).background(line, CircleShape))
-        }
-    }
-}

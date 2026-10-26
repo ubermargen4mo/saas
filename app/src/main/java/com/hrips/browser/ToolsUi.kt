@@ -143,20 +143,24 @@ internal fun Modifier.toolsIn(index: Int): Modifier {
 
 /** Шапка: значок сайта (круг), название и адрес. */
 @Composable
-internal fun ToolsHeader(letter: String, title: String, subtitle: String, modifier: Modifier = Modifier, size: Dp = 44.dp) {
+internal fun ToolsHeader(letter: String, title: String, subtitle: String, modifier: Modifier = Modifier, size: Dp = 44.dp, tab: Tab? = null) {
     val cs = MaterialTheme.colorScheme
     Row(
         modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Box(Modifier.size(size).background(cs.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-            Text(
-                letter,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = cs.onPrimaryContainer,
-            )
+        // Значок сайта; пока его нет (или у главной) - круг с первой буквой.
+        val letterTile: @Composable () -> Unit = {
+            Box(Modifier.size(size).background(cs.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Text(
+                    letter,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = cs.onPrimaryContainer,
+                )
+            }
         }
+        if (tab != null && tab.siteHost() != null) Favicon(tab.url, size, fill = true, shape = CircleShape, fallback = letterTile) else letterTile()
         Column(Modifier.weight(1f)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, color = cs.onSurface)
             Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)

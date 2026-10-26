@@ -47,33 +47,6 @@ internal fun Tab.label() = when {
     else -> title.ifBlank { url }
 }
 
-/** Полоса загрузки под шапкой (классическая шапка): внутри цвета сайта, поэтому красится вместе с ней. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun PageProgressBar(tab: Tab) {
-    Box(Modifier.fillMaxWidth().height(10.dp), contentAlignment = Alignment.Center) {
-        val shownProgress by animateFloatAsState(
-            tab.progress / 100f,
-            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
-            label = "pageProgress",
-        )
-        val finishing = !tab.loading && tab.progress >= 100 && shownProgress < 0.99f
-        val barAlpha by animateFloatAsState(
-            if ((tab.loading || finishing) && !tab.home) 1f else 0f,
-            MaterialTheme.motionScheme.defaultEffectsSpec<Float>(),
-            label = "pageProgressAlpha",
-        )
-        if (barAlpha > 0.01f) {
-            LinearProgressIndicator(
-                progress = { shownProgress },
-                modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = barAlpha },
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.secondaryContainer,
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun BrowserScreen(browser: Browser) {
@@ -95,8 +68,15 @@ fun BrowserScreen(browser: Browser) {
     val store = browser.store
     val app = LocalContext.current.applicationContext as HripsApp
     val wide = isWideWindow()
-    val classic = wide && store.classicHeader
-    val compact = wide && store.compactHeader
+    // Вкладки на планшете: расположение и видимость из настроек; кнопка в шапке перекрывает правило вручную.
+    val ctxTabs = browser.contextTabs(browser.current).size
+    val tabsRule = when (store.tabsShow) {
+        TABS_ALWAYS -> true
+        TABS_MORE_THAN_TWO -> ctxTabs > 1
+        else -> false
+    }
+    val tabsVisible = wide && (store.tabsOverride ?: tabsRule)
+    val inlineTabs = wide && store.tabsStyle == TABS_STYLE_INLINE
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val activity = LocalContext.current as? Activity
     var showHistory by remember { mutableStateOf(false) }
@@ -212,7 +192,7 @@ fun BrowserScreen(browser: Browser) {
         c.isAppearanceLightNavigationBars = !priv && !systemDark
     }
     // Значки в строке состояния читаются на цвете сайта: тёмные на светлом, светлые на тёмном.
-    val themed = tab.themeColor.takeIf { wide && !classic && !tab.home && !priv && !tab.errorPage }
+    val themed = tab.themeColor.takeIf { wide && !tab.home && !priv && !tab.errorPage }
     LaunchedEffect(themed, priv, systemDark) {
         val w = activity?.window ?: return@LaunchedEffect
         val c = WindowCompat.getInsetsController(w, w.decorView)
@@ -324,8 +304,8 @@ fun BrowserScreen(browser: Browser) {
         }
     }
     val statusColor = MaterialTheme.colorScheme.surface
-    // Плоская шапка планшета подстраивается под сайт (классическая нет); в приватных вкладках, на главной и на служебных страницах остаётся обычная.
-    val siteColor = if (wide && !classic && !tab.home && !tab.isPrivate && !tab.errorPage) tab.themeColor else null
+    // Шапка планшета подстраивается под сайт; в приватных вкладках, на главной и на служебных страницах остаётся обычная.
+    val siteColor = if (wide && !tab.home && !tab.isPrivate && !tab.errorPage) tab.themeColor else null
     LaunchedEffect(statusColor) {
         activity?.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(statusColor.toArgb()))
     }
@@ -339,30 +319,36 @@ fun BrowserScreen(browser: Browser) {
         SiteHeaderTheme(siteColor) {
         Column(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).statusBarsPadding()) {
-            if (classic) TabStrip(browser, classic = true)
+            if (wide && !inlineTabs && store.tabsPos == TABS_ABOVE) {
+                AnimatedVisibility(visible = tabsVisible) { TabStrip(browser, above = true) }
+            }
             AnimatedVisibility(
                 visible = wide,
                 enter = fadeIn(tween(HripsMotion.ChromeMs)),
                 exit = ExitTransition.None,
             ) {
             Row(
+                // Отступы как в Safari: 12 dp от краёв окна, 8 dp между группами, одинаковая высота 40 dp.
                 Modifier.fillMaxWidth().padding(
-                    start = if (classic) 4.dp else if (wide) 6.dp else 12.dp,
-                    end = if (classic) 4.dp else if (wide) 6.dp else 12.dp,
-                    top = if (classic) 4.dp else if (wide) 2.dp else 4.dp,
-                    bottom = if (classic) 1.dp else if (wide) 3.dp else 4.dp,
+                    horizontal = 12.dp,
+                    vertical = 6.dp,
                 ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Плоская шапка: группы кнопок на тональных подложках. Классическая: «назад/вперёд» и «домой» отдельно.
-                val bs = if (classic) 40.dp else 36.dp
+                val bs = 36.dp
                 if (wide) {
-                    // Порядок как в Safari: сначала «домой», затем «назад» и «вперёд».
-                    ToolbarGroup(classic = classic) {
+                    // Слева: показать и скрыть вкладки, «домой», «назад» и «вперёд».
+                    ToolbarGroup {
+                        BarButton(modifier = Modifier.size(bs), onClick = { store.setTabsOverride(!tabsVisible) }) {
+                            Icon(HripsIcons.TbSidebar, if (tabsVisible) "Скрыть вкладки" else "Показать вкладки")
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    ToolbarGroup {
                         BarButton(modifier = Modifier.size(bs), onClick = { tab.goHome() }) { Icon(HripsIcons.TbHome, "Домой") }
                     }
-                    Spacer(Modifier.width(if (classic) 4.dp else 6.dp))
-                    ToolbarGroup(classic = classic) {
+                    Spacer(Modifier.width(8.dp))
+                    ToolbarGroup {
                         BarButton(modifier = Modifier.size(bs), onClick = goBack, enabled = backEnabled) {
                             Icon(HripsIcons.TbBack, "Назад")
                         }
@@ -371,54 +357,52 @@ fun BrowserScreen(browser: Browser) {
                         }
                     }
                 }
-                Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp), contentAlignment = Alignment.Center) {
-                    AddressBar(
-                        tab = tab,
-                        onSearch = { openSearch() },
-                        engine = shownEngine,
-                        query = parsed?.second,
-                        onPickEngine = pickEngine,
-                        modifier = Modifier.fillMaxWidth(),
-                        wide = wide,
-                        classic = classic,
-                        compact = compact,
-                        // Фото и QR рядом со строкой: только на главной и на страницах поисковиков.
-                        showExtras = (tab.home && !tab.isPrivate) || parsed != null,
-                        extras = if (compact) ({
-                            ToolbarGroup {
-                                BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.Image, "Поиск по фото") }
-                                BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.Qr, "Сканировать QR-код") }
-                            }
-                        }) else null,
-                        onCopy = copyAddress,
-                        onShare = shareAddress,
-                        onPasteGo = pasteAndGo,
-                        onCloseTab = { browser.closeTab(browser.currentIndex) },
-                        onCloseAll = { browser.closeAllTabs() },
-                    )
+                Box(Modifier.weight(1f).padding(horizontal = if (wide) 8.dp else 0.dp).then(if (inlineTabs) Modifier.originAnchor("tabs") else Modifier), contentAlignment = Alignment.Center) {
+                    val addressBar: @Composable () -> Unit = {
+                        AddressBar(
+                            tab = tab,
+                            onSearch = { openSearch() },
+                            engine = shownEngine,
+                            query = parsed?.second,
+                            onPickEngine = pickEngine,
+                            modifier = Modifier.fillMaxWidth(),
+                            wide = wide,
+                            inline = inlineTabs,
+                            onSwipeDown = { requestTabs() },
+                            // Фото и QR рядом со строкой: только на главной и на страницах поисковиков.
+                            showExtras = (tab.home && !tab.isPrivate) || parsed != null,
+                            extras = {
+                                ToolbarGroup {
+                                    BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.TbImage, "Поиск по фото") }
+                                    BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.TbQr, "Сканировать QR-код") }
+                                }
+                            },
+                            onCopy = copyAddress,
+                            onShare = shareAddress,
+                            onPasteGo = pasteAndGo,
+                            onCloseTab = { browser.closeTab(browser.currentIndex) },
+                            onCloseAll = { browser.closeAllTabs() },
+                        )
+                    }
+                    if (inlineTabs) InlineTabsRow(browser, showTabs = tabsVisible, modifier = Modifier.fillMaxWidth(), address = addressBar) else addressBar()
                 }
                 if (wide) {
-                    ToolbarGroup(classic = classic) {
-                        if (!classic) {
-                            BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(if (compact) HripsIcons.TbPlusCircle else HripsIcons.TbPlus, "Новая вкладка") }
-                        }
-                        TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
+                    ToolbarGroup {
+                        BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlusCircle, "Новая вкладка") }
+                        if (!inlineTabs) TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
                         BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
                         AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                         BarButton(modifier = Modifier.size(bs), onClick = { showTools = true }) {
-                            Icon(if (compact) HripsIcons.TbMenu else HripsIcons.TbMore, "Инструменты")
+                            Icon(HripsIcons.TbMenu, "Инструменты")
                         }
                     }
-                    if (classic) Spacer(Modifier.width(4.dp))
                 }
             }
             }
-            // Как панель вкладок в Safari: появляется под панелью, когда вкладок больше одной; с одной вкладкой шапка в один ряд.
-            if (wide && !classic) {
-                AnimatedVisibility(visible = browser.contextTabs(browser.current).size > 1) { TabStrip(browser) }
+            if (wide && !inlineTabs && store.tabsPos == TABS_BELOW) {
+                AnimatedVisibility(visible = tabsVisible) { TabStrip(browser) }
             }
         }
-        if (classic) PageProgressBar(tab)
         }
         }
 
@@ -428,7 +412,15 @@ fun BrowserScreen(browser: Browser) {
 
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+        if (wide) {
+            AnimatedVisibility(
+                visible = tabsVisible && !inlineTabs && store.tabsPos == TABS_LEFT,
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally(),
+            ) { VerticalTabs(browser) }
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) {
             if (tab.home && tab.isPrivate) key("private-start") { FadeInBox {
                 PrivateStartPage(
                     privateCount = browser.privateCount,
@@ -437,10 +429,10 @@ fun BrowserScreen(browser: Browser) {
                     onCloseAll = { browser.closePrivateTabs() },
                     engine = if (wide) null else shownEngine,
                     onPickEngine = pickEngine,
-                    showSearch = wide && !compact,
+                    showSearch = false,
                 )
             } } else if (tab.home) key("start") { FadeInBox {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide && !compact)
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = false)
             } } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -470,6 +462,7 @@ fun BrowserScreen(browser: Browser) {
                 TabSwapCover(tab)
                 PullIndicator({ pullPx }, pullThresholdPx, pullRefreshing, Modifier.align(Alignment.TopCenter))
             }
+        }
         }
 
         if (wide && !fs) Spacer(Modifier.navigationBarsPadding())

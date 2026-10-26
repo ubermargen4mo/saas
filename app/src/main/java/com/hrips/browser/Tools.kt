@@ -166,7 +166,7 @@ private fun ToolsPopup(
                         }
                     }
                 } else {
-                    ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0), size = 40.dp)
+                    ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0), size = 40.dp, tab = tab)
 
                     val nav = listOf(
                         MenuAction(HripsIcons.Star, "Закладки") { onDismiss(); onLibrary(0) },

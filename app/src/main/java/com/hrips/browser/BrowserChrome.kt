@@ -6,6 +6,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
@@ -56,9 +59,11 @@ internal fun AddressBar(
     onPickEngine: (SearchEngine) -> Unit,
     modifier: Modifier = Modifier,
     wide: Boolean = false,
-    classic: Boolean = false,
-    // Компактная шапка: текст по центру, справа от строки капсула [extras] (фото и QR), видна при [showExtras].
-    compact: Boolean = false,
+    // Вкладки в строке адреса: слева крестик и значок сайта, щит стоит справа от адреса (как замок в Safari).
+    inline: Boolean = false,
+    // Смах вниз по строке (как на телефоне): открывает менеджер вкладок.
+    onSwipeDown: (() -> Unit)? = null,
+    // Справа от строки капсула [extras] (фото и QR), видна при [showExtras].
     extras: (@Composable () -> Unit)? = null,
     showExtras: Boolean = false,
     onCopy: () -> Unit = {},
@@ -117,13 +122,13 @@ internal fun AddressBar(
                 fadeIn(tween(160, delayMillis = 70)) togetherWith fadeOut(tween(90)) using
                     SizeTransform(clip = false) { _, _ -> snap() }
             },
-            contentAlignment = if (compact) Alignment.Center else Alignment.CenterStart,
+            contentAlignment = Alignment.Center,
             modifier = textModifier,
             label = "barText",
         ) { text ->
             val style = MaterialTheme.typography.bodyLarge
             if (text.isEmpty()) {
-                Row(Modifier.padding(start = if (compact) 0.dp else 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(HripsIcons.TbSearch, null, tint = cs.onSurfaceVariant)
                     Spacer(Modifier.width(2.dp))
                     Text("Искать или задать вопрос", maxLines = 1, overflow = TextOverflow.Ellipsis, style = style, color = cs.onSurfaceVariant)
@@ -131,10 +136,10 @@ internal fun AddressBar(
             } else {
                 Text(
                     text,
-                    modifier = Modifier.padding(start = if (withPicker && !compact) 8.dp else 4.dp, end = 4.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = if (compact) TextAlign.Center else TextAlign.Start,
+                    textAlign = TextAlign.Center,
                     style = style,
                     color = cs.onSurface,
                 )
@@ -154,7 +159,6 @@ internal fun AddressBar(
                 label = "barReload",
             ) { loading ->
                 when {
-                    loading && classic -> Icon(HripsIcons.TbStop, "Остановить")
                     loading -> LoadRing(tab.progress / 100f, LocalContentColor.current)
                     else -> Icon(HripsIcons.TbRefresh, "Обновить")
                 }
@@ -162,57 +166,76 @@ internal fun AddressBar(
         }
     }
 
+    // Поля под кнопки слева и справа одинаковые, чтобы текст стоял ровно по центру капсулы.
+    val sidePad = if (inline) (if (withPicker) 112.dp else 72.dp) else (if (withPicker) 76.dp else 44.dp)
+    val swipePx = with(LocalDensity.current) { 36.dp.toPx() }
+
     @Composable
     fun BarBody(capsuleModifier: Modifier) {
         FlatCapsule(
-            modifier = capsuleModifier.height(barHeight).originAnchor("search"),
-            color = if (classic) cs.surfaceContainerHigh else flatFill(),
+            modifier = capsuleModifier.height(barHeight).originAnchor("search").then(
+                if (onSwipeDown == null) Modifier else Modifier.pointerInput(onSwipeDown) {
+                    var total = 0f
+                    var fired = false
+                    detectVerticalDragGestures(
+                        onDragStart = { total = 0f; fired = false },
+                        onDragEnd = {},
+                        onDragCancel = {},
+                        onVerticalDrag = { change, dy ->
+                            change.consume()
+                            total += dy
+                            if (!fired && total > swipePx) {
+                                fired = true
+                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                onSwipeDown()
+                            }
+                        },
+                    )
+                },
+            ),
+            color = flatFill(),
         ) {
           Box(Modifier.fillMaxSize()) {
-            if (!classic && (fillOn || fillAlpha.value > 0.01f)) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
-            if (compact) {
-                // Текст ровно по центру капсулы: слева и справа одинаковые поля под кнопки, сами кнопки лежат поверх.
-                Box(
-                    Modifier.fillMaxSize().padding(horizontal = if (withPicker) 76.dp else 44.dp).combinedClickable(
-                        onClickLabel = "Ввести запрос или адрес",
-                        onLongClickLabel = "Действия с адресом",
-                        onLongClick = openMenu,
-                        onClick = onSearch,
-                    ),
-                    contentAlignment = Alignment.Center,
-                ) { AddressText(Modifier) }
-                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    if (withPicker) {
-                        Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-                    } else {
-                        BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
-                            Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
+            if (fillOn || fillAlpha.value > 0.01f) LoadFill(progressState.asState(), fillAlpha, tab.loading, cs.onSurface)
+            // Текст ровно по центру капсулы: слева и справа одинаковые поля под кнопки, сами кнопки лежат поверх.
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = sidePad).combinedClickable(
+                    onClickLabel = "Ввести запрос или адрес",
+                    onLongClickLabel = "Действия с адресом",
+                    onLongClick = openMenu,
+                    onClick = onSearch,
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AddressText(Modifier.weight(1f, fill = false))
+                    if (inline && !withPicker) {
+                        BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(28.dp)) {
+                            Icon(shieldIcon, "Безопасность соединения", Modifier.size(18.dp), tint = shieldTint)
                         }
                     }
-                    Spacer(Modifier.weight(1f))
-                    ReloadButton()
-                }
-            } else {
-                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-                    if (withPicker) {
-                        Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
-                    } else {
-                        BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
-                            Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
-                        }
-                    }
-                    Row(
-                        Modifier.weight(1f).fillMaxHeight().combinedClickable(
-                            onClickLabel = "Ввести запрос или адрес",
-                            onLongClickLabel = "Действия с адресом",
-                            onLongClick = openMenu,
-                            onClick = onSearch,
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) { AddressText(Modifier.weight(1f, fill = false)) }
-                    ReloadButton()
                 }
             }
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                if (inline) {
+                    BarButton(onClick = onCloseTab, modifier = Modifier.padding(start = 2.dp).size(36.dp)) {
+                        Icon(HripsIcons.TbCloseSmall, "Закрыть вкладку")
+                    }
+                }
+                if (withPicker) {
+                    Box(Modifier.padding(start = 4.dp)) { EnginePicker(engine, onPickEngine) }
+                } else if (inline) {
+                    Spacer(Modifier.width(6.dp))
+                    TabSiteIcon(tab, 18.dp, shape = CircleShape)
+                } else {
+                    BarButton(onClick = { showSecurity = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(shieldIcon, "Безопасность соединения", tint = shieldTint)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                ReloadButton()
+            }
+
             PillMenu(
                 expanded = menuOpen,
                 onDismiss = { menuOpen = false },
@@ -228,20 +251,13 @@ internal fun AddressBar(
         }
     }
 
-    if (classic) {
-        BarBody(modifier)
-    } else {
-        // Плоская шапка: строка короткая (от 560 dp), текст идёт слева; когда адрес не помещается, строка растёт до края.
+        // Строка короткая (от 560 dp), текст по центру; когда адрес не помещается, строка растёт до края.
         val measurer = rememberTextMeasurer()
         val density = LocalDensity.current
         val label = shown.ifEmpty { "Искать или задать вопрос" }
         val textStyle = MaterialTheme.typography.bodyLarge
         val textDp = with(density) { measurer.measure(AnnotatedString(label), textStyle, maxLines = 1).size.width.toDp() }
-        val chrome = if (compact) {
-            (if (withPicker) 76.dp else 44.dp) * 2 + 8.dp + (if (shown.isEmpty()) 28.dp else 0.dp)
-        } else {
-            (if (withPicker) 84.dp else 44.dp) + 40.dp + 16.dp + (if (shown.isEmpty()) 28.dp else 0.dp)
-        }
+        val chrome = sidePad * 2 + 8.dp + (if (shown.isEmpty()) 28.dp else 0.dp)
         val wanted by animateDpAsState(maxOf(560.dp, textDp + chrome), tween(220), label = "barWidth")
         val extraW by animateDpAsState(if (extras != null && showExtras) ExtrasWidth else 0.dp, tween(220), label = "barExtraW")
         BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
@@ -262,7 +278,6 @@ internal fun AddressBar(
                 }
             }
         }
-    }
 }
 
 /** Вкладки того же контекста, что и [of]: приватные только с приватными, обычные только своей группы. */
@@ -271,7 +286,7 @@ internal fun Browser.contextTabs(of: Tab): List<Tab> =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun TabStrip(browser: Browser, classic: Boolean = false) {
+internal fun TabStrip(browser: Browser, above: Boolean = false) {
     val listState = rememberLazyListState()
     val haptic = LocalHapticFeedback.current
     var draggingId by remember { mutableStateOf<String?>(null) }
@@ -330,10 +345,10 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
     }
 
     Row(
-        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = if (classic) 4.dp else 0.dp, bottom = if (classic) 0.dp else 4.dp),
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = if (above) 4.dp else 0.dp, bottom = if (above) 2.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LazyRow(Modifier.weight(1f, fill = !classic), state = listState, horizontalArrangement = Arrangement.spacedBy(if (classic) 4.dp else 2.dp)) {
+        LazyRow(Modifier.weight(1f), state = listState, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(shown, key = { _, t -> t.id }) { i, t ->
                 val id = t.id
                 val grow = remember(id) { Animatable(if (seen.add(id)) 0f else 1f) }
@@ -344,7 +359,7 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                 val held = dragging || settlingId == id
                 val isCurrent = t.id == browser.current.id
                 val tabColor by animateColorAsState(
-                    if (isCurrent) (if (classic) MaterialTheme.colorScheme.surfaceContainerHighest else flatFill()) else Color.Transparent,
+                    if (isCurrent) flatFill() else Color.Transparent,
                     MaterialTheme.motionScheme.defaultEffectsSpec<Color>(),
                     label = "tabStripColor",
                 )
@@ -352,11 +367,11 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                 val shadow by animateDpAsState(if (dragging) 8.dp else 0.dp, label = "tabShadow")
                 Surface(
                     onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.currentIndex = it } },
-                    shape = if (classic) CircleShape else RoundedCornerShape(9.dp),
+                    shape = RoundedCornerShape(9.dp),
                     color = tabColor,
                     shadowElevation = shadow,
                     modifier = Modifier
-                        .height(if (classic) 40.dp else 30.dp).widthIn(min = 120.dp, max = if (classic) 220.dp else 240.dp)
+                        .height(30.dp).widthIn(min = 120.dp, max = 240.dp)
                         .semantics { this.selected = isCurrent }
                         .layout { m, c ->
                             val p = m.measure(c)
@@ -409,7 +424,7 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                         } else if (t.home) {
                             Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            TabSiteIcon(t, if (classic) 18.dp else 16.dp, shape = CircleShape)
+                            TabSiteIcon(t, 16.dp, shape = CircleShape)
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -422,7 +437,7 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                         )
                         IconButton(
                             onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.closeTab(it) } },
-                            modifier = Modifier.size(if (classic) 40.dp else 28.dp),
+                            modifier = Modifier.size(28.dp),
                         ) {
                             Icon(HripsIcons.TbCloseSmall, "Закрыть вкладку: ${t.label()}")
                         }
@@ -430,8 +445,208 @@ internal fun TabStrip(browser: Browser, classic: Boolean = false) {
                 }
             }
         }
-        if (classic) {
-            BarButton(modifier = Modifier.size(40.dp), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlus, "Новая вкладка") }
+    }
+}
+
+/** Переставляет вкладку [id] на соседнее место в [shown] (индексы общего списка берутся по id). */
+private fun Browser.swapNeighbor(shown: List<Tab>, id: String, forward: Boolean): Boolean {
+    val i = shown.indexOfFirst { it.id == id }
+    val other = shown.getOrNull(if (forward) i + 1 else i - 1) ?: return false
+    val from = tabs.indexOfFirst { it.id == id }
+    val to = tabs.indexOfFirst { it.id == other.id }
+    if (from < 0 || to < 0) return false
+    moveTab(from, to)
+    return true
+}
+
+/** Вкладки слева: список текущей группы (или приватных) во всю высоту под шапкой и кнопка «Новая вкладка». Долгое нажатие и перетаскивание меняют порядок. */
+@Composable
+internal fun VerticalTabs(browser: Browser, modifier: Modifier = Modifier) {
+    val shown = browser.contextTabs(browser.current)
+    val shownNow by rememberUpdatedState(shown)
+    val cs = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val pitch = with(LocalDensity.current) { (40.dp + 2.dp).toPx() }
+    Column(modifier.width(232.dp).fillMaxHeight().padding(start = 12.dp, end = 4.dp, bottom = 8.dp)) {
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(shown, key = { it.id }) { t ->
+                val id = t.id
+                val isCurrent = id == browser.current.id
+                val dragging = draggingId == id
+                Surface(
+                    onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.currentIndex = it } },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isCurrent) flatFill() else Color.Transparent,
+                    shadowElevation = if (dragging) 8.dp else 0.dp,
+                    modifier = Modifier
+                        .fillMaxWidth().height(40.dp)
+                        .semantics { this.selected = isCurrent }
+                        .then(if (dragging) Modifier.zIndex(1f) else Modifier.animateItem())
+                        .graphicsLayer { translationY = if (dragging) dragOffset else 0f }
+                        .pointerInput(id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    draggingId = id
+                                    dragOffset = 0f
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount.y
+                                    if (dragOffset > pitch / 2 && browser.swapNeighbor(shownNow, id, forward = true)) dragOffset -= pitch
+                                    else if (dragOffset < -pitch / 2 && browser.swapNeighbor(shownNow, id, forward = false)) dragOffset += pitch
+                                },
+                                onDragEnd = { draggingId = null; dragOffset = 0f },
+                                onDragCancel = { draggingId = null; dragOffset = 0f },
+                            )
+                        },
+                ) {
+                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (t.isPrivate) {
+                            Icon(HripsIcons.Mask, null, Modifier.size(18.dp), tint = cs.primary)
+                        } else if (t.home) {
+                            Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                        } else {
+                            TabSiteIcon(t, 18.dp, shape = CircleShape)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            t.label(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isCurrent) cs.onSurface else cs.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.closeTab(it) } },
+                            modifier = Modifier.size(32.dp),
+                        ) { Icon(HripsIcons.TbCloseSmall, "Закрыть вкладку: ${t.label()}") }
+                    }
+                }
+            }
+        }
+        Surface(
+            onClick = { browser.newTab(incognito = browser.current.isPrivate) },
+            shape = RoundedCornerShape(12.dp),
+            color = Color.Transparent,
+            modifier = Modifier.fillMaxWidth().height(40.dp),
+        ) {
+            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(HripsIcons.TbPlus, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                Spacer(Modifier.width(10.dp))
+                Text("Новая вкладка", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/**
+ * Компактные вкладки (как в Safari на iPad): вкладки и адрес в одной строке. Текущая вкладка - это сама адресная
+ * строка ([address]), остальные - узкие пилюли со значком и названием; нажатие на пилюлю делает её адресной строкой.
+ * Пилюли переставляются долгим нажатием и перетаскиванием. [showTabs] = false оставляет только адресную строку.
+ */
+@Composable
+internal fun InlineTabsRow(browser: Browser, showTabs: Boolean, modifier: Modifier = Modifier, address: @Composable () -> Unit) {
+    val shown = browser.contextTabs(browser.current)
+    val shownNow by rememberUpdatedState(shown)
+    val cs = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val scroll = rememberScrollState()
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val gap = 4.dp
+    val barHeight = 40.dp * density.fontScale.coerceIn(1f, 1.6f)
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val total = maxWidth
+        val others = if (showTabs) (shown.size - 1).coerceAtLeast(0) else 0
+        val activeW = if (others == 0) total else (total * 0.5f).coerceIn(300.dp, 520.dp).coerceAtMost(total)
+        val otherW = if (others == 0) 0.dp else ((total - activeW - gap * others) / others).coerceIn(52.dp, 150.dp)
+        val widths by rememberUpdatedState(activeW to otherW)
+        LaunchedEffect(browser.current.id, shown.size, showTabs) {
+            if (!showTabs) return@LaunchedEffect
+            val idx = shown.indexOfFirst { it.id == browser.current.id }
+            if (idx < 0 || scroll.maxValue <= 0) return@LaunchedEffect
+            val x = with(density) { (otherW + gap).toPx() * idx }
+            val view = with(density) { total.toPx() }
+            scroll.animateScrollTo((x - (view - with(density) { activeW.toPx() }) / 2f).toInt().coerceIn(0, scroll.maxValue))
+        }
+        Row(
+            Modifier.horizontalScroll(scroll),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            shown.forEach { t ->
+                key(t.id) {
+                    val id = t.id
+                    val isCurrent = id == browser.current.id
+                    if (isCurrent || showTabs) {
+                        val w by animateDpAsState(if (isCurrent) activeW else otherW, MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.Dp>(), label = "inlineTabW")
+                        val dragging = draggingId == id
+                        if (isCurrent) {
+                            Box(Modifier.width(w)) { address() }
+                        } else {
+                            Surface(
+                                onClick = { browser.tabs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { browser.currentIndex = it } },
+                                shape = CircleShape,
+                                color = flatFill(),
+                                shadowElevation = if (dragging) 8.dp else 0.dp,
+                                modifier = Modifier
+                                    .width(w).height(barHeight)
+                                    .then(if (dragging) Modifier.zIndex(1f) else Modifier)
+                                    .graphicsLayer { translationX = if (dragging) dragOffset else 0f }
+                                    .pointerInput(id) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggingId = id
+                                                dragOffset = 0f
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                dragOffset += amount.x
+                                                val list = shownNow
+                                                val i = list.indexOfFirst { it.id == id }
+                                                val forward = dragOffset > 0
+                                                val neighbor = list.getOrNull(if (forward) i + 1 else i - 1) ?: return@detectDragGesturesAfterLongPress
+                                                val (aw, ow) = widths
+                                                val nw = if (neighbor.id == browser.current.id) aw else ow
+                                                val pitch = with(density) { ((ow + nw) / 2 + gap).toPx() }
+                                                if (kotlin.math.abs(dragOffset) > pitch / 2 && browser.swapNeighbor(list, id, forward)) {
+                                                    dragOffset += if (forward) -pitch else pitch
+                                                }
+                                            },
+                                            onDragEnd = { draggingId = null; dragOffset = 0f },
+                                            onDragCancel = { draggingId = null; dragOffset = 0f },
+                                        )
+                                    },
+                            ) {
+                                Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    if (t.isPrivate) {
+                                        Icon(HripsIcons.Mask, null, Modifier.size(18.dp), tint = cs.primary)
+                                    } else if (t.home) {
+                                        Icon(HripsIcons.Home, null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                                    } else {
+                                        TabSiteIcon(t, 18.dp, shape = CircleShape)
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        t.label(),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Clip,
+                                        softWrap = false,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = cs.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -535,16 +750,10 @@ internal fun FlatCapsule(modifier: Modifier = Modifier, shape: Shape = CircleSha
 @Composable
 internal fun ToolbarGroup(
     horizontalPadding: androidx.compose.ui.unit.Dp = 2.dp,
-    classic: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     val rowModifier = Modifier.height(40.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)).padding(horizontal = horizontalPadding)
-    if (classic) {
-        // Классическая шапка: кнопки без подложек.
-        Row(rowModifier, verticalAlignment = Alignment.CenterVertically, content = content)
-    } else {
-        FlatCapsule { Row(rowModifier, verticalAlignment = Alignment.CenterVertically, content = content) }
-    }
+    FlatCapsule { Row(rowModifier, verticalAlignment = Alignment.CenterVertically, content = content) }
 }
 
 /**

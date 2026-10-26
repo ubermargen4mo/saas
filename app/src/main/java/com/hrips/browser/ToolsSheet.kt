@@ -129,7 +129,7 @@ internal fun ToolsSheet(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0))
+            ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0), tab = tab)
 
             // Двойная кнопка: внешние углы — таблетка, внутренние — маленькие.
             Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {

@@ -73,9 +73,14 @@ internal object TabRootPrefetch {
     fun take(): java.util.concurrent.FutureTask<JSONObject?>? = task.also { task = null }
 }
 
-const val HEADER_FLAT = 0
-const val HEADER_CLASSIC = 1
-const val HEADER_COMPACT = 2
+const val TABS_STYLE_STRIP = 0
+const val TABS_STYLE_INLINE = 1
+const val TABS_BELOW = 0
+const val TABS_ABOVE = 1
+const val TABS_LEFT = 2
+const val TABS_ALWAYS = 0
+const val TABS_MORE_THAN_TWO = 1
+const val TABS_NEVER = 2
 
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("hrips", Context.MODE_PRIVATE)
@@ -186,19 +191,41 @@ class Store(context: Context) {
         prefs.edit().putBoolean("dlask", on).apply()
     }
 
-    /** Шапка планшета: 0 - плоская, как в Safari; 1 - классическая (вкладки над панелью, капсулы, полоса загрузки); 2 - компактная. */
-    var headerStyle by mutableIntStateOf(
-        if (prefs.contains("hdrstyle")) prefs.getInt("hdrstyle", HEADER_FLAT).coerceIn(HEADER_FLAT, HEADER_COMPACT)
-        else if (prefs.getBoolean("classichdr", false)) HEADER_CLASSIC else HEADER_FLAT,
-    )
+    /** Вид вкладок на планшете: [TABS_STYLE_STRIP] - отдельная панель, [TABS_STYLE_INLINE] - в одной строке с адресом (компактно). */
+    var tabsStyle by mutableIntStateOf(prefs.getInt("tabs_style", TABS_STYLE_STRIP).coerceIn(TABS_STYLE_STRIP, TABS_STYLE_INLINE))
         private set
 
-    val classicHeader: Boolean get() = headerStyle == HEADER_CLASSIC
-    val compactHeader: Boolean get() = headerStyle == HEADER_COMPACT
+    fun updateTabsStyle(v: Int) {
+        tabsStyle = v
+        tabsOverride = null
+        prefs.edit().putInt("tabs_style", v).apply()
+    }
 
-    fun updateHeaderStyle(style: Int) {
-        headerStyle = style
-        prefs.edit().putInt("hdrstyle", style).apply()
+    /** Вкладки на планшете: где стоит панель ([TABS_BELOW], [TABS_ABOVE], [TABS_LEFT]). */
+    var tabsPos by mutableIntStateOf(prefs.getInt("tabs_pos", TABS_BELOW).coerceIn(TABS_BELOW, TABS_LEFT))
+        private set
+
+    /** Когда панель вкладок видна: [TABS_ALWAYS], [TABS_MORE_THAN_TWO], [TABS_NEVER]. */
+    var tabsShow by mutableIntStateOf(prefs.getInt("tabs_show", TABS_MORE_THAN_TWO).coerceIn(TABS_ALWAYS, TABS_NEVER))
+        private set
+
+    /** Ручное скрытие и показ кнопкой в шапке; null - решает [tabsShow]. Только на время работы, сбрасывается сменой настройки. */
+    var tabsOverride by mutableStateOf<Boolean?>(null)
+        private set
+
+    fun updateTabsPos(v: Int) {
+        tabsPos = v
+        prefs.edit().putInt("tabs_pos", v).apply()
+    }
+
+    fun updateTabsShow(v: Int) {
+        tabsShow = v
+        tabsOverride = null
+        prefs.edit().putInt("tabs_show", v).apply()
+    }
+
+    fun setTabsOverride(visible: Boolean?) {
+        tabsOverride = visible
     }
 
     var allowPrivateShots by mutableStateOf(prefs.getBoolean("pshots", false))

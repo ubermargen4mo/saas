@@ -558,7 +558,26 @@ object HripsIcons {
     val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
     val TbPlus by lazy { icon("TbPlus", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
     // Компактная шапка: плюс в круге и «гамбургер» (три линии).
-    val TbPlusCircle by lazy { icon("TbPlusCircle", stroke = TB) { circle(12f, 12f, 9f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    val TbPlusCircle by lazy { icon("TbPlusCircle", stroke = TB, scale = 0.85f) { circle(12f, 12f, 9f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    val TbImage by lazy {
+        icon("TbImage", stroke = TB, scale = 0.85f) {
+            roundRect(3f, 3f, 18f, 18f, 3f)
+            circle(9f, 9f, 1.5f)
+            moveTo(21f, 16f); lineToRelative(-5f, -5f); lineTo(6f, 21f)
+        }
+    }
+    // QR в той же сетке и с тем же штрихом, что и остальные значки панели: три угла контуром и точки.
+    val TbQr by lazy {
+        icon("TbQr", stroke = TB, scale = 0.85f) {
+            roundRect(4f, 4f, 5f, 5f, 1f); roundRect(15f, 4f, 5f, 5f, 1f); roundRect(4f, 15f, 5f, 5f, 1f)
+            moveTo(14f, 14f); horizontalLineToRelative(0.01f)
+            moveTo(20f, 14f); horizontalLineToRelative(0.01f)
+            moveTo(17f, 17f); horizontalLineToRelative(0.01f)
+            moveTo(14f, 20f); horizontalLineToRelative(0.01f)
+            moveTo(20f, 20f); horizontalLineToRelative(0.01f)
+        }
+    }
+    val TbSidebar by lazy { icon("TbSidebar", stroke = TB, scale = 0.9f) { roundRect(3f, 4f, 18f, 16f, 3f); moveTo(9f, 4f); verticalLineTo(20f) } }
     val TbMenu by lazy { icon("TbMenu", stroke = TB) { moveTo(5f, 7f); horizontalLineTo(19f); moveTo(5f, 12f); horizontalLineTo(19f); moveTo(5f, 17f); horizontalLineTo(19f) } }
     val TbClose by lazy { icon("TbClose", stroke = TB) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbCloseSmall by lazy { icon("TbCloseSmall", stroke = TB, scale = 0.75f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
