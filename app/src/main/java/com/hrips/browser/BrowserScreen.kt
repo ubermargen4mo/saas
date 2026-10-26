@@ -342,7 +342,7 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     // Слева: показать и скрыть вкладки, «домой», «назад» и «вперёд».
                     ToolbarGroup {
-                        BarButton(modifier = Modifier.size(bs), onClick = { store.setTabsOverride(!tabsVisible) }) {
+                        BarButton(modifier = Modifier.size(bs), onClick = { store.overrideTabs(!tabsVisible) }) {
                             Icon(HripsIcons.TbSidebar, if (tabsVisible) "Скрыть вкладки" else "Показать вкладки")
                         }
                     }

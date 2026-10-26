@@ -224,7 +224,7 @@ class Store(context: Context) {
         prefs.edit().putInt("tabs_show", v).apply()
     }
 
-    fun setTabsOverride(visible: Boolean?) {
+    fun overrideTabs(visible: Boolean?) {
         tabsOverride = visible
     }
 
