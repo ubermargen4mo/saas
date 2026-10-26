@@ -557,6 +557,9 @@ object HripsIcons {
     val TbBack by lazy { icon("TbBack", stroke = TB) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
     val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
     val TbPlus by lazy { icon("TbPlus", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
+    // Компактная шапка: плюс в круге и «гамбургер» (три линии).
+    val TbPlusCircle by lazy { icon("TbPlusCircle", stroke = TB) { circle(12f, 12f, 9f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    val TbMenu by lazy { icon("TbMenu", stroke = TB) { moveTo(5f, 7f); horizontalLineTo(19f); moveTo(5f, 12f); horizontalLineTo(19f); moveTo(5f, 17f); horizontalLineTo(19f) } }
     val TbClose by lazy { icon("TbClose", stroke = TB) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbCloseSmall by lazy { icon("TbCloseSmall", stroke = TB, scale = 0.75f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbHome by lazy {

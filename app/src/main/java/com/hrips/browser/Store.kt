@@ -73,6 +73,10 @@ internal object TabRootPrefetch {
     fun take(): java.util.concurrent.FutureTask<JSONObject?>? = task.also { task = null }
 }
 
+const val HEADER_FLAT = 0
+const val HEADER_CLASSIC = 1
+const val HEADER_COMPACT = 2
+
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("hrips", Context.MODE_PRIVATE)
     private val tabsFile = java.io.File(context.filesDir, "tabs.json")
@@ -182,13 +186,19 @@ class Store(context: Context) {
         prefs.edit().putBoolean("dlask", on).apply()
     }
 
-    /** Шапка планшета: false — плоская, как в Safari; true — прежняя (вкладки над панелью, капсулы, полоса загрузки). */
-    var classicHeader by mutableStateOf(prefs.getBoolean("classichdr", false))
+    /** Шапка планшета: 0 - плоская, как в Safari; 1 - классическая (вкладки над панелью, капсулы, полоса загрузки); 2 - компактная. */
+    var headerStyle by mutableIntStateOf(
+        if (prefs.contains("hdrstyle")) prefs.getInt("hdrstyle", HEADER_FLAT).coerceIn(HEADER_FLAT, HEADER_COMPACT)
+        else if (prefs.getBoolean("classichdr", false)) HEADER_CLASSIC else HEADER_FLAT,
+    )
         private set
 
-    fun updateClassicHeader(on: Boolean) {
-        classicHeader = on
-        prefs.edit().putBoolean("classichdr", on).apply()
+    val classicHeader: Boolean get() = headerStyle == HEADER_CLASSIC
+    val compactHeader: Boolean get() = headerStyle == HEADER_COMPACT
+
+    fun updateHeaderStyle(style: Int) {
+        headerStyle = style
+        prefs.edit().putInt("hdrstyle", style).apply()
     }
 
     var allowPrivateShots by mutableStateOf(prefs.getBoolean("pshots", false))

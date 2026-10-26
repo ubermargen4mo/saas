@@ -96,6 +96,7 @@ fun BrowserScreen(browser: Browser) {
     val app = LocalContext.current.applicationContext as HripsApp
     val wide = isWideWindow()
     val classic = wide && store.classicHeader
+    val compact = wide && store.compactHeader
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val activity = LocalContext.current as? Activity
     var showHistory by remember { mutableStateOf(false) }
@@ -380,6 +381,15 @@ fun BrowserScreen(browser: Browser) {
                         modifier = Modifier.fillMaxWidth(),
                         wide = wide,
                         classic = classic,
+                        compact = compact,
+                        // Фото и QR рядом со строкой: только на главной и на страницах поисковиков.
+                        showExtras = (tab.home && !tab.isPrivate) || parsed != null,
+                        extras = if (compact) ({
+                            ToolbarGroup {
+                                BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.Image, "Поиск по фото") }
+                                BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.Qr, "Сканировать QR-код") }
+                            }
+                        }) else null,
                         onCopy = copyAddress,
                         onShare = shareAddress,
                         onPasteGo = pasteAndGo,
@@ -390,13 +400,13 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     ToolbarGroup(classic = classic) {
                         if (!classic) {
-                            BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlus, "Новая вкладка") }
+                            BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(if (compact) HripsIcons.TbPlusCircle else HripsIcons.TbPlus, "Новая вкладка") }
                         }
                         TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
                         BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
                         AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                         BarButton(modifier = Modifier.size(bs), onClick = { showTools = true }) {
-                            Icon(HripsIcons.TbMore, "Инструменты")
+                            Icon(if (compact) HripsIcons.TbMenu else HripsIcons.TbMore, "Инструменты")
                         }
                     }
                     if (classic) Spacer(Modifier.width(4.dp))
@@ -427,10 +437,10 @@ fun BrowserScreen(browser: Browser) {
                     onCloseAll = { browser.closePrivateTabs() },
                     engine = if (wide) null else shownEngine,
                     onPickEngine = pickEngine,
-                    showSearch = wide,
+                    showSearch = wide && !compact,
                 )
             } } else if (tab.home) key("start") { FadeInBox {
-                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide)
+                StartPage(store = store, wallpaper = app.wallpaper.image, onOpen = { tab.load(it) }, onSearch = { openSearch() }, onScanQr = { showQrScan = true }, onSearchImage = { pickImage.launch(imageRequest) }, engine = if (wide) null else shownEngine, onPickEngine = pickEngine, showSearch = wide && !compact)
             } } else {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),

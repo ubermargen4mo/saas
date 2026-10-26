@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.ui.geometry.Offset
@@ -79,13 +80,23 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
             ),
         )
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        // Плитки по центру: сетка из «половинных» колонок (плитка занимает две), неполный ряд сдвигается
+        // пустышкой в нужное число половинок, поэтому и последний ряд, и единственный ряд стоят по центру.
+        val gap = HripsSpace.S
+        val minCell = if (wide) 96.dp else 76.dp
+        val inner = maxWidth.coerceAtMost(880.dp) - HripsSpace.L * 2
+        val cols = ((inner + gap) / (minCell + gap)).toInt().coerceAtLeast(1)
+        val total = store.speedDial.size + 1 // вместе с плиткой «Добавить»
+        val lastRow = total % cols
+        val splitAt = if (lastRow == 0) -1 else total - lastRow // индекс первой плитки последнего неполного ряда
+        val padSpan = if (lastRow == 0) 0 else cols - lastRow
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Adaptive(minSize = if (wide) 96.dp else 76.dp),
+            columns = GridCells.Fixed(cols * 2),
             modifier = Modifier.widthIn(max = 880.dp).fillMaxSize(),
             contentPadding = PaddingValues(start = HripsSpace.L, top = HripsSpace.XL, end = HripsSpace.L, bottom = HripsSpace.XL + islandSpace),
-            horizontalArrangement = Arrangement.spacedBy(HripsSpace.S, Alignment.CenterHorizontally),
+            horizontalArrangement = Arrangement.spacedBy(gap),
             verticalArrangement = Arrangement.spacedBy(HripsSpace.L),
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
@@ -142,7 +153,8 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                 }
             }
 
-            items(store.speedDial.toList(), key = { tileKey(it) }) { e ->
+            val dial = store.speedDial.toList()
+            val dialTile: @Composable LazyGridItemScope.(Entry) -> Unit = { e ->
                 val k = tileKey(e)
                 val lifted = drag.key == k
                 val settling = drag.settling == k
@@ -274,7 +286,13 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                 }
             }
 
-            item(key = "add") {
+            val head = if (splitAt < 0) dial else dial.take(splitAt)
+            val tail = if (splitAt < 0) emptyList() else dial.drop(splitAt)
+            items(head, key = { tileKey(it) }, span = { GridItemSpan(2) }) { e -> dialTile(e) }
+            if (padSpan > 0) item(key = "pad", span = { GridItemSpan(padSpan) }) { Spacer(Modifier.fillMaxWidth()) }
+            items(tail, key = { tileKey(it) }, span = { GridItemSpan(2) }) { e -> dialTile(e) }
+
+            item(key = "add", span = { GridItemSpan(2) }) {
                 // Нажатие как у остальных плиток: пружинное сжатие и волна.
                 val addSource = remember { MutableInteractionSource() }
                 val addPressed by addSource.collectIsPressedAsState()

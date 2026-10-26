@@ -448,7 +448,7 @@ private fun HomePage(app: HripsApp, onBack: () -> Unit) {
     PageScaffold("Внешний вид", onBack) {
         if (isWideWindow()) {
             SectionTitle("Шапка на планшете")
-            HeaderStylePicker(app.store.classicHeader) { app.store.updateClassicHeader(it) }
+            HeaderStylePicker(app.store.headerStyle) { app.store.updateHeaderStyle(it) }
         }
         SectionTitle("Значок приложения")
         AppIconPicker()
@@ -1125,17 +1125,23 @@ private fun CheckRow(title: String, checked: Boolean, shape: Shape, subtitle: St
     )
 }
 
-/** Два варианта шапки планшета с наглядными превью; выбор нажатием на картинку. */
+/** Три варианта шапки планшета с наглядными превью; выбор нажатием на картинку. */
 @Composable
-private fun HeaderStylePicker(classic: Boolean, onPick: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        HeaderStyleCard("Плоская", "Как в Safari: шапка в цвет сайта, вкладки под панелью", false, !classic, Modifier.weight(1f)) { onPick(false) }
-        HeaderStyleCard("Классическая", "Вкладки над панелью, цвет шапки не меняется", true, classic, Modifier.weight(1f)) { onPick(true) }
+private fun HeaderStylePicker(style: Int, onPick: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HeaderStyleCard("Плоская", "Как в Safari: шапка в цвет сайта, вкладки под панелью", HEADER_FLAT, style == HEADER_FLAT, Modifier.weight(1f)) { onPick(HEADER_FLAT) }
+            HeaderStyleCard("Классическая", "Вкладки над панелью, цвет шапки не меняется", HEADER_CLASSIC, style == HEADER_CLASSIC, Modifier.weight(1f)) { onPick(HEADER_CLASSIC) }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HeaderStyleCard("Компактная", "Поиск на главной переезжает в шапку, текст по центру", HEADER_COMPACT, style == HEADER_COMPACT, Modifier.weight(1f)) { onPick(HEADER_COMPACT) }
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 
 @Composable
-private fun HeaderStyleCard(title: String, subtitle: String, classicStyle: Boolean, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun HeaderStyleCard(title: String, subtitle: String, style: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     androidx.compose.material3.Surface(
@@ -1146,7 +1152,7 @@ private fun HeaderStyleCard(title: String, subtitle: String, classicStyle: Boole
         border = androidx.compose.foundation.BorderStroke(if (selected) 2.dp else 1.dp, if (selected) cs.primary else cs.outlineVariant),
     ) {
         Column(Modifier.padding(10.dp)) {
-            HeaderPreview(classicStyle)
+            HeaderPreview(style)
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 RadioButton(selected = selected, onClick = null)
@@ -1165,7 +1171,9 @@ private fun HeaderStyleCard(title: String, subtitle: String, classicStyle: Boole
 
 /** Миниатюра окна браузера. Плоская: шапка и страница одного цвета, вкладки под панелью. Классическая: вкладки сверху, кнопки без подложек. */
 @Composable
-private fun HeaderPreview(classic: Boolean) {
+private fun HeaderPreview(style: Int) {
+    val classic = style == HEADER_CLASSIC
+    val compact = style == HEADER_COMPACT
     val cs = MaterialTheme.colorScheme
     val ink = if (classic) cs.onSurface else Color(0xFF3B2A20)
     val headerBg = if (classic) cs.surfaceContainerHigh else Color(0xFFEBD5C7)
@@ -1209,6 +1217,7 @@ private fun HeaderPreview(classic: Boolean) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 if (classic) Bare(3) else { PillGroup(2); PillGroup(1) }
                 Address()
+                if (compact) PillGroup(2)
                 if (classic) Bare(4) else PillGroup(4)
             }
             if (!classic) {
