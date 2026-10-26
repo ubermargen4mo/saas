@@ -20,6 +20,9 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
