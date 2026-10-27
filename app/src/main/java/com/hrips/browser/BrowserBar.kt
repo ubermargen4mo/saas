@@ -73,7 +73,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,9 +94,11 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -233,7 +237,62 @@ private fun Modifier.barHeight(t: () -> Float): Modifier = layout { measurable, 
     layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
 }
 
-private data class BarLabel(val text: String, val tab: Int, val compact: Boolean)
+private data class BarLabel(val text: String, val domain: String, val tab: Int)
+
+/** Держит ширину, с которой полный адрес был измерен в развёрнутой панели: пока панель сужается, текст не переносится и не обрезается по пути. */
+private fun Modifier.holdFullWidth(t: () -> Float, cache: IntArray): Modifier = layout { measurable, constraints ->
+    if (t() <= 0.001f) cache[0] = constraints.maxWidth
+    val hold = maxOf(constraints.maxWidth, cache[0])
+    val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = hold))
+    val w = placeable.width.coerceAtMost(constraints.maxWidth)
+    layout(w, placeable.height) { placeable.placeRelative((w - placeable.width) / 2, 0) }
+}
+
+/**
+ * Подпись панели. Полный адрес и домен — два слоя поверх друг друга, их прозрачность и размер ведёт `t`
+ * (прогресс сворачивания). Текст стягивается в домен и обратно вслед за панелью и пальцем: без смены
+ * состояния и без перекомпоновки на каждый кадр, всё в graphicsLayer.
+ */
+@Composable
+private fun MorphLabel(label: BarLabel, t: () -> Float, fullStyle: TextStyle, compactStyle: TextStyle) {
+    val cache = remember { IntArray(1) }
+    val ratio = (compactStyle.fontSize.value / fullStyle.fontSize.value).coerceIn(0.4f, 1f)
+    Box(contentAlignment = Alignment.Center) {
+        Text(
+            label.text.ifEmpty { "Поиск" },
+            Modifier
+                .holdFullWidth(t, cache)
+                .graphicsLayer {
+                    val k = t()
+                    // Полный адрес гаснет на первой половине сворачивания и уменьшается до размера домена.
+                    alpha = (1f - k * 2f).coerceIn(0f, 1f)
+                    val sc = lerpFloat(1f, ratio, k)
+                    scaleX = sc
+                    scaleY = sc
+                },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = fullStyle,
+        )
+        Text(
+            label.domain,
+            Modifier
+                .wrapContentWidth(unbounded = true)
+                .graphicsLayer {
+                    val k = t()
+                    // Домен проявляется со второй половины и вырастает из уменьшенного размера.
+                    alpha = ((k - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                    val sc = lerpFloat(1f / ratio, 1f, k)
+                    scaleX = sc
+                    scaleY = sc
+                },
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            style = compactStyle,
+        )
+    }
+}
 
 private const val MAX_DOTS = 8
 
@@ -265,6 +324,8 @@ internal fun BottomBar(
     tab: Tab,
     shown: String,
     collapsed: Boolean,
+    // Общий прогресс сворачивания (0..1): его читают и панель, и страница, и уведомления.
+    bar: BarCollapse,
     backEnabled: Boolean,
     tabCount: Int,
     tabIndex: Int,
@@ -298,15 +359,10 @@ internal fun BottomBar(
     val scope = rememberCoroutineScope()
     val palette = rememberBarPalette()
 
-    // Размеры панели меняются без перелёта: пружина с критическим затуханием, иначе панель «дышит».
-    // Та же пружина двигает и подстройку страницы (BrowserScreen), поэтому они не расходятся.
+    // Мелкие подстройки (точки вкладок, скрытие кнопок на главной) идут пружиной без перелёта.
     val calm = remember { spring<Float>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow) }
-    val collapseState = animateFloatAsState(
-        if (collapsed) 1f else 0f,
-        HripsMotion.barCollapse(),
-        label = "barCollapse",
-    )
-    val t: () -> Float = remember(collapseState) { { collapseState.value.coerceIn(0f, 1f) } }
+    // Прогресс сворачивания ведёт либо палец (bar.drag), либо пружина после отпускания (bar.settle/follow).
+    val t: () -> Float = remember(bar) { { bar.value.coerceIn(0f, 1f) } }
 
     val rise = with(density) { 36.dp.toPx() }
     val appearLeft = rememberAppear(0)
@@ -318,7 +374,7 @@ internal fun BottomBar(
 
     // Свёрнутая панель показывает только домен. Ширину считаем по тексту, чтобы пилюля обнимала его без запаса.
     val domain = remember(tab.url, tab.home, shown) { tab.siteHost() ?: plainHost(tab.url) ?: shown }
-    val shownText = if (collapsed) domain else shown
+    val fullStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
     val compactStyle = MaterialTheme.typography.labelLarge.copy(
         fontSize = HripsLayout.BarCompactTextSp.sp,
         fontWeight = FontWeight.SemiBold,
@@ -382,6 +438,15 @@ internal fun BottomBar(
     val pullMax = with(density) { 10.dp.toPx() }
     val swipeSide = with(density) { 72.dp.toPx() }
     val swipeUp = with(density) { 36.dp.toPx() }
+    // Ход пальца, на котором панель успевает свернуться целиком (или развернуться обратно).
+    val collapseTravel = with(density) { 64.dp.toPx() }
+    val flingSpeed = with(density) { 600.dp.toPx() }
+    val collapsedNow by rememberUpdatedState(collapsed)
+    // Жест живёт в pointerInput(Unit), поэтому обработчики берём «свежие» через rememberUpdatedState.
+    val swipeUpNow by rememberUpdatedState(onSwipeUp)
+    val swipeDownNow by rememberUpdatedState(onSwipeDown)
+    val swipeSideNow by rememberUpdatedState(onSwipeSide)
+    val expandNow by rememberUpdatedState(onExpand)
     var showSecurity by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var tabsOpen by remember { mutableStateOf(false) }
@@ -389,7 +454,7 @@ internal fun BottomBar(
     val canForward = tab.canGoForward && !tab.home
     // На главной «назад/вперёд» не нужны: прячем пару, поиску достаётся вся ширина.
     val homeHide = animateFloatAsState(if (tab.home) 1f else 0f, calm, label = "barHomeHide")
-    val leftT: () -> Float = remember(collapseState, homeHide) { { maxOf(collapseState.value, homeHide.value).coerceIn(0f, 1f) } }
+    val leftT: () -> Float = remember(bar, homeHide) { { maxOf(bar.value, homeHide.value).coerceIn(0f, 1f) } }
 
     Row(
         modifier
@@ -460,10 +525,15 @@ internal fun BottomBar(
                 Modifier
                     .fillMaxSize()
                     .drawBehind { drawTabDots(tabCount, dotIndex.value, palette.content, 1f - t()) }
-                    .pointerInput(collapsed) {
+                    .pointerInput(Unit) {
                         var dx = 0f
                         var dy = 0f
+                        // 0 ещё не ясно, 1 по горизонтали, 2 по вертикали: ось фиксируется на первом движении за порогом.
+                        var axis = 0
                         var armed = false
+                        var baseT = 0f
+                        var overshoot = 0f
+                        val velocity = VelocityTracker()
                         val settle: () -> Unit = {
                             scope.launch {
                                 Animatable(dragX).animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)) { dragX = value }
@@ -479,41 +549,46 @@ internal fun BottomBar(
                             }
                         }
                         detectDragGestures(
-                            onDragStart = { dx = 0f; dy = 0f; armed = false },
+                            onDragStart = {
+                                dx = 0f; dy = 0f; axis = 0; armed = false; overshoot = 0f
+                                velocity.resetTracking()
+                                bar.grab()
+                                baseT = bar.value
+                            },
                             onDrag = { change, amount ->
                                 change.consume()
                                 dx += amount.x
                                 dy += amount.y
-                                if (abs(dx) > abs(dy)) {
+                                velocity.addPosition(change.uptimeMillis, Offset(dx, dy))
+                                if (axis == 0) axis = if (abs(dx) > abs(dy)) 1 else 2
+                                if (axis == 1) {
                                     dragX = (dx * 0.5f).coerceIn(-swipeSide, swipeSide)
-                                    dragY = 0f
-                                    lift = 0f
-                                    swipeP = 0f
-                                } else if (dy < 0f) {
-                                    // Резиновая тяга вверх: чем дальше, тем туже.
-                                    lift = -liftMax * (1f - kotlin.math.exp(-(-dy) / (liftMax * 1.6f)))
-                                    swipeP = (-dy / swipeUp).coerceIn(0f, 1f)
-                                    dragY = 0f
-                                    dragX = 0f
-                                    // Щелчок на пороге: дальше отпускание откроет вкладки.
-                                    val over = -dy >= swipeUp
+                                } else {
+                                    // Панель идёт за пальцем 1 к 1: вниз сворачивается, вверх разворачивается.
+                                    val raw = baseT + dy / collapseTravel
+                                    bar.drag(raw)
+                                    overshoot = if (raw > 1f) (raw - 1f) * collapseTravel else 0f
+                                    dragY = (overshoot * 0.3f).coerceIn(0f, pullMax)
+                                    // Вверх с развёрнутой панели: резиновая тяга к вкладкам, как раньше.
+                                    val up = if (baseT <= 0.5f && dy < 0f) -dy else 0f
+                                    lift = -liftMax * (1f - kotlin.math.exp(-up / (liftMax * 1.6f)))
+                                    swipeP = (up / swipeUp).coerceIn(0f, 1f)
+                                    // Щелчок на пороге: отпускание открывает вкладки (вверх) или меняет состояние панели.
+                                    val over = up >= swipeUp || (baseT <= 0.5f && raw >= 0.5f) || (baseT > 0.5f && raw <= 0.5f)
                                     if (over && !armed) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     armed = over
-                                } else {
-                                    dragY = (dy * 0.3f).coerceIn(0f, pullMax)
-                                    lift = 0f
-                                    swipeP = 0f
-                                    dragX = 0f
                                 }
                             },
                             onDragEnd = {
+                                val vy = velocity.calculateVelocity().y
                                 var launched = false
-                                if (abs(dy) > abs(dx) && dy < -swipeUp) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwipeUp()
-                                    // Открываем вкладки «взлётом»: пилюля улетает вверх за вкладками и пружинит назад.
-                                    if (!collapsed) {
+                                if (axis == 2) {
+                                    if (baseT <= 0.5f && dy < -swipeUp) {
+                                        // С развёрнутой панели вверх: открываем вкладки «взлётом».
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        swipeUpNow()
                                         launched = true
+                                        scope.launch { bar.settle(0f) }
                                         scope.launch {
                                             val from = lift
                                             Animatable(from).animateTo(-launchLift, tween(120, easing = FastOutSlowInEasing)) { lift = value }
@@ -522,13 +597,26 @@ internal fun BottomBar(
                                         scope.launch {
                                             Animatable(swipeP).animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium)) { swipeP = value }
                                         }
+                                    } else {
+                                        // Куда довести: быстрый бросок решает сразу, иначе смотрим, перешла ли панель середину.
+                                        val now = bar.value
+                                        val target = when {
+                                            vy > flingSpeed -> 1f
+                                            vy < -flingSpeed -> 0f
+                                            else -> if (now > 0.5f) 1f else 0f
+                                        }
+                                        if ((target == 1f) != (baseT > 0.5f)) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (target == 1f && !collapsedNow) swipeDownNow()
+                                        if (target == 0f && collapsedNow) expandNow()
+                                        // vy в px/с, ход панели collapseTravel px: переводим в «долей хода в секунду».
+                                        scope.launch { bar.settle(target, vy / collapseTravel) }
                                     }
-                                } else if (abs(dy) > abs(dx) && dy > swipeUp) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwipeDown()
-                                } else if (abs(dx) > abs(dy) && abs(dx) > swipeSide) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwipeSide(if (dx < 0) 1 else -1)
+                                } else {
+                                    scope.launch { bar.settle(if (collapsedNow) 1f else 0f) }
+                                    if (axis == 1 && abs(dx) > swipeSide) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        swipeSideNow(if (dx < 0) 1 else -1)
+                                    }
                                 }
                                 if (launched) {
                                     scope.launch {
@@ -539,7 +627,10 @@ internal fun BottomBar(
                                     settle()
                                 }
                             },
-                            onDragCancel = { settle() },
+                            onDragCancel = {
+                                scope.launch { bar.settle(if (collapsedNow) 1f else 0f) }
+                                settle()
+                            },
                         )
                     }
                     .combinedClickable(
@@ -604,18 +695,13 @@ internal fun BottomBar(
                         }
 
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            // Адрес и домен — один слой текста, который «перетекает» по прогрессу сворачивания (см. MorphLabel).
+                            // AnimatedContent остаётся только для смены вкладки или адреса.
                             AnimatedContent(
-                                targetState = BarLabel(shownText, tabIndex, collapsed),
+                                targetState = BarLabel(shown, domain, tabIndex),
                                 transitionSpec = {
                                     val d = targetState.tab - initialState.tab
-                                    if (d == 0 && targetState.compact != initialState.compact) {
-                                        // Сворачивание/разворачивание: адрес «стягивается» в домен и обратно.
-                                        (fadeIn(tween(220, delayMillis = 60)) +
-                                            scaleIn(tween(280, easing = HripsMotion.ChromeEasing), initialScale = 0.86f)) togetherWith
-                                            (fadeOut(tween(110)) +
-                                                scaleOut(tween(180, easing = HripsMotion.ChromeEasing), targetScale = 0.86f)) using
-                                            SizeTransform(clip = false) { _, _ -> snap() }
-                                    } else if (d != 0) {
+                                    if (d != 0) {
                                         // Смена вкладки: подпись уезжает в сторону свайпа.
                                         val dir = if (d > 0) 1 else -1
                                         (fadeIn(tween(200, delayMillis = 40)) +
@@ -632,23 +718,7 @@ internal fun BottomBar(
                                 contentAlignment = Alignment.Center,
                                 label = "barText",
                             ) { label ->
-                                if (label.compact) {
-                                    Text(
-                                        label.text,
-                                        Modifier.wrapContentWidth(unbounded = true),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Clip,
-                                        style = compactStyle,
-                                    )
-                                } else {
-                                    Text(
-                                        label.text.ifEmpty { "Поиск" },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                    )
-                                }
+                                MorphLabel(label, t, fullStyle, compactStyle)
                             }
                         }
 

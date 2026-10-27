@@ -26,6 +26,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -110,6 +111,7 @@ fun BrowserScreen(browser: Browser) {
         }
     }
     var findOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(tab.home) { if (tab.home) findOpen = false }
     var oneOff by remember { mutableStateOf<SearchEngine?>(null) }
     val parsed = remember(tab.url, tab.home) { if (tab.home) null else parseSearch(tab.url) }
     val shownEngine = parsed?.first ?: oneOff ?: SearchEngines.current
@@ -272,35 +274,47 @@ fun BrowserScreen(browser: Browser) {
         TabThumbs.prefetch(appCtx, ids, small = true)
     }
 
-    val collapsed = !wide && !tab.home && tab.chromeHidden && !showTools
+    // Поиск по странице на телефоне: нижняя панель остаётся над ним в свёрнутом виде (как в Safari).
+    val findPhone = findOpen && !wide && !tab.home
+    val collapsed = !wide && !tab.home && (tab.chromeHidden || findPhone) && !showTools
+
+    // Единый прогресс сворачивания панели (0..1). Его ведёт жест (палец тянет панель 1 к 1) или пружина;
+    // панель, страница и уведомления читают его внутри layout/graphicsLayer, поэтому без перекомпоновки за кадр.
+    val bar = remember { BarCollapse() }
+    LaunchedEffect(collapsed) { bar.follow(if (collapsed) 1f else 0f) }
 
     // Панель плавает поверх страницы, а сайт должен знать, сколько внизу закрыто: тогда его собственные
     // нижние панели (YouTube и др.) встают над нашей, как в Safari. setVerticalClipping работает в композиторе,
-    // без перерасчёта страницы, поэтому его можно обновлять покадрово вместе с анимацией панели.
-    // Пружина общая с самой панелью (HripsMotion.barCollapse): страница и панель двигаются синхронно.
+    // без перерасчёта страницы, поэтому его можно обновлять покадрово вместе с панелью и пальцем.
     val pageClip = remember { IntArray(1) }
     val clipDensity = LocalDensity.current
-    val barClipDp = animateDpAsState(
-        if (collapsed) HripsLayout.BarCompactHeight else HripsLayout.BarHeight,
-        HripsMotion.barCollapse(),
-        label = "pageClip",
-    )
     val navBottomPx = WindowInsets.navigationBars.getBottom(clipDensity)
     val clipActive = !fs && !wide && !tab.home && !WindowInsets.isImeVisible
     LaunchedEffect(clipActive, navBottomPx, clipDensity, tab.session) {
-        snapshotFlow { barClipDp.value }.collectLatest { h ->
-            val px = if (clipActive) navBottomPx + with(clipDensity) { (HripsLayout.BarGap + h + 6.dp).roundToPx() } else 0
+        snapshotFlow { bar.value }.collectLatest { t ->
+            val px = if (clipActive) {
+                val h = with(clipDensity) {
+                    androidx.compose.ui.util.lerp(HripsLayout.BarHeight.toPx(), HripsLayout.BarCompactHeight.toPx(), t.coerceIn(0f, 1f))
+                }
+                navBottomPx + with(clipDensity) { HripsLayout.BarGap.roundToPx() + h.roundToInt() + 6.dp.roundToPx() }
+            } else {
+                0
+            }
             pageClip[0] = px
             runCatching { viewRef[0]?.setVerticalClipping(px) }
         }
     }
-    val overlayOpen = showSearch || findOpen || showTabs || showTools || showHistory || showBookmarks ||
+    // Страница не сжимается под клавиатуру: она накрывает страницу сверху, в том числе при поиске по странице.
+    val imeFrozen = showSearch || findOpen || showTabs || showTools || showHistory || showBookmarks ||
         showSettings || showSitePerms || showDownloads || showExtManager || showQrScan
-    val noticeLift by animateDpAsState(
-        if (collapsed) HripsLayout.BarHeight - HripsLayout.BarCompactHeight else 0.dp,
-        MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.Dp>(),
-        label = "noticeLift",
+    // Над строкой поиска свёрнутая панель поднимается на её высоту.
+    val findLift = animateFloatAsState(
+        if (findPhone) with(clipDensity) { (HripsLayout.BarHeight + HripsLayout.BarGap).toPx() } else 0f,
+        HripsMotion.findIn(),
+        label = "findLift",
     )
+    // Уведомления поднимаются над панелью по мере её сворачивания.
+    val noticeLiftMax = HripsLayout.BarHeight - HripsLayout.BarCompactHeight
     val barText = remember(tab.url, tab.home, parsed) {
         when {
             tab.home -> ""
@@ -327,7 +341,7 @@ fun BrowserScreen(browser: Browser) {
     val statusInsets = rememberStableInsets(WindowInsets.statusBars, "строка состояния")
     val navInsets = rememberStableInsets(WindowInsets.navigationBars, "навигация")
     Box(Modifier.fillMaxSize().then(if (fs) Modifier else Modifier.windowInsetsPadding(sideInsets)).trackTouches(origins)) {
-    Column(Modifier.fillMaxSize().pageImePadding(overlayOpen)) {
+    Column(Modifier.fillMaxSize().pageImePadding(imeFrozen)) {
         if (!fs) {
         SiteHeaderTheme(siteColor) {
         Column(Modifier.fillMaxWidth()) {
@@ -449,7 +463,8 @@ fun BrowserScreen(browser: Browser) {
         }
         }
 
-        if (findOpen && !tab.home) {
+        // На планшете строка поиска сверху; на телефоне она внизу над клавиатурой (PhoneFindBar ниже).
+        if (findOpen && !tab.home && wide) {
             key(tab.id) { FindBar(tab, onClose = { findOpen = false }) }
         }
 
@@ -516,6 +531,7 @@ fun BrowserScreen(browser: Browser) {
             tab = tab,
             shown = barText,
             collapsed = collapsed,
+            bar = bar,
             backEnabled = backEnabled,
             tabCount = browser.contextTabs(tab).size,
             tabIndex = browser.contextTabs(tab).indexOfFirst { it.id == tab.id }.coerceAtLeast(0),
@@ -530,7 +546,7 @@ fun BrowserScreen(browser: Browser) {
             onMore = { showTools = true },
             onDownloads = { showDownloads = true },
             onExpand = { tab.expandChrome() },
-            onSwipeUp = { if (collapsed) tab.expandChrome() else requestTabs() },
+            onSwipeUp = { requestTabs() },
             onSwipeDown = { if (!tab.home) tab.collapseChrome() },
             onCopy = copyAddress,
             onShare = shareAddress,
@@ -561,8 +577,19 @@ fun BrowserScreen(browser: Browser) {
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = HripsLayout.BarGap),
+                .windowInsetsPadding(if (findPhone) WindowInsets.ime.union(WindowInsets.navigationBars) else WindowInsets.navigationBars)
+                .padding(bottom = HripsLayout.BarGap)
+                .offset { IntOffset(0, -findLift.value.roundToInt()) },
+        )
+    }
+
+    // Поиск по странице на телефоне: части строки встают там же, где нижняя панель, и едут вверх вместе с клавиатурой.
+    if (!fs && !wide) {
+        PhoneFindBar(
+            tab = tab,
+            visible = findPhone,
+            onClose = { findOpen = false },
+            modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
 
@@ -672,7 +699,7 @@ fun BrowserScreen(browser: Browser) {
             .navigationBarsPadding()
             .imePadding()
             .padding(bottom = if (wide) 96.dp else HripsLayout.BarGap + HripsLayout.BarHeight + 16.dp)
-            .offset { IntOffset(0, noticeLift.roundToPx()) },
+            .offset { IntOffset(0, (noticeLiftMax.toPx() * bar.value.coerceIn(0f, 1f)).roundToInt()) },
     )
     }
     }

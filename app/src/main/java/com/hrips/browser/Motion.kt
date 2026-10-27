@@ -133,6 +133,16 @@ object HripsMotion {
     /** Сворачивание/разворачивание нижней панели и подстройка страницы под неё: без перелёта, мягко. */
     fun <T> barCollapse() = spring<T>(dampingRatio = 1f, stiffness = 420f)
 
+    /**
+     * Досаживание панели после отпускания пальца: быстрая пружина без заметного перелёта.
+     * Скорость жеста передаётся в неё как начальная, поэтому панель «подхватывает» движение пальца.
+     */
+    fun <T> barLiquid() = spring<T>(dampingRatio = 0.9f, stiffness = 620f)
+
+    /** Появление и исчезновение строки поиска по странице. */
+    fun <T> findIn() = spring<T>(dampingRatio = 0.78f, stiffness = 520f)
+    fun <T> findOut() = spring<T>(dampingRatio = 1f, stiffness = 900f)
+
     /** Появление частей панели: лёгкий перелёт, как будто пилюли «встают» на место. */
     fun <T> barAppear() = spring<T>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
 
