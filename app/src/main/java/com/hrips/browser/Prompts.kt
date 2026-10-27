@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.Autocomplete
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
@@ -84,12 +85,37 @@ sealed class PromptRequest {
         val multiple: Boolean,
         val onAnswer: (List<String>?) -> Unit,
     ) : PromptRequest()
+    /** «Сохранить пароль?» / «Обновить пароль?» после отправки формы входа. */
+    class LoginSave(
+        val host: String,
+        val username: String,
+        val password: String,
+        val update: Boolean,
+        val generated: Boolean,
+        val onAnswer: (LoginSaveAnswer) -> Unit,
+    ) : PromptRequest()
+    /** Выбор сохранённого логина при фокусе на поле входа. Ответ - номер варианта или null (закрыть). */
+    class LoginSelect(
+        val host: String,
+        val choices: List<LoginChoice>,
+        val onAnswer: (Int?) -> Unit,
+    ) : PromptRequest()
 }
+
+sealed class LoginSaveAnswer {
+    class Save(val username: String, val password: String) : LoginSaveAnswer()
+    object Never : LoginSaveAnswer()
+    object Cancel : LoginSaveAnswer()
+}
+
+class LoginChoice(val username: String, val generated: Boolean, val insecure: Boolean)
 
 class PickItem(val id: String, val label: String, val enabled: Boolean, val selected: Boolean, val header: Boolean)
 
 class Prompts(private val context: Context) {
     val queue = mutableStateListOf<PromptRequest>()
+
+    private val vault: PasswordVault get() = (context.applicationContext as HripsApp).passwords
 
     var pickFiles: ((FilePickRequest, onResult: (List<Uri>) -> Unit) -> Unit)? = null
 
@@ -328,6 +354,94 @@ class Prompts(private val context: Context) {
             return result
         }
 
+        override fun onLoginSave(
+            session: GeckoSession,
+            request: PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption>,
+        ): GeckoResult<PromptDelegate.PromptResponse>? {
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            val vault = vault
+            val option = request.options.firstOrNull()
+            val priv = runCatching { session.settings.usePrivateMode }.getOrDefault(true)
+            if (option == null || !vault.isBuiltin || !vault.offerSave || priv) {
+                complete(result) { request.dismiss() }
+                return result
+            }
+            val entry = option.value
+            val origin = normalizeOrigin(entry.origin) ?: entry.origin
+            val host = displayHost(origin)
+            vault.ensureLoaded()
+            val existing = vault.byId(entry.guid) ?: vault.find(origin, entry.username, entry.httpRealm)
+            val unchanged = existing != null && existing.password == entry.password && existing.username == entry.username
+            if (vault.isNever(host) || unchanged || entry.password.isEmpty()) {
+                complete(result) { request.dismiss() }
+                return result
+            }
+            AppLog.i("Prompt", "onLoginSave для $host, обновление=${existing != null}")
+            show(PromptRequest.LoginSave(
+                host = host,
+                username = entry.username,
+                password = entry.password,
+                update = existing != null,
+                generated = (option.hint and Autocomplete.SaveOption.Hint.GENERATED) != 0,
+            ) { answer ->
+                complete(result) {
+                    when (answer) {
+                        is LoginSaveAnswer.Save -> {
+                            Notices.show(if (existing != null) "Пароль обновлён" else "Пароль сохранён", NoticeKind.SUCCESS)
+                            request.confirm(
+                                Autocomplete.LoginSaveOption(
+                                    Autocomplete.LoginEntry.Builder()
+                                        .guid(entry.guid)
+                                        .origin(entry.origin)
+                                        .formActionOrigin(entry.formActionOrigin)
+                                        .httpRealm(entry.httpRealm)
+                                        .username(answer.username)
+                                        .password(answer.password)
+                                        .build()
+                                )
+                            )
+                        }
+                        LoginSaveAnswer.Never -> {
+                            vault.addNever(host)
+                            Notices.show("Пароли для $host сохраняться не будут")
+                            request.dismiss()
+                        }
+                        LoginSaveAnswer.Cancel -> request.dismiss()
+                    }
+                }
+            })
+            return result
+        }
+
+        override fun onLoginSelect(
+            session: GeckoSession,
+            request: PromptDelegate.AutocompleteRequest<Autocomplete.LoginSelectOption>,
+        ): GeckoResult<PromptDelegate.PromptResponse>? {
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            val vault = vault
+            val options = request.options
+            if (options.isEmpty() || !vault.isBuiltin || !vault.autofill) {
+                complete(result) { request.dismiss() }
+                return result
+            }
+            val host = displayHost(normalizeOrigin(options[0].value.origin) ?: options[0].value.origin)
+            val choices = options.map {
+                LoginChoice(
+                    username = it.value.username,
+                    generated = (it.hint and Autocomplete.SelectOption.Hint.GENERATED) != 0,
+                    insecure = (it.hint and Autocomplete.SelectOption.Hint.INSECURE_FORM) != 0,
+                )
+            }
+            AppLog.i("Prompt", "onLoginSelect для $host, вариантов: ${choices.size}")
+            show(PromptRequest.LoginSelect(host, choices) { index ->
+                complete(result) {
+                    val chosen = index?.let { options.getOrNull(it) }
+                    if (chosen == null) request.dismiss() else request.confirm(chosen)
+                }
+            })
+            return result
+        }
+
         override fun onColorPrompt(
             session: GeckoSession,
             prompt: PromptDelegate.ColorPrompt,
@@ -454,6 +568,8 @@ fun PromptHost(prompts: Prompts) {
             }
 
             is PromptRequest.Auth -> AuthDialog(req, prompts)
+            is PromptRequest.LoginSave -> LoginSaveDialog(req, prompts)
+            is PromptRequest.LoginSelect -> LoginSelectDialog(req, prompts)
             is PromptRequest.ColorPick -> ColorDialog(req, prompts)
             is PromptRequest.DateTime -> DateTimeDialog(req, prompts)
         }

@@ -201,7 +201,6 @@ class Tab(
      */
     private var chromePinned = false
 
-    /** Сворачивает панель свайпом: работает на любой странице, в том числе непрокручиваемой и не прокрученной. */
     fun collapseChrome() {
         chromePinned = true
         chromeHidden = true

@@ -34,8 +34,21 @@ class HripsApp : Application() {
             GeckoColors.attach()
             NetworkTuning.apply()
             it.webNotificationDelegate = siteNotifications.delegate
+            // Свой менеджер паролей: движок спрашивает записи у хранилища, окна сохранения и выбора рисует Prompts.
+            val gecko = it
+            gecko.setAutocompleteStorageDelegate(passwords.delegate)
+            applyPasswordSettings(gecko)
+            passwords.onSettingsChanged = { applyPasswordSettings(gecko) }
+            AppExecutors.startThread("hrips-vault") { passwords.ensureLoaded() }
         }
     }
+
+    /** Подстановка пароля при открытии страницы включена только во встроенном режиме и если не выключена пользователем. */
+    private fun applyPasswordSettings(r: GeckoRuntime) {
+        r.settings.setLoginAutofillEnabled(passwords.isBuiltin && passwords.autofill)
+    }
+
+    val passwords: PasswordVault by lazy { PasswordVault(this) }
     val store: Store by lazy { Store(this) }
     val downloads: Downloads by lazy { Downloads(this) }
     val permissions: Permissions by lazy { Permissions(this) }

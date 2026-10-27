@@ -108,6 +108,18 @@ object HripsIcons {
         }
     }
 
+    val Eye by lazy {
+        icon("Eye") {
+            moveTo(2.5f, 12f)
+            curveTo(5f, 7.5f, 8.3f, 5.5f, 12f, 5.5f)
+            curveTo(15.7f, 5.5f, 19f, 7.5f, 21.5f, 12f)
+            curveTo(19f, 16.5f, 15.7f, 18.5f, 12f, 18.5f)
+            curveTo(8.3f, 18.5f, 5f, 16.5f, 2.5f, 12f)
+            close()
+            circle(12f, 12f, 3f)
+        }
+    }
+
     val ShieldCheck by lazy { icon("ShieldCheck") { shield() } }
 
     val Signal by lazy {
@@ -521,11 +533,6 @@ object HripsIcons {
     val BarChevronForward by lazy {
         icon("BarChevronForward", stroke = 2.4f) { moveTo(9.5f, 5.5f); lineTo(16f, 12f); lineTo(9.5f, 18.5f) }
     }
-
-    // Поиск по странице: галочка и шевроны вверх/вниз.
-    val BarCheck by lazy { icon("BarCheck", stroke = 2.6f) { moveTo(5f, 12.8f); lineToRelative(4.6f, 4.6f); lineTo(19f, 7.4f) } }
-    val BarChevronUp by lazy { icon("BarChevronUp", stroke = 2.4f) { moveTo(5.5f, 14.5f); lineTo(12f, 8f); lineTo(18.5f, 14.5f) } }
-    val BarChevronDown by lazy { icon("BarChevronDown", stroke = 2.4f) { moveTo(5.5f, 9.5f); lineTo(12f, 16f); lineTo(18.5f, 9.5f) } }
 
     val BarRefresh by lazy {
         icon("BarRefresh", stroke = 2f) {

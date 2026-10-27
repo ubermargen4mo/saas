@@ -99,7 +99,7 @@ enum class SettingsPage(val title: String, val subtitle: String) {
     SEARCH("Поиск", "Поисковая система, подсказки"),
     HOME("Внешний вид", "Значок приложения, обои"),
     PRIVACY("Конфиденциальность", "Трекеры, очистка данных, приватный режим"),
-    PASSWORDS("Пароли и автозаполнение", "Системные менеджеры паролей"),
+    PASSWORDS("Пароли и автозаполнение", "Сохранённые пароли, автозаполнение, импорт"),
     PERMISSIONS("Разрешения", "Камера, микрофон, местоположение, уведомления"),
     DESKTOP("Версия для ПК", "Сайты, где она включена"),
     MEDIA("Медиа", "Управление из шторки, картинка в картинке"),
@@ -148,7 +148,11 @@ private val index = listOf(
     SettingEntry("Ссылки в приложениях", "открывать в приложении app link youtube telegram", SettingsPage.PRIVACY),
     SettingEntry("Безопасное соединение (HTTPS)", "https only http шифрование предупреждение", SettingsPage.PRIVACY),
     SettingEntry("Защищённый DNS (DoH)", "dns doh днс cloudflare quad9 adguard провайдер", SettingsPage.PRIVACY),
-    SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password", SettingsPage.PASSWORDS),
+    SettingEntry("Пароли", "сохранённые логины вход менеджер паролей список", SettingsPage.PASSWORDS),
+    SettingEntry("Автозаполнение", "пароли менеджер bitwarden google 1password системный", SettingsPage.PASSWORDS),
+    SettingEntry("Импорт и экспорт паролей", "csv chrome firefox bitwarden файл выгрузить", SettingsPage.PASSWORDS),
+    SettingEntry("Не сохранять пароли для сайтов", "никогда исключения", SettingsPage.PASSWORDS),
+    SettingEntry("Блокировка экрана для паролей", "pin отпечаток биометрия подтверждение защита", SettingsPage.PASSWORDS),
     SettingEntry("Разрешения сайтов", "камера микрофон геолокация местоположение уведомления сброс", SettingsPage.PERMISSIONS),
     SettingEntry("Разрешения приложения", "android системные права", SettingsPage.PERMISSIONS),
     SettingEntry("Версия для ПК", "десктопный режим компьютер сайт", SettingsPage.DESKTOP),
@@ -167,10 +171,11 @@ fun SettingsScreen(
     app: HripsApp,
     onBack: () -> Unit,
     onSitePermissions: () -> Unit,
+    onPasswords: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
-    if (isWideWindow()) SettingsTwoPane(browser, app, onBack, onSitePermissions, onOpenDownloads)
-    else SettingsSinglePane(browser, app, onBack, onSitePermissions, onOpenDownloads)
+    if (isWideWindow()) SettingsTwoPane(browser, app, onBack, onSitePermissions, onPasswords, onOpenDownloads)
+    else SettingsSinglePane(browser, app, onBack, onSitePermissions, onPasswords, onOpenDownloads)
 }
 
 @Composable
@@ -180,6 +185,7 @@ private fun SettingsPageContent(
     app: HripsApp,
     back: () -> Unit,
     onSitePermissions: () -> Unit,
+    onPasswords: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
     run {
@@ -187,7 +193,7 @@ private fun SettingsPageContent(
             SettingsPage.SEARCH -> SearchPage(browser.store, back)
             SettingsPage.HOME -> HomePage(app, back)
             SettingsPage.PRIVACY -> PrivacyPage(browser, back)
-            SettingsPage.PASSWORDS -> PasswordsPage(back)
+            SettingsPage.PASSWORDS -> PasswordsSettingsPage(app, onPasswords, back)
             SettingsPage.PERMISSIONS -> PermissionsPage(onSitePermissions, back)
             SettingsPage.DESKTOP -> DesktopPage(browser, back)
             SettingsPage.MEDIA -> MediaPage(browser.store, app.hoverPreview, back)
@@ -208,6 +214,7 @@ private fun SettingsTwoPane(
     app: HripsApp,
     onBack: () -> Unit,
     onSitePermissions: () -> Unit,
+    onPasswords: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -264,7 +271,7 @@ private fun SettingsTwoPane(
                     transitionSpec = { fadeIn(paneIn) togetherWith fadeOut(paneOut) },
                     label = "settings-pane",
                 ) { p ->
-                    SettingsPageContent(p, browser, app, onBack, onSitePermissions, onOpenDownloads)
+                    SettingsPageContent(p, browser, app, onBack, onSitePermissions, onPasswords, onOpenDownloads)
                 }
             }
         }
@@ -277,6 +284,7 @@ private fun SettingsSinglePane(
     app: HripsApp,
     onBack: () -> Unit,
     onSitePermissions: () -> Unit,
+    onPasswords: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
     var page by remember { mutableStateOf<SettingsPage?>(null) }
@@ -301,7 +309,7 @@ private fun SettingsSinglePane(
         if (p == null) {
             MainPage(browser, app, onBack = onBack, onOpen = { page = it })
         } else {
-            SettingsPageContent(p, browser, app, { page = null }, onSitePermissions, onOpenDownloads)
+            SettingsPageContent(p, browser, app, { page = null }, onSitePermissions, onPasswords, onOpenDownloads)
         }
     }
 }
@@ -658,28 +666,6 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("Очистить", style = MaterialTheme.typography.titleMedium) }
-    }
-}
-
-@Composable
-private fun PasswordsPage(onBack: () -> Unit) {
-    val context = LocalContext.current
-    PageScaffold("Пароли и автозаполнение", onBack) {
-        HeroBanner(
-            title = "Системное автозаполнение",
-            subtitle = "Hrips использует автозаполнение Android: Google, Bitwarden, 1Password и другие менеджеры. Свои пароли браузер не хранит.",
-            icon = HripsIcons.PasswordKey,
-            badge = Badge.CLOVER,
-            tone = 1,
-            action = {
-                Button(
-                    shapes = ButtonDefaults.shapes(),
-                    onClick = { openAutofillSettings(context) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) { Text("Выбрать менеджер паролей", style = MaterialTheme.typography.titleSmall) }
-            },
-        )
-        Callout("В приватных вкладках автозаполнение выключено.", Modifier.padding(top = 12.dp), icon = HripsIcons.Lock)
     }
 }
 
