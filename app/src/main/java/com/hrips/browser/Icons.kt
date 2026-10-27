@@ -557,8 +557,11 @@ object HripsIcons {
     val TbBack by lazy { icon("TbBack", stroke = TB) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
     val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
     val TbPlus by lazy { icon("TbPlus", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
-    // Компактная шапка: плюс в круге и «гамбургер» (три линии).
-    val TbPlusCircle by lazy { icon("TbPlusCircle", stroke = TB, scale = 0.85f) { circle(12f, 12f, 9f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    // Правая группа панели планшета. Все значки группы занимают в рамке 24 dp примерно 18–19 dp (как счётчик вкладок
+    // 19 dp, пазл и домик). Плюс без круга: перекладины от 3,5 до 20,5 вместе с круглыми концами дают те же 19 dp.
+    val TbNewTab by lazy { icon("TbNewTab", stroke = TB) { moveTo(3.5f, 12f); horizontalLineTo(20.5f); moveTo(12f, 3.5f); verticalLineTo(20.5f) } }
+    // Три точки по вертикали: диаметр 4 dp, шаг 7 dp, общая высота 18 dp.
+    val TbMoreV by lazy { fillIcon("TbMoreV") { circle(12f, 5f, 2f); circle(12f, 12f, 2f); circle(12f, 19f, 2f) } }
     val TbImage by lazy {
         icon("TbImage", stroke = TB, scale = 0.85f) {
             roundRect(3f, 3f, 18f, 18f, 3f)
@@ -578,7 +581,6 @@ object HripsIcons {
         }
     }
     val TbSidebar by lazy { icon("TbSidebar", stroke = TB, scale = 0.9f) { roundRect(3f, 4f, 18f, 16f, 3f); moveTo(9f, 4f); verticalLineTo(20f) } }
-    val TbMenu by lazy { icon("TbMenu", stroke = TB) { moveTo(5f, 7f); horizontalLineTo(19f); moveTo(5f, 12f); horizontalLineTo(19f); moveTo(5f, 17f); horizontalLineTo(19f) } }
     val TbClose by lazy { icon("TbClose", stroke = TB) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbCloseSmall by lazy { icon("TbCloseSmall", stroke = TB, scale = 0.75f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbHome by lazy {

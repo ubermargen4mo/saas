@@ -399,12 +399,12 @@ fun BrowserScreen(browser: Browser) {
                 }
                 if (wide) {
                     ToolbarGroup {
-                        BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbPlusCircle, "Новая вкладка") }
+                        BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbNewTab, "Новая вкладка") }
                         if (!inlineTabs) TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
                         BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
                         AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                         BarButton(modifier = Modifier.size(bs), onClick = { showTools = true }) {
-                            Icon(HripsIcons.TbMenu, "Инструменты")
+                            Icon(HripsIcons.TbMoreV, "Инструменты")
                         }
                     }
                 }
