@@ -111,16 +111,7 @@ internal fun PreviewChoiceCard(
                     .clip(RoundedCornerShape(22.dp)),
                 content = preview,
             )
-            AnimatedVisibility(
-                visible = selected,
-                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
-                enter = scaleIn(motion.fastSpatialSpec<Float>(), initialScale = 0.3f) + fadeIn(motion.fastEffectsSpec<Float>()),
-                exit = scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.3f) + fadeOut(motion.fastEffectsSpec<Float>()),
-            ) {
-                Box(Modifier.size(26.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
-                    Icon(HripsIcons.Check, null, Modifier.size(18.dp), tint = cs.onPrimary)
-                }
-            }
+            CheckBadge(selected, Modifier.align(Alignment.TopEnd).padding(10.dp))
         }
         Text(
             label,
@@ -141,6 +132,23 @@ internal fun PreviewChoiceCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/** Галочка в углу выбранной карточки. Вынесена отдельно, чтобы не ловить неявный ColumnScope внешнего Column. */
+@Composable
+private fun CheckBadge(visible: Boolean, modifier: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = scaleIn(motion.fastSpatialSpec<Float>(), initialScale = 0.3f) + fadeIn(motion.fastEffectsSpec<Float>()),
+        exit = scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.3f) + fadeOut(motion.fastEffectsSpec<Float>()),
+    ) {
+        Box(Modifier.size(26.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+            Icon(HripsIcons.Check, null, Modifier.size(18.dp), tint = cs.onPrimary)
         }
     }
 }
