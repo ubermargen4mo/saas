@@ -47,7 +47,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -288,11 +287,19 @@ internal fun Tile(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Схематичные предпросмотры вкладок. Всё нарисовано из блоков, размеры в долях ширины (u = 1%),
-// поэтому макет одинаково выглядит и в узкой карточке, и в широкой. Цвета берутся из темы.
+// Схематичные предпросмотры вкладок. Без фона: только окно браузера, нарисованное блоками.
+// Размеры сняты со скриншота планшета (2000 px в ширину) и заданы в долях ширины (u = 1%), поэтому
+// макет одинаково выглядит и в узкой карточке, и в широкой. Цвета берутся из темы.
+//   панель инструментов: высота 3.1u, кнопки-кружки 3.1u, адресная строка 43.6u
+//   вкладка: 19u x 2.4u в полосе; 17u x 3.1u в боковой панели шириной 18u
+//   плитки главной страницы: 5.6u
 // ---------------------------------------------------------------------------------------------
 
-private class MockColors(val on: Color, val off: Color, val bar: Color, val tile: Color, val accentSoft: Color)
+private class MockColors(val on: Color, val off: Color, val tile: Color, val accentSoft: Color)
+
+private const val BAR_H = 3.1f
+private const val STRIP_H = 2.4f
+private const val SIDE_W = 18f
 
 /**
  * Макет окна браузера. [style] - TABS_STYLE_*, [pos] - TABS_* (расположение полосы, для режима «в строке» не важно),
@@ -303,61 +310,40 @@ internal fun TabsMock(style: Int, pos: Int, modifier: Modifier = Modifier, showT
     val cs = MaterialTheme.colorScheme
     val c = MockColors(
         on = cs.primary,
-        off = cs.onSurface.copy(alpha = 0.14f),
-        bar = cs.surfaceContainerHighest,
+        off = cs.onSurface.copy(alpha = 0.12f),
         tile = cs.primaryContainer,
         accentSoft = cs.primaryContainer,
     )
-    BoxWithConstraints(
-        modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(cs.primaryContainer, cs.tertiaryContainer))),
-    ) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
         val u = maxWidth / 100
-        Column(
-            Modifier
-                .padding(start = u * 8f, end = u * 8f, top = u * 8f)
-                .fillMaxSize()
-                .clip(RoundedCornerShape(topStart = u * 4f, topEnd = u * 4f))
-                .background(cs.surface)
-                .padding(u * 3f),
-        ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = u * 1.5f, vertical = u * 1.5f)) {
             when {
                 style == TABS_STYLE_INLINE -> {
-                    if (showTabs) {
-                        InlineRow(u, c)
-                    } else {
-                        AddressRow(u, c)
-                    }
-                    Spacer(Modifier.height(u * 3f))
+                    if (showTabs) InlineRow(u, c) else ToolbarRow(u, c)
                     PageMock(u, c)
                 }
                 !showTabs -> {
-                    AddressRow(u, c)
-                    Spacer(Modifier.height(u * 3f))
+                    ToolbarRow(u, c)
                     PageMock(u, c)
                 }
-                pos == TABS_LEFT -> Row(Modifier.fillMaxSize()) {
-                    SideTabs(u, c)
-                    Spacer(Modifier.width(u * 3f))
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
-                        AddressRow(u, c)
-                        Spacer(Modifier.height(u * 3f))
-                        PageMock(u, c)
+                pos == TABS_LEFT -> {
+                    ToolbarRow(u, c)
+                    Spacer(Modifier.height(u * 1f))
+                    Row(Modifier.weight(1f).fillMaxWidth()) {
+                        SideTabs(u, c)
+                        Column(Modifier.weight(1f).fillMaxHeight()) { PageMock(u, c) }
                     }
                 }
                 pos == TABS_ABOVE -> {
                     TabsStrip(u, c)
-                    Spacer(Modifier.height(u * 2f))
-                    AddressRow(u, c)
-                    Spacer(Modifier.height(u * 3f))
+                    Spacer(Modifier.height(u * 1f))
+                    ToolbarRow(u, c)
                     PageMock(u, c)
                 }
                 else -> {
-                    AddressRow(u, c)
-                    Spacer(Modifier.height(u * 2f))
+                    ToolbarRow(u, c)
+                    Spacer(Modifier.height(u * 1f))
                     TabsStrip(u, c)
-                    Spacer(Modifier.height(u * 3f))
                     PageMock(u, c)
                 }
             }
@@ -369,55 +355,93 @@ internal fun TabsMock(style: Int, pos: Int, modifier: Modifier = Modifier, showT
 private fun Dot(size: Dp, color: Color) = Box(Modifier.size(size).clip(CircleShape).background(color))
 
 @Composable
-private fun AddressRow(u: Dp, c: MockColors) {
-    Row(Modifier.fillMaxWidth().height(u * 7f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 2f)) {
-        Dot(u * 4f, c.off)
-        Dot(u * 4f, c.off)
-        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(percent = 50)).background(c.bar))
-        Dot(u * 4f, c.off)
+private fun Pill(width: Dp, height: Dp, color: Color) = Box(Modifier.width(width).height(height).clip(CircleShape).background(color))
+
+/** Левая группа кнопок: боковая панель, домой, назад/вперёд. */
+@Composable
+private fun LeftButtons(u: Dp, c: MockColors) {
+    Row(horizontalArrangement = Arrangement.spacedBy(u * 0.8f), verticalAlignment = Alignment.CenterVertically) {
+        Dot(u * BAR_H, c.off)
+        Dot(u * BAR_H, c.off)
+        Pill(u * 5.9f, u * BAR_H, c.off)
+    }
+}
+
+/** Правая группа: поиск по картинке и QR, затем «+», вкладки, расширения, меню. */
+@Composable
+private fun RightButtons(u: Dp, c: MockColors) {
+    Row(horizontalArrangement = Arrangement.spacedBy(u * 0.8f), verticalAlignment = Alignment.CenterVertically) {
+        Pill(u * 5.9f, u * BAR_H, c.off)
+        Pill(u * 11.5f, u * BAR_H, c.off)
+    }
+}
+
+@Composable
+private fun ToolbarRow(u: Dp, c: MockColors) {
+    Row(Modifier.fillMaxWidth().height(u * BAR_H), verticalAlignment = Alignment.CenterVertically) {
+        LeftButtons(u, c)
+        Spacer(Modifier.weight(1f))
+        Pill(u * 43.6f, u * BAR_H, c.off)
+        Spacer(Modifier.weight(1f))
+        RightButtons(u, c)
     }
 }
 
 @Composable
 private fun TabsStrip(u: Dp, c: MockColors) {
-    Row(Modifier.fillMaxWidth().height(u * 6f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 1.5f)) {
-        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(u * 2f)).background(c.on))
-        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(u * 2f)).background(c.off))
-        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(u * 2f)).background(c.off))
-        Dot(u * 4f, c.off)
+    Row(Modifier.fillMaxWidth().height(u * STRIP_H), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 0.8f)) {
+        Box(Modifier.width(u * 19f).fillMaxHeight().clip(RoundedCornerShape(u * 0.9f)).background(c.on))
+        Box(Modifier.width(u * 19f).fillMaxHeight().clip(RoundedCornerShape(u * 0.9f)).background(c.off))
+        Dot(u * STRIP_H, c.off)
     }
 }
 
+/** Боковая панель вкладок: две вкладки сверху, «Новая вкладка» внизу. */
 @Composable
 private fun SideTabs(u: Dp, c: MockColors) {
-    Column(Modifier.width(u * 16f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(u * 1.5f)) {
-        Box(Modifier.fillMaxWidth().height(u * 6f).clip(RoundedCornerShape(u * 2f)).background(c.on))
-        Box(Modifier.fillMaxWidth().height(u * 6f).clip(RoundedCornerShape(u * 2f)).background(c.off))
-        Box(Modifier.fillMaxWidth().height(u * 6f).clip(RoundedCornerShape(u * 2f)).background(c.off))
+    Column(Modifier.width(u * SIDE_W).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(u * 0.8f)) {
+        Box(Modifier.width(u * 17f).height(u * BAR_H).clip(RoundedCornerShape(u * 1f)).background(c.on))
+        Box(Modifier.width(u * 17f).height(u * BAR_H).clip(RoundedCornerShape(u * 1f)).background(c.off))
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.padding(start = u * 1f, bottom = u * 0.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 1f)) {
+            Dot(u * 1.4f, c.off)
+            Pill(u * 8f, u * 0.8f, c.off)
+        }
     }
 }
 
 /** Вкладки в строке адреса: обычные - маленькие плашки, активная вытянута и играет роль адреса. */
 @Composable
 private fun InlineRow(u: Dp, c: MockColors) {
-    Row(Modifier.fillMaxWidth().height(u * 7f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 1.5f)) {
-        Box(Modifier.width(u * 9f).fillMaxHeight().clip(RoundedCornerShape(percent = 50)).background(c.off))
+    Row(Modifier.fillMaxWidth().height(u * BAR_H), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(u * 0.8f)) {
+        LeftButtons(u, c)
+        Pill(u * 7f, u * BAR_H, c.off)
         Box(
-            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(percent = 50)).background(c.accentSoft),
+            Modifier.weight(1f).fillMaxHeight().clip(CircleShape).background(c.accentSoft),
             contentAlignment = Alignment.CenterStart,
         ) {
-            Box(Modifier.padding(start = u * 3f).width(u * 18f).height(u * 2f).clip(CircleShape).background(c.on))
+            Box(Modifier.padding(start = u * 2f).width(u * 12f).height(u * 0.9f).clip(CircleShape).background(c.on))
         }
-        Box(Modifier.width(u * 9f).fillMaxHeight().clip(RoundedCornerShape(percent = 50)).background(c.off))
-        Dot(u * 4f, c.off)
+        Pill(u * 7f, u * BAR_H, c.off)
+        RightButtons(u, c)
     }
 }
 
+/** Главная страница: логотип и три плитки сайтов, по центру оставшегося места. */
 @Composable
 private fun ColumnScope.PageMock(u: Dp, c: MockColors) {
     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(horizontalArrangement = Arrangement.spacedBy(u * 3f)) {
-            repeat(4) { Box(Modifier.size(u * 10f).clip(RoundedCornerShape(u * 3f)).background(c.tile)) }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Pill(u * 20f, u * 4.5f, c.off)
+            Spacer(Modifier.height(u * 4f))
+            Row(horizontalArrangement = Arrangement.spacedBy(u * 3f)) {
+                repeat(3) { i ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(u * 1f)) {
+                        Box(Modifier.size(u * 5.6f).clip(RoundedCornerShape(u * 1.8f)).background(if (i == 0) c.tile else c.off))
+                        Pill(u * 4f, u * 0.7f, c.off)
+                    }
+                }
+            }
         }
     }
 }

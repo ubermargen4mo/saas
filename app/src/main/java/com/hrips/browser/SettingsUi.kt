@@ -13,13 +13,11 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -34,9 +32,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -57,8 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-// Условное оформление: слева - плоский список разделов (навигация), справа - содержимое в панелях,
-// плитках и карточках. Так эти два экрана больше не похожи друг на друга.
+// Оформление страниц настроек: баннеры, плитки, карточки и строки в отдельных контейнерах (без разделителей).
 
 /** Роль акцентного цвета: 0 - primary, 1 - secondary, 2 - tertiary. */
 internal class Tone(val solid: Color, val onSolid: Color, val soft: Color, val onSoft: Color)
@@ -74,62 +72,8 @@ internal fun toneOf(tone: Int): Tone {
 }
 
 // ----------------------------------------------------------------------------------------------
-// Левая колонка: плоский список разделов
+// Левая колонка: быстрые переключатели (список разделов - сегментные строки SettingsRow)
 // ----------------------------------------------------------------------------------------------
-
-/**
- * Строка раздела. Без карточки: значок - фигурка Material (у каждого раздела своя форма и цвет),
- * открытый раздел подсвечен «таблеткой» цвета темы, фигурка при этом заливается акцентом.
- */
-@Composable
-internal fun NavRow(
-    icon: ImageVector,
-    badge: Badge,
-    tone: Int,
-    title: String,
-    subtitle: String?,
-    selected: Boolean,
-    onClick: () -> Unit,
-    value: String? = null,
-) {
-    val cs = MaterialTheme.colorScheme
-    val t = toneOf(tone)
-    val bg = if (selected) cs.secondaryContainer else Color.Transparent
-    PressSurface(
-        onClick = onClick,
-        corners = Corners.all(if (selected) 32.dp else 20.dp),
-        color = bg,
-        contentColor = if (selected) cs.onSecondaryContainer else cs.onSurface,
-        pressedCorner = 14.dp,
-        pressScale = 0.98f,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            ShapeBadge(
-                icon, 44.dp, badge = badge,
-                container = if (selected) t.solid else t.soft,
-                content = if (selected) t.onSolid else t.onSoft,
-            )
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (subtitle != null) {
-                    Text(
-                        subtitle, style = MaterialTheme.typography.bodySmall,
-                        color = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (value != null) {
-                Text(value, style = MaterialTheme.typography.labelLarge, color = cs.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 96.dp))
-            }
-        }
-    }
-}
 
 /** Быстрый переключатель: квадратная плитка вроде тех, что в шторке Android. Включённая - «мягче» по форме и в цвете. */
 @Composable
@@ -236,22 +180,15 @@ internal fun HeroBanner(
     }
 }
 
-/** Контейнер для группы строк: одна крупная карточка, строки разделены тонкой линией. */
-@Composable
-internal fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().clip(HripsShapes.XL).background(MaterialTheme.colorScheme.surfaceContainerHigh), content = content)
-}
-
-@Composable
-internal fun PanelDivider() {
-    HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-}
-
-/** Строка панели: без значка в кружке, название обычным кеглем, значение акцентом справа. */
+/**
+ * Строка страницы настроек: свой контейнер вместо разделителя между строками.
+ * [shape] - сегмент из [Group] / [GroupOf] (у крайних углы крупнее). Без значка в кружке, значение акцентом справа.
+ */
 @Composable
 internal fun PanelItem(
     title: String,
     modifier: Modifier = Modifier,
+    shape: Shape = HripsShapes.XL,
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
@@ -260,27 +197,36 @@ internal fun PanelItem(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
-    Row(
-        modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.5f)
-            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
-            .heightIn(min = 60.dp)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        if (icon != null) Icon(icon, null, Modifier.size(22.dp), tint = cs.onSurfaceVariant)
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
-            if (subtitle != null) {
-                Text(subtitle, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    val content: @Composable () -> Unit = {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (icon != null) Icon(icon, null, Modifier.size(22.dp), tint = cs.onSurfaceVariant)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+                if (subtitle != null) {
+                    Text(subtitle, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                }
             }
+            if (value != null) {
+                Text(value, style = MaterialTheme.typography.labelLarge, color = cs.primary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+            }
+            trailing?.invoke()
         }
-        if (value != null) {
-            Text(value, style = MaterialTheme.typography.labelLarge, color = cs.primary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
-        }
-        trailing?.invoke()
+    }
+    val m = modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f)
+    if (onClick != null) {
+        PressSurface(
+            onClick = onClick, corners = shape.asCorners(), color = cs.surfaceContainerHigh, contentColor = cs.onSurface,
+            pressedCorner = 20.dp, pressScale = 0.985f, modifier = m, enabled = enabled, content = content,
+        )
+    } else {
+        Surface(shape = shape, color = cs.surfaceContainerHigh, contentColor = cs.onSurface, modifier = m, content = content)
     }
 }
 
@@ -291,12 +237,13 @@ internal fun PanelSwitch(
     checked: Boolean,
     onChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = HripsShapes.XL,
     enabled: Boolean = true,
     icon: ImageVector? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     PanelItem(
-        title, modifier, subtitle, enabled = enabled, icon = icon,
+        title, modifier, shape, subtitle, enabled = enabled, icon = icon,
         onClick = {
             haptic.performHapticFeedback(if (checked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
             onChange(!checked)
@@ -314,12 +261,13 @@ internal fun DropdownRow(
     options: List<Pair<String, String>>,
     selectedId: String,
     onSelect: (String) -> Unit,
+    shape: Shape = HripsShapes.XL,
 ) {
     var open by remember { mutableStateOf(false) }
     val cs = MaterialTheme.colorScheme
     Box {
         PanelItem(
-            title, subtitle = subtitle, onClick = { open = true },
+            title, shape = shape, subtitle = subtitle, onClick = { open = true },
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(value, style = MaterialTheme.typography.labelLarge, color = cs.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp))

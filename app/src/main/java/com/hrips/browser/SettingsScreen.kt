@@ -121,27 +121,10 @@ private fun SettingsPage.icon(): ImageVector = when (this) {
     SettingsPage.ABOUT -> HripsIcons.Info
 }
 
-private fun SettingsPage.badge(): Badge = when (this) {
-    SettingsPage.SEARCH -> Badge.COOKIE9
-    SettingsPage.HOME -> Badge.FLOWER
-    SettingsPage.PRIVACY -> Badge.COOKIE6
-    SettingsPage.PASSWORDS -> Badge.CLOVER
-    SettingsPage.PERMISSIONS -> Badge.PENTAGON
-    SettingsPage.DESKTOP -> Badge.BURST
-    SettingsPage.MEDIA -> Badge.SUNNY
-    SettingsPage.DOWNLOADS -> Badge.COOKIE12
-    SettingsPage.PERFORMANCE -> Badge.COOKIE6
-    SettingsPage.ABOUT -> Badge.COOKIE9
-}
-
-private fun SettingsPage.tone(): Int = ordinal % 3
-
 @Composable
 private fun SearchResults(found: List<SettingEntry>, onPick: (SettingsPage) -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        found.forEach { e ->
-            NavRow(e.page.icon(), e.page.badge(), e.page.tone(), e.title, e.page.title, selected = false, onClick = { onPick(e.page) })
-        }
+    GroupOf(found) { e, sh ->
+        SettingsRow(e.page.icon(), e.title, e.page.title, sh, onClick = { onPick(e.page) })
     }
 }
 
@@ -385,14 +368,12 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, selected: Settings
 
         Spacer(Modifier.height(16.dp))
 
-        Column(Modifier.toolsIn(2), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            SettingsPage.entries.forEach { p ->
-                NavRow(
-                    p.icon(), p.badge(), p.tone(), p.title, p.subtitle, selected = p == selected, onClick = { onOpen(p) },
-                    value = if (p == SettingsPage.SEARCH) SearchEngines.current.name else null,
-                )
-            }
-        }
+        Column(Modifier.toolsIn(2)) { GroupOf(SettingsPage.entries) { p, sh ->
+            SettingsRow(
+                p.icon(), p.title, p.subtitle, sh, onClick = { onOpen(p) }, selected = p == selected,
+                value = if (p == SettingsPage.SEARCH) SearchEngines.current.name else null,
+            )
+        } }
     }
 }
 
@@ -441,22 +422,27 @@ private fun SearchPage(store: Store, onBack: () -> Unit) {
         }
 
         SectionTitle("Ввод")
-        Panel {
-            PanelSwitch(
-                "Подсказки при вводе", "Вводимый текст отправляется выбранной поисковой системе",
-                store.suggestionsOn, { store.updateSuggestions(it) },
-            )
-            PanelDivider()
-            PanelItem(
-                "Очистить историю поиска",
-                subtitle = if (store.searches.isEmpty()) "Пока пусто" else "Запросов: ${store.searches.size}",
-                enabled = store.searches.isNotEmpty(),
-                onClick = {
-                    store.clearSearches()
-                    Notices.show("История поиска очищена")
-                },
-            )
-        }
+        Group(
+            { s ->
+                PanelSwitch(
+                    "Подсказки при вводе", "Вводимый текст отправляется выбранной поисковой системе",
+                    store.suggestionsOn, { store.updateSuggestions(it) },
+                    shape = s,
+                )
+            },
+            { s ->
+                PanelItem(
+                    "Очистить историю поиска",
+                    subtitle = if (store.searches.isEmpty()) "Пока пусто" else "Запросов: ${store.searches.size}",
+                    enabled = store.searches.isNotEmpty(),
+                    onClick = {
+                        store.clearSearches()
+                        Notices.show("История поиска очищена")
+                    },
+                    shape = s,
+                )
+            },
+        )
     }
 }
 
@@ -628,17 +614,22 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
         )
 
         SectionTitle("Защита")
-        Panel {
-            PanelSwitch(
-                "Защита от трекеров", "Если сайт работает неправильно, выключите и перезагрузите страницу",
-                on, { browser.setTracking(it) },
-            )
-            PanelDivider()
-            PanelSwitch(
-                "Скриншоты в приватных вкладках", "По умолчанию запрещены, а миниатюра в списке приложений скрыта",
-                store.allowPrivateShots, { store.updatePrivateShots(it) },
-            )
-        }
+        Group(
+            { s ->
+                PanelSwitch(
+                    "Защита от трекеров", "Если сайт работает неправильно, выключите и перезагрузите страницу",
+                    on, { browser.setTracking(it) },
+                    shape = s,
+                )
+            },
+            { s ->
+                PanelSwitch(
+                    "Скриншоты в приватных вкладках", "По умолчанию запрещены, а миниатюра в списке приложений скрыта",
+                    store.allowPrivateShots, { store.updatePrivateShots(it) },
+                    shape = s,
+                )
+            },
+        )
 
         NetworkPrivacySection(browser)
 
@@ -721,13 +712,16 @@ private fun PermissionsPage(onSitePermissions: () -> Unit, onBack: () -> Unit) {
         )
 
         SectionTitle("Сайты")
-        Panel {
-            PanelItem(
-                "Разрешения сайтов", subtitle = "Что вы разрешили или запретили сайтам. Можно отозвать",
-                onClick = onSitePermissions,
-                trailing = { Icon(HripsIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-            )
-        }
+        Group(
+            { s ->
+                PanelItem(
+                    "Разрешения сайтов", subtitle = "Что вы разрешили или запретили сайтам. Можно отозвать",
+                    onClick = onSitePermissions,
+                    trailing = { Icon(HripsIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    shape = s,
+                )
+            },
+        )
 
         SectionTitle("Права браузера в Android")
         TwoColumnGrid(system) { item, m -> StatusTile(item.second, item.first, item.third, { openApp() }, m) }
@@ -756,16 +750,13 @@ private fun DesktopPage(browser: Browser, onBack: () -> Unit) {
                 tone = 2,
             )
         } else {
-            Panel {
-                sites.forEachIndexed { i, host ->
-                    if (i > 0) PanelDivider()
-                    PanelItem(
-                        host, subtitle = "Версия для ПК включена", icon = HripsIcons.Desktop,
-                        trailing = {
-                            IconButton(onClick = { browser.setSiteDesktop(host, false) }) { Icon(HripsIcons.Trash, "Выключить") }
-                        },
-                    )
-                }
+            GroupOf(sites) { host, s ->
+                PanelItem(
+                    host, shape = s, subtitle = "Версия для ПК включена", icon = HripsIcons.Desktop,
+                    trailing = {
+                        IconButton(onClick = { browser.setSiteDesktop(host, false) }) { Icon(HripsIcons.Trash, "Выключить") }
+                    },
+                )
             }
             Spacer(Modifier.height(12.dp))
             HripsTextButton(onClick = { browser.resetDesktopSites() }) { Text("Выключить на всех сайтах") }
@@ -776,25 +767,32 @@ private fun DesktopPage(browser: Browser, onBack: () -> Unit) {
 @Composable
 private fun MediaPage(store: Store, hover: HoverPreview, onBack: () -> Unit) {
     PageScaffold("Медиа", onBack) {
-        Panel {
-            PanelSwitch(
-                "Управление в уведомлении",
-                "Пауза, перемотка и треки в шторке и на экране блокировки. Звук продолжает играть при выключенном экране",
-                store.mediaControls, { store.updateMediaControls(it) }, icon = HripsIcons.NotificationsLine,
-            )
-            PanelDivider()
-            PanelSwitch(
-                "Картинка в картинке",
-                "Видео на весь экран уходит в маленькое окно, когда вы выходите на главный экран",
-                store.pipEnabled, { store.updatePip(it) }, icon = HripsIcons.Pip,
-            )
-            PanelDivider()
-            PanelSwitch(
-                "Оживление миниатюр",
-                "Удерживайте палец на миниатюре видео: сайт запустит предпросмотр, как при наведении мыши. Работает там, где он есть у самого сайта",
-                hover.enabled, { hover.setHoverEnabled(it) }, enabled = hover.extension != null, icon = HripsIcons.MotionPlayLine,
-            )
-        }
+        Group(
+            { s ->
+                PanelSwitch(
+                    "Управление в уведомлении",
+                    "Пауза, перемотка и треки в шторке и на экране блокировки. Звук продолжает играть при выключенном экране",
+                    store.mediaControls, { store.updateMediaControls(it) }, icon = HripsIcons.NotificationsLine,
+                    shape = s,
+                )
+            },
+            { s ->
+                PanelSwitch(
+                    "Картинка в картинке",
+                    "Видео на весь экран уходит в маленькое окно, когда вы выходите на главный экран",
+                    store.pipEnabled, { store.updatePip(it) }, icon = HripsIcons.Pip,
+                    shape = s,
+                )
+            },
+            { s ->
+                PanelSwitch(
+                    "Оживление миниатюр",
+                    "Удерживайте палец на миниатюре видео: сайт запустит предпросмотр, как при наведении мыши. Работает там, где он есть у самого сайта",
+                    hover.enabled, { hover.setHoverEnabled(it) }, enabled = hover.extension != null, icon = HripsIcons.MotionPlayLine,
+                    shape = s,
+                )
+            },
+        )
     }
 }
 
@@ -802,19 +800,24 @@ private fun MediaPage(store: Store, hover: HoverPreview, onBack: () -> Unit) {
 private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
     val store = browser.store
     PageScaffold("Производительность", onBack) {
-        Panel {
-            PanelSwitch(
-                "Экономия памяти",
-                "При сильной нехватке памяти фоновые вкладки временно выгружаются. При возврате страница восстанавливается.",
-                store.suspendTabsOnMemoryPressure, { store.updateSuspendTabsOnMemoryPressure(it) },
-            )
-            PanelDivider()
-            PanelSwitch(
-                "Держать страницу при сворачивании",
-                "Текущая страница остаётся в памяти до 20 минут после сворачивания, чтобы не перезагружаться при возврате. Занимает больше памяти в фоне.",
-                store.keepPageInBackground, { store.updateKeepPageInBackground(it) },
-            )
-        }
+        Group(
+            { s ->
+                PanelSwitch(
+                    "Экономия памяти",
+                    "При сильной нехватке памяти фоновые вкладки временно выгружаются. При возврате страница восстанавливается.",
+                    store.suspendTabsOnMemoryPressure, { store.updateSuspendTabsOnMemoryPressure(it) },
+                    shape = s,
+                )
+            },
+            { s ->
+                PanelSwitch(
+                    "Держать страницу при сворачивании",
+                    "Текущая страница остаётся в памяти до 20 минут после сворачивания, чтобы не перезагружаться при возврате. Занимает больше памяти в фоне.",
+                    store.keepPageInBackground, { store.updateKeepPageInBackground(it) },
+                    shape = s,
+                )
+            },
+        )
         Callout(
             "Включение может приводить к повторной загрузке тяжёлых страниц. Текущая вкладка и активное воспроизведение не выгружаются.",
             Modifier.padding(top = 12.dp), icon = HripsIcons.Gauge,
@@ -828,12 +831,15 @@ private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads:
     val downloads = browser.downloads
     val hasFinished = downloads.items.any { !downloads.isOngoing(it) }
     PageScaffold("Загрузки", onBack) {
-        Panel {
-            PanelSwitch(
-                "Спрашивать перед загрузкой", "Показывать имя файла и размер, чтобы подтвердить или отменить",
-                store.askBeforeDownload, { store.updateAskBeforeDownload(it) },
-            )
-        }
+        Group(
+            { s ->
+                PanelSwitch(
+                    "Спрашивать перед загрузкой", "Показывать имя файла и размер, чтобы подтвердить или отменить",
+                    store.askBeforeDownload, { store.updateAskBeforeDownload(it) },
+                    shape = s,
+                )
+            },
+        )
         SectionTitle("Файлы")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionTile(HripsIcons.File, "Список загрузок", "Скачанные файлы и текущие загрузки", onOpenDownloads, Modifier.weight(1f))
@@ -866,23 +872,31 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
             tone = 0,
         )
         SectionTitle("Сборка")
-        Panel {
-            PanelItem("Движок", value = if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko")
-            PanelDivider()
-            PanelItem("Блокировка рекламы", value = "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "")
-            PanelDivider()
-            PanelItem("Android", value = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        }
+        Group(
+            { s ->
+                PanelItem("Движок", value = if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko", shape = s)
+            },
+            { s ->
+                PanelItem("Блокировка рекламы", value = "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "", shape = s)
+            },
+            { s ->
+                PanelItem("Android", value = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", shape = s)
+            },
+        )
         if (Updater.available) {
             SectionTitle("Обновления")
-            Panel {
-                UpdateRow(app)
-                PanelDivider()
-                PanelSwitch(
-                    "Проверять автоматически", "Раз в сутки при запуске. Запрос идёт на github.com",
-                    app.store.autoUpdate, { app.store.updateAutoUpdate(it) },
-                )
-            }
+            Group(
+                { s ->
+                    UpdateRow(app, shape = s)
+                },
+                { s ->
+                    PanelSwitch(
+                        "Проверять автоматически", "Раз в сутки при запуске. Запрос идёт на github.com",
+                        app.store.autoUpdate, { app.store.updateAutoUpdate(it) },
+                        shape = s,
+                    )
+                },
+            )
             (Updater.state as? Updater.State.Available)?.info?.notes?.takeIf { it.isNotBlank() }?.let {
                 Callout(it, Modifier.padding(top = 12.dp), icon = HripsIcons.Package)
             }
@@ -911,87 +925,99 @@ private fun DiagnosticsGroup(app: HripsApp) {
         size < 1024L * 1024L -> "Размер ${(size + 1023L) / 1024L} КБ"
         else -> "Размер ${"%.1f".format(size / 1024.0 / 1024.0)} МБ"
     }
-    Panel {
-        PanelSwitch(
-            "Записывать журнал",
-            "Для поиска ошибок: действия, сбои и зависания пишутся в файл. Адреса приватных вкладок не сохраняются",
-            app.store.logging,
-            {
-                app.store.updateLogging(it)
-                AppLog.setEnabled(it)
-                FrameJank.sync(context)
-            },
-        )
-        PanelDivider()
-        PanelItem(
-            "Отправить журнал", subtitle = sizeText, icon = HripsIcons.Share,
-            enabled = !busy && size > 0L,
-            onClick = {
-                busy = true
-                AppExecutors.startThread("hrips-log-share") {
-                    val file = runCatching { AppLog.buildShareFile(context.applicationContext) }.getOrNull()
-                    MainThread.handler.post {
-                        busy = false
-                        if (file == null) {
-                            Notices.show("Журнал пуст")
-                        } else {
-                            try {
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    putExtra(Intent.EXTRA_SUBJECT, "Журнал hrips")
-                                    clipData = ClipData.newRawUri("", uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    Group(
+        { s ->
+            PanelSwitch(
+                "Записывать журнал",
+                "Для поиска ошибок: действия, сбои и зависания пишутся в файл. Адреса приватных вкладок не сохраняются",
+                app.store.logging,
+                {
+                    app.store.updateLogging(it)
+                    AppLog.setEnabled(it)
+                    FrameJank.sync(context)
+                },
+                shape = s,
+            )
+        },
+        { s ->
+            PanelItem(
+                "Отправить журнал", subtitle = sizeText, icon = HripsIcons.Share,
+                enabled = !busy && size > 0L,
+                onClick = {
+                    busy = true
+                    AppExecutors.startThread("hrips-log-share") {
+                        val file = runCatching { AppLog.buildShareFile(context.applicationContext) }.getOrNull()
+                        MainThread.handler.post {
+                            busy = false
+                            if (file == null) {
+                                Notices.show("Журнал пуст")
+                            } else {
+                                try {
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        putExtra(Intent.EXTRA_SUBJECT, "Журнал hrips")
+                                        clipData = ClipData.newRawUri("", uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, "Отправить журнал"))
+                                } catch (e: Exception) {
+                                    AppLog.w("Settings", "не удалось отправить журнал", e)
+                                    Notices.show("Не удалось отправить журнал")
                                 }
-                                context.startActivity(Intent.createChooser(send, "Отправить журнал"))
-                            } catch (e: Exception) {
-                                AppLog.w("Settings", "не удалось отправить журнал", e)
-                                Notices.show("Не удалось отправить журнал")
                             }
                         }
                     }
-                }
-            },
-        )
-        PanelDivider()
-        PanelItem("Файл журнала", subtitle = path, icon = HripsIcons.Folder)
-        PanelDivider()
-        PanelItem(
-            "Очистить журнал", icon = HripsIcons.Trash, enabled = size > 0L,
-            onClick = {
-                AppLog.clear(context)
-                size = AppLog.sizeBytes(context)
-            },
-        )
-    }
+                },
+                shape = s,
+            )
+        },
+        { s ->
+            PanelItem("Файл журнала", subtitle = path, icon = HripsIcons.Folder, shape = s)
+        },
+        { s ->
+            PanelItem(
+                "Очистить журнал", icon = HripsIcons.Trash, enabled = size > 0L,
+                onClick = {
+                    AppLog.clear(context)
+                    size = AppLog.sizeBytes(context)
+                },
+                shape = s,
+            )
+        },
+    )
 }
 
 @Composable
-private fun UpdateRow(app: HripsApp) {
+private fun UpdateRow(app: HripsApp, shape: Shape) {
     val context = LocalContext.current
     when (val st = Updater.state) {
-        is Updater.State.Checking -> PanelItem("Обновления", subtitle = "Проверяю…", icon = HripsIcons.BarRefresh)
+        is Updater.State.Checking -> PanelItem("Обновления", subtitle = "Проверяю…", icon = HripsIcons.BarRefresh, shape = shape)
         is Updater.State.Available -> PanelItem(
             "Доступна версия ${st.info.versionName}",
             subtitle = "Нажмите, чтобы скачать" + if (st.info.size > 0) " (${st.info.size / 1_000_000} МБ)" else "",
             icon = HripsIcons.Download,
             onClick = { Updater.download(app, st.info) },
+            shape = shape,
         )
-        is Updater.State.Downloading -> PanelItem("Скачиваю ${st.info.versionName}", value = "${st.percent}%", icon = HripsIcons.Download)
+        is Updater.State.Downloading -> PanelItem("Скачиваю ${st.info.versionName}", value = "${st.percent}%", icon = HripsIcons.Download, shape = shape)
         is Updater.State.Ready -> PanelItem(
             "Установить ${st.info.versionName}", subtitle = "Файл загружен и проверен. Нажмите, чтобы установить",
             icon = HripsIcons.Package, onClick = { Updater.install(context) },
+            shape = shape,
         )
         is Updater.State.UpToDate -> PanelItem(
             "Установлена последняя версия", subtitle = "Нажмите, чтобы проверить ещё раз",
             icon = HripsIcons.Check, onClick = { Updater.check(app, manual = true) },
+            shape = shape,
         )
         is Updater.State.Failed -> PanelItem(
             st.message.ifBlank { "Не удалось проверить обновления" }, subtitle = "Нажмите, чтобы повторить",
             icon = HripsIcons.Alert, onClick = { Updater.check(app, manual = true) },
+            shape = shape,
         )
-        else -> PanelItem("Проверить обновления", icon = HripsIcons.BarRefresh, onClick = { Updater.check(app, manual = true) })
+        else -> PanelItem("Проверить обновления", icon = HripsIcons.BarRefresh, onClick = { Updater.check(app, manual = true) }, shape = shape)
     }
 }
 

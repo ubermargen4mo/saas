@@ -554,16 +554,20 @@ object HripsIcons {
     // чтобы вес и размер совпадали. Координаты целые или с шагом 0,5: при 2 px/dp линии ложатся ровно на пиксели.
     // Мелкие значки внутри поля (замок, лупа, обновление) уменьшены через scale, штрих при этом остаётся 2.
     private const val TB = 2f
-    val TbBack by lazy { icon("TbBack", stroke = TB) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
-    val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
+    // Размеры сняты со скриншота образца (2 px на dp, штрих 2 dp, габарит значка вместе со штрихом):
+    // стрелка 15,5 x 15, домик 16 x 17,5, обновить 16 x 16, счётчик вкладок 20 x 20, три точки 4 x 16.
+    // Шеврон берёт высоту стрелки (15 dp), угол 45 градусов.
+    val TbBack by lazy { icon("TbBack", stroke = TB) { moveTo(15f, 5.5f); lineTo(8.5f, 12f); lineTo(15f, 18.5f) } }
+    val TbForward by lazy { icon("TbForward", stroke = TB) { moveTo(9f, 5.5f); lineTo(15.5f, 12f); lineTo(9f, 18.5f) } }
     val TbPlus by lazy { icon("TbPlus", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
-    // Правая группа панели планшета. Все значки группы занимают в рамке 24 dp примерно 18–19 dp (как счётчик вкладок
-    // 19 dp, пазл и домик). Плюс без круга: перекладины от 3,5 до 20,5 вместе с круглыми концами дают те же 19 dp.
-    val TbNewTab by lazy { icon("TbNewTab", stroke = TB) { moveTo(3.5f, 12f); horizontalLineTo(20.5f); moveTo(12f, 3.5f); verticalLineTo(20.5f) } }
-    // Три точки по вертикали: диаметр 4 dp, шаг 7 dp, общая высота 18 dp.
-    val TbMoreV by lazy { fillIcon("TbMoreV") { circle(12f, 5f, 2f); circle(12f, 12f, 2f); circle(12f, 19f, 2f) } }
+    // Открытые значки (стрелка, плюс, загрузка) занимают 16 dp, как «обновить» в образце, рамочные (счётчик, пазл,
+    // фото, QR, боковая панель) 20 dp, как счётчик вкладок. Контур от 3 до 21 вместе со штрихом даёт 20 dp,
+    // плюс от 5 до 19 даёт 16 dp.
+    val TbNewTab by lazy { icon("TbNewTab", stroke = TB) { moveTo(5f, 12f); horizontalLineTo(19f); moveTo(12f, 5f); verticalLineTo(19f) } }
+    // Три точки по вертикали: диаметр 4 dp, шаг 6 dp, общая высота 16 dp.
+    val TbMoreV by lazy { fillIcon("TbMoreV") { circle(12f, 6f, 2f); circle(12f, 12f, 2f); circle(12f, 18f, 2f) } }
     val TbImage by lazy {
-        icon("TbImage", stroke = TB, scale = 0.85f) {
+        icon("TbImage", stroke = TB) {
             roundRect(3f, 3f, 18f, 18f, 3f)
             circle(9f, 9f, 1.5f)
             moveTo(21f, 16f); lineToRelative(-5f, -5f); lineTo(6f, 21f)
@@ -571,27 +575,27 @@ object HripsIcons {
     }
     // QR в той же сетке и с тем же штрихом, что и остальные значки панели: три угла контуром и точки.
     val TbQr by lazy {
-        icon("TbQr", stroke = TB, scale = 0.85f) {
-            roundRect(4f, 4f, 5f, 5f, 1f); roundRect(15f, 4f, 5f, 5f, 1f); roundRect(4f, 15f, 5f, 5f, 1f)
-            moveTo(14f, 14f); horizontalLineToRelative(0.01f)
-            moveTo(20f, 14f); horizontalLineToRelative(0.01f)
-            moveTo(17f, 17f); horizontalLineToRelative(0.01f)
-            moveTo(14f, 20f); horizontalLineToRelative(0.01f)
-            moveTo(20f, 20f); horizontalLineToRelative(0.01f)
+        icon("TbQr", stroke = TB) {
+            roundRect(3f, 3f, 6f, 6f, 1f); roundRect(15f, 3f, 6f, 6f, 1f); roundRect(3f, 15f, 6f, 6f, 1f)
+            moveTo(15f, 15f); horizontalLineToRelative(0.01f)
+            moveTo(21f, 15f); horizontalLineToRelative(0.01f)
+            moveTo(18f, 18f); horizontalLineToRelative(0.01f)
+            moveTo(15f, 21f); horizontalLineToRelative(0.01f)
+            moveTo(21f, 21f); horizontalLineToRelative(0.01f)
         }
     }
-    val TbSidebar by lazy { icon("TbSidebar", stroke = TB, scale = 0.9f) { roundRect(3f, 4f, 18f, 16f, 3f); moveTo(9f, 4f); verticalLineTo(20f) } }
+    val TbSidebar by lazy { icon("TbSidebar", stroke = TB) { roundRect(3f, 4f, 18f, 16f, 3f); moveTo(9f, 4f); verticalLineTo(20f) } }
     val TbClose by lazy { icon("TbClose", stroke = TB) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbCloseSmall by lazy { icon("TbCloseSmall", stroke = TB, scale = 0.75f) { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) } }
     val TbHome by lazy {
         icon("TbHome", stroke = TB) {
-            moveTo(4f, 10f); lineTo(12f, 3.5f); lineTo(20f, 10f); verticalLineTo(18f)
-            quadTo(20f, 20f, 18f, 20f); horizontalLineTo(6f); quadTo(4f, 20f, 4f, 18f); close()
+            moveTo(5f, 10f); lineTo(12f, 4.5f); lineTo(19f, 10f); verticalLineTo(18f)
+            quadTo(19f, 20f, 17f, 20f); horizontalLineTo(7f); quadTo(5f, 20f, 5f, 18f); close()
             moveTo(9.5f, 20f); verticalLineTo(14.5f); horizontalLineTo(14.5f); verticalLineTo(20f)
         }
     }
     val TbRefresh by lazy {
-        icon("TbRefresh", stroke = TB, scale = 0.8f) {
+        icon("TbRefresh", stroke = TB, scale = 0.78f) {
             moveTo(21f, 12f); arcToRelative(9f, 9f, 0f, true, true, -9f, -9f)
             curveToRelative(2.52f, 0f, 4.93f, 1f, 6.74f, 2.74f); lineTo(21f, 8f)
             moveTo(21f, 3f); verticalLineToRelative(5f); horizontalLineToRelative(-5f)

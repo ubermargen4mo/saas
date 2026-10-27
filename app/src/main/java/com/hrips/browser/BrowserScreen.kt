@@ -380,8 +380,12 @@ fun BrowserScreen(browser: Browser) {
                             wide = wide,
                             inline = inlineTabs,
                             onSwipeDown = { requestTabs() },
-                            // Фото и QR рядом со строкой: только на главной и на страницах поисковиков.
-                            showExtras = (tab.home && !tab.isPrivate) || parsed != null,
+                            // Фото и QR: на главной внутри строки (вместо «обновить»), на страницах поисковиков рядом со строкой.
+                            showExtras = !tab.home && parsed != null,
+                            homeExtras = if (tab.isPrivate) null else ({
+                                BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.TbImage, "Поиск по фото") }
+                                BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.TbQr, "Сканировать QR-код") }
+                            }),
                             extras = {
                                 ToolbarGroup {
                                     BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.TbImage, "Поиск по фото") }
@@ -400,6 +404,9 @@ fun BrowserScreen(browser: Browser) {
                 if (wide) {
                     ToolbarGroup {
                         BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbNewTab, "Новая вкладка") }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    ToolbarGroup {
                         if (!inlineTabs) TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
                         BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
                         AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)

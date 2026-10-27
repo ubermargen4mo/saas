@@ -59,25 +59,32 @@ internal fun NetworkPrivacySection(browser: Browser) {
     val store = browser.store
 
     SectionTitle("Приватность сайтов")
-    Panel {
-        PanelSwitch(
-            "Сигнал Global Privacy Control",
-            "Сайты получают просьбу не продавать и не передавать данные о вас",
-            store.gpc, { store.updateGpc(it); browser.applyPrivacy() },
-        )
-        PanelDivider()
-        PanelSwitch(
-            "Удалять tracking-параметры",
-            "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
-            store.stripTrackingParams, { store.updateStripTrackingParams(it); browser.applyPrivacy() },
-        )
-        PanelDivider()
-        PanelSwitch(
-            "Картинки страниц в карточках вкладок",
-            "Если нет снимка экрана, браузер сам запрашивает у сайта превью (og:image). Приватные вкладки не затрагиваются",
-            store.pageImages, { store.updatePageImages(it) },
-        )
-    }
+    Group(
+        { s ->
+            PanelSwitch(
+                "Сигнал Global Privacy Control",
+                "Сайты получают просьбу не продавать и не передавать данные о вас",
+                store.gpc, { store.updateGpc(it); browser.applyPrivacy() },
+                shape = s,
+            )
+        },
+        { s ->
+            PanelSwitch(
+                "Удалять tracking-параметры",
+                "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
+                store.stripTrackingParams, { store.updateStripTrackingParams(it); browser.applyPrivacy() },
+                shape = s,
+            )
+        },
+        { s ->
+            PanelSwitch(
+                "Картинки страниц в карточках вкладок",
+                "Если нет снимка экрана, браузер сам запрашивает у сайта превью (og:image). Приватные вкладки не затрагиваются",
+                store.pageImages, { store.updatePageImages(it) },
+                shape = s,
+            )
+        },
+    )
 
     SectionTitle("Ссылки в приложениях")
     OptionTiles(openInAppsOptions, store.openInApps) { store.updateOpenInApps(it) }
@@ -91,16 +98,19 @@ internal fun NetworkPrivacySection(browser: Browser) {
         Column {
             Spacer(Modifier.height(12.dp))
             val current = PrivacyEngine.dohProviders.firstOrNull { it.id == store.dohProvider }
-            Panel {
-                DropdownRow(
-                    title = "Провайдер DNS",
-                    subtitle = current?.note ?: store.dohCustom.ifBlank { "Адрес вида https://dns.example/dns-query" },
-                    value = current?.name ?: "Свой сервер",
-                    options = PrivacyEngine.dohProviders.map { it.id to it.name } + (PrivacyEngine.CUSTOM to "Свой сервер"),
-                    selectedId = store.dohProvider,
-                    onSelect = { store.updateDohProvider(it); browser.applyPrivacy() },
-                )
-            }
+            Group(
+                { s ->
+                    DropdownRow(
+                        title = "Провайдер DNS",
+                        subtitle = current?.note ?: store.dohCustom.ifBlank { "Адрес вида https://dns.example/dns-query" },
+                        value = current?.name ?: "Свой сервер",
+                        options = PrivacyEngine.dohProviders.map { it.id to it.name } + (PrivacyEngine.CUSTOM to "Свой сервер"),
+                        selectedId = store.dohProvider,
+                        onSelect = { store.updateDohProvider(it); browser.applyPrivacy() },
+                        shape = s,
+                    )
+                },
+            )
             if (store.dohProvider == PrivacyEngine.CUSTOM) CustomDoh(browser)
             Callout(
                 "DoH шифрует запросы адресов, но выбранный провайдер видит, какие сайты вы открываете. Выбирайте того, кому доверяете.",

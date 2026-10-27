@@ -63,9 +63,11 @@ internal fun AddressBar(
     inline: Boolean = false,
     // Смах вниз по строке (как на телефоне): открывает менеджер вкладок.
     onSwipeDown: (() -> Unit)? = null,
-    // Справа от строки капсула [extras] (фото и QR), видна при [showExtras].
+    // Справа от строки капсула [extras] (фото и QR), видна при [showExtras]; на главной вместо неё [homeExtras] внутри строки.
     extras: (@Composable () -> Unit)? = null,
     showExtras: Boolean = false,
+    // На главной кнопки лежат внутри строки справа, на месте «обновить» (его на главной нет).
+    homeExtras: (@Composable () -> Unit)? = null,
     onCopy: () -> Unit = {},
     onShare: () -> Unit = {},
     onPasteGo: () -> Unit = {},
@@ -233,7 +235,12 @@ internal fun AddressBar(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                ReloadButton()
+                if (tab.home) {
+                    homeExtras?.invoke()
+                    Spacer(Modifier.width(4.dp))
+                } else {
+                    ReloadButton()
+                }
             }
 
             PillMenu(
@@ -669,7 +676,7 @@ fun TabCounterButton(count: Int, modifier: Modifier = Modifier, tablet: Boolean 
     ) {
         val color = LocalContentColor.current
         Box(
-            Modifier.size(if (tablet) 19.dp else 22.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }
+            Modifier.size(if (tablet) 20.dp else 22.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }
                 .border(if (tablet) 2.dp else 1.8.dp, color, if (tablet) RoundedCornerShape(6.dp) else HripsShapes.IconFrame),
             contentAlignment = Alignment.Center,
         ) {
