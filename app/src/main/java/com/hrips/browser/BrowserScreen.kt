@@ -27,6 +27,8 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -380,18 +382,11 @@ fun BrowserScreen(browser: Browser) {
                             wide = wide,
                             inline = inlineTabs,
                             onSwipeDown = { requestTabs() },
-                            // Фото и QR: на главной внутри строки (вместо «обновить»), на страницах поисковиков рядом со строкой.
-                            showExtras = !tab.home && parsed != null,
+                            // Фото и QR только на главной, внутри строки (вместо «обновить»); на страницах поисковиков их нет.
                             homeExtras = if (tab.isPrivate) null else ({
                                 BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.TbImage, "Поиск по фото") }
                                 BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.TbQr, "Сканировать QR-код") }
                             }),
-                            extras = {
-                                ToolbarGroup {
-                                    BarButton(modifier = Modifier.size(bs), onClick = { pickImage.launch(imageRequest) }) { Icon(HripsIcons.TbImage, "Поиск по фото") }
-                                    BarButton(modifier = Modifier.size(bs), onClick = { showQrScan = true }) { Icon(HripsIcons.TbQr, "Сканировать QR-код") }
-                                }
-                            },
                             onCopy = copyAddress,
                             onShare = shareAddress,
                             onPasteGo = pasteAndGo,
@@ -402,14 +397,44 @@ fun BrowserScreen(browser: Browser) {
                     if (inlineTabs) InlineTabsRow(browser, showTabs = tabsVisible, modifier = Modifier.fillMaxWidth(), address = addressBar) else addressBar()
                 }
                 if (wide) {
+                    // Три капсулы: «+» со счётчиком вкладок; расширения с закреплёнными значками и загрузками; меню.
                     ToolbarGroup {
                         BarButton(modifier = Modifier.size(bs), onClick = { browser.newTab(incognito = browser.current.isPrivate) }) { Icon(HripsIcons.TbNewTab, "Новая вкладка") }
+                        if (!inlineTabs) TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    var pinMenu by remember { mutableStateOf(false) }
+                    val haptic = LocalHapticFeedback.current
+                    ToolbarGroup {
+                        Box {
+                            BarButton(
+                                modifier = Modifier.size(bs),
+                                onClick = { showExtManager = true },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    pinMenu = true
+                                },
+                            ) { Icon(HripsIcons.TbPuzzle, "Расширения") }
+                            ToolbarPinMenu(pinMenu, { pinMenu = false }, store.toolbarPins) { store.toggleToolbarPin(it.id) }
+                        }
+                        ToolbarPin.entries.filter { it.id in store.toolbarPins }.forEach { pin ->
+                            BarButton(
+                                modifier = Modifier.size(bs),
+                                enabled = pin != ToolbarPin.FIND || !tab.home,
+                                onClick = {
+                                    when (pin) {
+                                        ToolbarPin.BOOKMARKS -> showBookmarks = true
+                                        ToolbarPin.HISTORY -> showHistory = true
+                                        ToolbarPin.FIND -> findOpen = true
+                                        ToolbarPin.SETTINGS -> showSettings = true
+                                    }
+                                },
+                            ) { Icon(pin.icon(), pin.title) }
+                        }
+                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                     }
                     Spacer(Modifier.width(8.dp))
                     ToolbarGroup {
-                        if (!inlineTabs) TabCounterButton(browser.tabs.size, Modifier.size(bs).originAnchor("tabs"), tablet = true) { requestTabs() }
-                        BarButton(modifier = Modifier.size(bs), onClick = { showExtManager = true }) { Icon(HripsIcons.TbPuzzle, "Расширения") }
-                        AnimatedDownloadsSlot(browser.downloads, onClick = { showDownloads = true }, size = bs, icon = HripsIcons.TbDownload)
                         BarButton(modifier = Modifier.size(bs), onClick = { showTools = true }) {
                             Icon(HripsIcons.TbMoreV, "Инструменты")
                         }

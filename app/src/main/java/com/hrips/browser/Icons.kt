@@ -75,11 +75,7 @@ object HripsIcons {
     val Alert by lazy { icon("Alert") { circle(12f, 12f, 9.5f); moveTo(12f, 7.5f); verticalLineTo(12.5f); moveTo(12f, 16.2f); horizontalLineToRelative(0.01f) } }
     val History by lazy { icon("History") { circle(12f, 12f, 9.5f); moveTo(12f, 7f); verticalLineToRelative(5f); lineToRelative(3f, 2f) } }
 
-    val Settings by lazy {
-        icon("Settings") {
-            moveTo(10.27f, 4.80f); lineTo(10.72f, 2.49f); lineTo(13.28f, 2.49f); lineTo(13.73f, 4.80f); lineTo(15.87f, 5.69f); lineTo(17.82f, 4.37f); lineTo(19.63f, 6.18f); lineTo(18.31f, 8.13f); lineTo(19.20f, 10.27f); lineTo(21.51f, 10.72f); lineTo(21.51f, 13.28f); lineTo(19.20f, 13.73f); lineTo(18.31f, 15.87f); lineTo(19.63f, 17.82f); lineTo(17.82f, 19.63f); lineTo(15.87f, 18.31f); lineTo(13.73f, 19.20f); lineTo(13.28f, 21.51f); lineTo(10.72f, 21.51f); lineTo(10.27f, 19.20f); lineTo(8.13f, 18.31f); lineTo(6.18f, 19.63f); lineTo(4.37f, 17.82f); lineTo(5.69f, 15.87f); lineTo(4.80f, 13.73f); lineTo(2.49f, 13.28f); lineTo(2.49f, 10.72f); lineTo(4.80f, 10.27f); lineTo(5.69f, 8.13f); lineTo(4.37f, 6.18f); lineTo(6.18f, 4.37f); lineTo(8.13f, 5.69f); close(); circle(12f, 12f, 3.2f)
-        }
-    }
+    val Settings by lazy { icon("Settings") { gear() } }
 
     val Palette by lazy {
         icon("Palette") {
@@ -605,6 +601,19 @@ object HripsIcons {
     val TbDownload by lazy { icon("TbDownload", stroke = TB) { moveTo(12f, 5f); verticalLineTo(19f); moveTo(5f, 12f); lineTo(12f, 19f); lineTo(19f, 12f) } }
     val TbPuzzle by lazy { icon("TbPuzzle", stroke = TB, scale = 1f) { puzzlePath() } }
     val TbMore by lazy { fillIcon("TbMore") { circle(5f, 12f, 1.75f); circle(12f, 12f, 1.75f); circle(19f, 12f, 1.75f) } }
+    // Значки, которые можно закрепить рядом с расширениями: тот же штрих 2 и рамка 20 dp.
+    val TbStar by lazy { icon("TbStar", stroke = TB, scale = 0.95f) { star() } }
+    val TbHistory by lazy { icon("TbHistory", stroke = TB) { circle(12f, 12f, 9f); moveTo(12f, 7f); verticalLineToRelative(5f); lineToRelative(3f, 2f) } }
+    val TbFind by lazy {
+        icon("TbFind", stroke = TB) {
+            moveTo(3f, 6f); horizontalLineTo(21f)
+            moveTo(3f, 12f); horizontalLineTo(8f)
+            moveTo(3f, 18f); horizontalLineTo(8f)
+            circle(15.5f, 14.5f, 3.5f)
+            moveTo(21f, 20f); lineToRelative(-3f, -3f)
+        }
+    }
+    val TbSettings by lazy { icon("TbSettings", stroke = TB, scale = 0.95f) { gear() } }
     val TbShield by lazy { icon("TbShield", stroke = TB, scale = 0.85f) { shield() } }
     val TbInfo by lazy { icon("TbInfo", stroke = TB, scale = 0.8f) { info() } }
     val TbSearch by lazy { icon("TbSearch", stroke = TB, scale = 0.85f) { circle(10.5f, 10.5f, 6.5f); moveTo(15.5f, 15.5f); lineTo(20.5f, 20.5f) } }
@@ -732,6 +741,10 @@ private fun PathBuilder.fileBody() {
     verticalLineTo(8f)
     close()
     moveTo(14f, 2f); verticalLineToRelative(6f); horizontalLineToRelative(6f)
+}
+
+private fun PathBuilder.gear() {
+            moveTo(10.27f, 4.80f); lineTo(10.72f, 2.49f); lineTo(13.28f, 2.49f); lineTo(13.73f, 4.80f); lineTo(15.87f, 5.69f); lineTo(17.82f, 4.37f); lineTo(19.63f, 6.18f); lineTo(18.31f, 8.13f); lineTo(19.20f, 10.27f); lineTo(21.51f, 10.72f); lineTo(21.51f, 13.28f); lineTo(19.20f, 13.73f); lineTo(18.31f, 15.87f); lineTo(19.63f, 17.82f); lineTo(17.82f, 19.63f); lineTo(15.87f, 18.31f); lineTo(13.73f, 19.20f); lineTo(13.28f, 21.51f); lineTo(10.72f, 21.51f); lineTo(10.27f, 19.20f); lineTo(8.13f, 18.31f); lineTo(6.18f, 19.63f); lineTo(4.37f, 17.82f); lineTo(5.69f, 15.87f); lineTo(4.80f, 13.73f); lineTo(2.49f, 13.28f); lineTo(2.49f, 10.72f); lineTo(4.80f, 10.27f); lineTo(5.69f, 8.13f); lineTo(4.37f, 6.18f); lineTo(6.18f, 4.37f); lineTo(8.13f, 5.69f); close(); circle(12f, 12f, 3.2f)
 }
 
 private fun PathBuilder.star() {

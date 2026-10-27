@@ -100,6 +100,7 @@ class Tab(
     private val localDesktop = HashMap<String, Boolean>()
     /** Цвет сайта (theme-color или фон страницы) для шапки на планшете; null, если цвета нет. */
     var themeColor by mutableStateOf<androidx.compose.ui.graphics.Color?>(null)
+    private var themeHost: String? = null
     var thumbnail by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     var home by mutableStateOf(!popup && startUrl.isBlank())
 
@@ -347,7 +348,11 @@ class Tab(
             override fun onPageStart(sess: GeckoSession, pageUrl: String) {
                 if (sess !== session) return
                 PageText.forget(id)
-                themeColor = null
+                // Цвет шапки держим, пока остаёмся на том же сайте (перезагрузка, переход внутри сайта): иначе шапка
+                // мигает обычным цветом до тех пор, пока страница не пришлёт свой.
+                val host = runCatching { android.net.Uri.parse(pageUrl).host }.getOrNull()
+                if (host == null || host != themeHost) themeColor = null
+                themeHost = host
                 AppLog.i("Page") { "начало загрузки ${AppLog.url(pageUrl, isPrivate)}" }
                 navStartedAt = SystemClock.elapsedRealtime()
                 paintLogged = false
@@ -866,6 +871,7 @@ class Tab(
         errorPage = false
         errorTarget = null
         themeColor = null
+        themeHost = null
         lazyState = null
         sessionState = null
         sessionStateVersion++

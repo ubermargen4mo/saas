@@ -244,6 +244,16 @@ class Store(context: Context) {
         prefs.edit().putBoolean("tp", on).apply()
     }
 
+    /** Закреплённые значки панели планшета (id из [ToolbarPin]), по порядку закрепления в меню не важны: рисуются в порядке enum. */
+    val toolbarPins = mutableStateListOf<String>().apply {
+        addAll(prefs.getString("toolbar_pins", "").orEmpty().split(',').filter { it.isNotBlank() })
+    }
+
+    fun toggleToolbarPin(id: String) {
+        if (!toolbarPins.remove(id)) toolbarPins.add(id)
+        prefs.edit().putString("toolbar_pins", toolbarPins.joinToString(",")).apply()
+    }
+
     var autoUpdate by mutableStateOf(prefs.getBoolean("auto_update", true))
         private set
 

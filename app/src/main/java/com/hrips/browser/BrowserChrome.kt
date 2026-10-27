@@ -47,9 +47,6 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Ширина капсулы «фото и QR» рядом со строкой (две кнопки по 36 dp, поля по 2 dp) вместе с зазором 8 dp. */
-private val ExtrasWidth = 84.dp
-
 @Composable
 internal fun AddressBar(
     tab: Tab,
@@ -63,10 +60,7 @@ internal fun AddressBar(
     inline: Boolean = false,
     // Смах вниз по строке (как на телефоне): открывает менеджер вкладок.
     onSwipeDown: (() -> Unit)? = null,
-    // Справа от строки капсула [extras] (фото и QR), видна при [showExtras]; на главной вместо неё [homeExtras] внутри строки.
-    extras: (@Composable () -> Unit)? = null,
-    showExtras: Boolean = false,
-    // На главной кнопки лежат внутри строки справа, на месте «обновить» (его на главной нет).
+    // Кнопки (фото и QR) внутри строки справа, только на главной, на месте «обновить» (его на главной нет).
     homeExtras: (@Composable () -> Unit)? = null,
     onCopy: () -> Unit = {},
     onShare: () -> Unit = {},
@@ -266,23 +260,10 @@ internal fun AddressBar(
         val textDp = with(density) { measurer.measure(AnnotatedString(label), textStyle, maxLines = 1).size.width.toDp() }
         val chrome = sidePad * 2 + 8.dp + (if (shown.isEmpty()) 28.dp else 0.dp)
         val wanted by animateDpAsState(maxOf(560.dp, textDp + chrome), tween(220), label = "barWidth")
-        val extraW by animateDpAsState(if (extras != null && showExtras) ExtrasWidth else 0.dp, tween(220), label = "barExtraW")
         BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
             val availW = maxWidth
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BarBody(Modifier.width(wanted.coerceAtMost(availW - extraW)))
-                if (extras != null) {
-                    AnimatedVisibility(
-                        visible = showExtras,
-                        enter = fadeIn(tween(160)) + expandHorizontally(tween(220)),
-                        exit = fadeOut(tween(100)) + shrinkHorizontally(tween(220)),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Spacer(Modifier.width(8.dp))
-                            extras()
-                        }
-                    }
-                }
+                BarBody(Modifier.width(wanted.coerceAtMost(availW)))
             }
         }
 }
