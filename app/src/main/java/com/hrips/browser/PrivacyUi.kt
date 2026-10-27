@@ -4,6 +4,8 @@ package com.hrips.browser
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,105 +23,94 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-private class Opt(val mode: Int, val title: String, val note: String)
+private class Opt(val mode: Int, val short: String, val note: String)
 
 private val openInAppsOptions = listOf(
     Opt(ExternalLinks.MODE_ASK, "Спрашивать", "Если ссылку открывает установленное приложение (YouTube, Telegram и др.), браузер предложит перейти в него"),
-    Opt(ExternalLinks.MODE_ALWAYS, "Всегда открывать в приложении", "Переход сразу в приложение, без вопроса"),
-    Opt(ExternalLinks.MODE_NEVER, "Только в браузере", "Ссылки всегда открываются здесь"),
+    Opt(ExternalLinks.MODE_ALWAYS, "В приложении", "Переход сразу в приложение, без вопроса"),
+    Opt(ExternalLinks.MODE_NEVER, "В браузере", "Ссылки всегда открываются здесь"),
 )
 
 private val httpsOptions = listOf(
-    Opt(PrivacyEngine.HTTPS_OFF, "Разрешить HTTP", "Как раньше: сайты без шифрования открываются без предупреждения"),
-    Opt(PrivacyEngine.HTTPS_PRIVATE, "Только в приватных вкладках", "Перед открытием сайта без HTTPS показывается предупреждение"),
-    Opt(PrivacyEngine.HTTPS_ALL, "Во всех вкладках", "Сайт без HTTPS открывается только после вашего подтверждения"),
+    Opt(PrivacyEngine.HTTPS_OFF, "Разрешить", "Как раньше: сайты без шифрования открываются без предупреждения"),
+    Opt(PrivacyEngine.HTTPS_PRIVATE, "Приватные", "Только в приватных вкладках: перед открытием сайта без HTTPS показывается предупреждение"),
+    Opt(PrivacyEngine.HTTPS_ALL, "Все вкладки", "Сайт без HTTPS открывается только после вашего подтверждения"),
 )
 
 private val dohOptions = listOf(
-    Opt(PrivacyEngine.DOH_OFF, "Выключен", "Адреса сайтов запрашиваются у DNS системы, обычно это DNS провайдера"),
-    Opt(PrivacyEngine.DOH_AUTO, "Автоматически", "Через выбранного провайдера, при сбое запрос уходит обычным путём"),
+    Opt(PrivacyEngine.DOH_OFF, "Выкл", "Адреса сайтов запрашиваются у DNS системы, обычно это DNS провайдера"),
+    Opt(PrivacyEngine.DOH_AUTO, "Авто", "Через выбранного провайдера, при сбое запрос уходит обычным путём"),
     Opt(PrivacyEngine.DOH_STRICT, "Строго", "Только через провайдера: если он недоступен, сайты не откроются"),
 )
+
+@Composable
+private fun OptionTiles(options: List<Opt>, selected: Int, onSelect: (Int) -> Unit) {
+    TileSwitcher(
+        options = options.map { it.mode to it.short },
+        selected = selected,
+        onSelect = onSelect,
+        description = { m -> options.firstOrNull { it.mode == m }?.note },
+        showCheck = false,
+    )
+}
 
 @Composable
 internal fun NetworkPrivacySection(browser: Browser) {
     val store = browser.store
 
     SectionTitle("Приватность сайтов")
-    Group(
-        { s ->
-            SwitchRow(
-                HripsIcons.Signal, "Сигнал Global Privacy Control",
-                "Сайты получают просьбу не продавать и не передавать данные о вас",
-                store.gpc, true, s,
-            ) { store.updateGpc(it); browser.applyPrivacy() }
-        },
-        { s ->
-            SwitchRow(
-                HripsIcons.LinkOff, "Удалять tracking-параметры",
-                "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
-                store.stripTrackingParams, true, s,
-            ) { store.updateStripTrackingParams(it); browser.applyPrivacy() }
-        },
-        { s ->
-            SwitchRow(
-                HripsIcons.Image, "Картинки страниц в карточках вкладок",
-                "Если нет снимка экрана, браузер сам запрашивает у сайта превью (og:image). Приватные вкладки не затрагиваются",
-                store.pageImages, true, s,
-            ) { store.updatePageImages(it) }
-        },
-    )
+    Panel {
+        PanelSwitch(
+            "Сигнал Global Privacy Control",
+            "Сайты получают просьбу не продавать и не передавать данные о вас",
+            store.gpc, { store.updateGpc(it); browser.applyPrivacy() },
+        )
+        PanelDivider()
+        PanelSwitch(
+            "Удалять tracking-параметры",
+            "Убирает известные рекламные и трекинговые параметры из адресов до загрузки страницы",
+            store.stripTrackingParams, { store.updateStripTrackingParams(it); browser.applyPrivacy() },
+        )
+        PanelDivider()
+        PanelSwitch(
+            "Картинки страниц в карточках вкладок",
+            "Если нет снимка экрана, браузер сам запрашивает у сайта превью (og:image). Приватные вкладки не затрагиваются",
+            store.pageImages, { store.updatePageImages(it) },
+        )
+    }
 
     SectionTitle("Ссылки в приложениях")
-    GroupOf(openInAppsOptions) { o, s ->
-        SettingsRow(
-            null, o.title, o.note, s,
-            onClick = { store.updateOpenInApps(o.mode) },
-            trailing = { RadioButton(selected = store.openInApps == o.mode, onClick = null) },
-        )
-    }
+    OptionTiles(openInAppsOptions, store.openInApps) { store.updateOpenInApps(it) }
 
     SectionTitle("Безопасное соединение (HTTPS)")
-    GroupOf(httpsOptions) { o, s ->
-        SettingsRow(
-            null, o.title, o.note, s,
-            onClick = { store.updateHttpsMode(o.mode); browser.applyPrivacy() },
-            trailing = { RadioButton(selected = store.httpsMode == o.mode, onClick = null) },
-        )
-    }
+    OptionTiles(httpsOptions, store.httpsMode) { store.updateHttpsMode(it); browser.applyPrivacy() }
 
     SectionTitle("Защищённый DNS (DoH)")
-    GroupOf(dohOptions) { o, s ->
-        SettingsRow(
-            null, o.title, o.note, s,
-            onClick = { store.updateDohMode(o.mode); browser.applyPrivacy() },
-            trailing = { RadioButton(selected = store.dohMode == o.mode, onClick = null) },
-        )
-    }
-    if (store.dohMode != PrivacyEngine.DOH_OFF) {
-        SectionTitle("Провайдер DNS")
-        GroupOf(PrivacyEngine.dohProviders + listOf<DohProvider?>(null)) { p, s ->
-            val id = p?.id ?: PrivacyEngine.CUSTOM
-            SettingsRow(
-                null, p?.name ?: "Свой сервер",
-                p?.note ?: store.dohCustom.ifBlank { "Адрес вида https://dns.example/dns-query" }, s,
-                onClick = { store.updateDohProvider(id); browser.applyPrivacy() },
-                trailing = { RadioButton(selected = store.dohProvider == id, onClick = null) },
+    OptionTiles(dohOptions, store.dohMode) { store.updateDohMode(it); browser.applyPrivacy() }
+    Reveal(store.dohMode != PrivacyEngine.DOH_OFF) {
+        Column {
+            Spacer(Modifier.height(12.dp))
+            val current = PrivacyEngine.dohProviders.firstOrNull { it.id == store.dohProvider }
+            Panel {
+                DropdownRow(
+                    title = "Провайдер DNS",
+                    subtitle = current?.note ?: store.dohCustom.ifBlank { "Адрес вида https://dns.example/dns-query" },
+                    value = current?.name ?: "Свой сервер",
+                    options = PrivacyEngine.dohProviders.map { it.id to it.name } + (PrivacyEngine.CUSTOM to "Свой сервер"),
+                    selectedId = store.dohProvider,
+                    onSelect = { store.updateDohProvider(it); browser.applyPrivacy() },
+                )
+            }
+            if (store.dohProvider == PrivacyEngine.CUSTOM) CustomDoh(browser)
+            Callout(
+                "DoH шифрует запросы адресов, но выбранный провайдер видит, какие сайты вы открываете. Выбирайте того, кому доверяете.",
+                Modifier.padding(top = 8.dp),
             )
         }
-        if (store.dohProvider == PrivacyEngine.CUSTOM) CustomDoh(browser)
-        Text(
-            "DoH шифрует запросы адресов, но выбранный провайдер видит, какие сайты вы открываете. Выбирайте того, кому доверяете.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-        )
     }
-    Text(
+    Callout(
         "DoH действует на страницы в движке. Мелкие служебные запросы приложения (значки сайтов, картинки для превью вкладок, проверка адреса DoH) идут через системный DNS. В приватных вкладках они не делаются.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+        Modifier.padding(top = 12.dp),
     )
 }
 
