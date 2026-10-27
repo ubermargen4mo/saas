@@ -315,13 +315,21 @@ fun BrowserScreen(browser: Browser) {
 
     val origins = remember { OriginTracker() }
     CompositionLocalProvider(LocalOrigins provides origins) {
-    val sideInsets = WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal)
+    // Размер страницы зависит от этих отступов. Пока поверх окно системы (выбор файлов), Android на время
+    // убирает inset строки состояния, и GeckoView меняет размер туда-обратно: это синхронный surfaceChanged,
+    // на котором главный поток может зависнуть (см. StableInsets.kt). Поэтому берём «устойчивые» значения.
+    val sideInsets = rememberStableInsets(
+        WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal),
+        "боковые",
+    )
+    val statusInsets = rememberStableInsets(WindowInsets.statusBars, "строка состояния")
+    val navInsets = rememberStableInsets(WindowInsets.navigationBars, "навигация")
     Box(Modifier.fillMaxSize().then(if (fs) Modifier else Modifier.windowInsetsPadding(sideInsets)).trackTouches(origins)) {
     Column(Modifier.fillMaxSize().pageImePadding(overlayOpen)) {
         if (!fs) {
         SiteHeaderTheme(siteColor) {
         Column(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).statusBarsPadding()) {
+        Column(Modifier.fillMaxWidth().then(if (wide) Modifier else Modifier.background(statusColor)).windowInsetsPadding(statusInsets)) {
             if (wide && !inlineTabs && store.tabsPos == TABS_ABOVE) {
                 AnimatedVisibility(visible = tabsVisible) { TabStrip(browser, above = true) }
             }
@@ -468,7 +476,7 @@ fun BrowserScreen(browser: Browser) {
         }
         }
 
-        if (wide && !fs) Spacer(Modifier.navigationBarsPadding())
+        if (wide && !fs) Spacer(Modifier.windowInsetsPadding(navInsets))
     }
 
     if (!fs && !wide) {
