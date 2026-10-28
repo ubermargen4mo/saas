@@ -361,7 +361,7 @@ class Browser(
     var textScale by mutableStateOf(100)
         private set
 
-    fun setTextScale(percent: Int) {
+    fun updateTextScale(percent: Int) {
         textScale = percent
         applyTextScale(runtime, percent)
     }

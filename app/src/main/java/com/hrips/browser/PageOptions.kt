@@ -223,7 +223,7 @@ internal fun PageOptionsMenu(
                 RoundButton(HripsIcons.FindPage, "Найти на странице", round) { close { onFind() } }
                 TextSizeBar(
                     percent = browser.textScale,
-                    onChange = { browser.setTextScale(it) },
+                    onChange = { browser.updateTextScale(it) },
                     modifier = Modifier.weight(1f).height(round),
                 )
                 if (hasSite) {
