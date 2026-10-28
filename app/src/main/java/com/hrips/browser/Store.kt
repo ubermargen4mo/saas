@@ -405,6 +405,27 @@ class Store(context: Context) {
             .apply()
     }
 
+    /** Закреплённые вкладки (только обычные: id приватных вкладок на диск не пишем). В обзоре они идут первыми. */
+    val pinnedTabs = mutableStateListOf<String>().also { list ->
+        runCatching {
+            val arr = JSONArray(prefs.getString("tabs_pinned", "[]"))
+            for (i in 0 until arr.length()) list.add(arr.getString(i))
+        }
+    }
+
+    fun isPinned(tabId: String): Boolean = tabId in pinnedTabs
+
+    fun setPinned(tabId: String, on: Boolean) {
+        if (on) {
+            if (tabId !in pinnedTabs) pinnedTabs.add(tabId)
+        } else {
+            pinnedTabs.remove(tabId)
+        }
+        val arr = JSONArray()
+        pinnedTabs.forEach { arr.put(it) }
+        prefs.edit().putString("tabs_pinned", arr.toString()).apply()
+    }
+
     fun groupOf(tabId: String): String = tabGroupOf[tabId]?.takeIf { id -> tabGroups.any { it.id == id } } ?: ""
 
     fun assignTab(tabId: String, group: String) {

@@ -402,6 +402,7 @@ fun BrowserScreen(browser: Browser) {
                     val addressBar: @Composable () -> Unit = {
                         AddressBar(
                             tab = tab,
+                            browser = browser,
                             onSearch = { openSearch() },
                             engine = shownEngine,
                             query = parsed?.second,
@@ -557,6 +558,7 @@ fun BrowserScreen(browser: Browser) {
     if (!fs && !wide) {
         BottomBar(
             tab = tab,
+            browser = browser,
             shown = barText,
             collapsed = collapsed,
             backEnabled = backEnabled,

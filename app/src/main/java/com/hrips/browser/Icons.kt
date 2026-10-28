@@ -464,6 +464,23 @@ object HripsIcons {
     }
 
     val PlusCircle by lazy { icon("PlusCircle") { circle(12f, 12f, 9.5f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
+    // Значки закрепления вкладки (кнопка-гвоздик) и «выбрать».
+    val TabPin by lazy {
+        icon("TabPin") {
+            moveTo(9f, 3.5f); horizontalLineTo(15f)
+            moveTo(10f, 3.5f); lineTo(10f, 9f); lineTo(7f, 13f); horizontalLineTo(17f); lineTo(14f, 9f); lineTo(14f, 3.5f)
+            moveTo(12f, 13f); verticalLineTo(20.5f)
+        }
+    }
+    val TabUnpin by lazy {
+        icon("TabUnpin") {
+            moveTo(9f, 3.5f); horizontalLineTo(15f)
+            moveTo(10f, 3.5f); lineTo(10f, 9f); lineTo(7f, 13f); horizontalLineTo(17f); lineTo(14f, 9f); lineTo(14f, 3.5f)
+            moveTo(12f, 13f); verticalLineTo(20.5f)
+            moveTo(4f, 4f); lineTo(20f, 20f)
+        }
+    }
+    val CheckCircle by lazy { icon("CheckCircle") { circle(12f, 12f, 9.5f); moveTo(8f, 12.5f); lineToRelative(3f, 3f); lineTo(16.5f, 9f) } }
     val ChevronRight by lazy { icon("ChevronRight") { moveTo(9f, 6f); lineTo(15f, 12f); lineTo(9f, 18f) } }
 
     val Fullscreen by lazy {

@@ -263,6 +263,7 @@ private fun DrawScope.drawTabDots(count: Int, index: Float, color: Color, alpha:
 @Composable
 internal fun BottomBar(
     tab: Tab,
+    browser: Browser,
     shown: String,
     collapsed: Boolean,
     backEnabled: Boolean,
@@ -697,7 +698,8 @@ internal fun BottomBar(
                 PillMenu(
                     expanded = menuOpen,
                     onDismiss = { menuOpen = false },
-                    hasPage = !tab.home,
+                    browser = browser,
+                    tab = tab,
                     onCopy = onCopy,
                     onShare = onShare,
                     onPasteGo = onPasteGo,
@@ -858,52 +860,93 @@ private fun QuickTabRow(tab: Tab, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Меню по удержанию адресной строки: действия с адресом и вкладками. */
+/**
+ * Меню по удержанию адресной строки, как в Safari на iOS 26: три группы сегментов без общей подложки,
+ * вместо разделителей отступ. «Поделиться / Скопировать / Вставить и перейти», «Добавить в группу / Закрепить вкладку»,
+ * «Закрыть все / Закрыть вкладку». У приватной вкладки группы и закрепления нет.
+ * Окно встаёт над строкой (нижняя панель) или под ней (адресная строка планшета).
+ */
 @Composable
 internal fun PillMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
-    hasPage: Boolean,
+    browser: Browser,
+    tab: Tab,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onPasteGo: () -> Unit,
     onCloseTab: () -> Unit,
     onCloseAll: () -> Unit,
+    fromBottom: Boolean = true,
 ) {
-    val cs = MaterialTheme.colorScheme
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(22.dp),
-        containerColor = cs.surfaceContainerHigh,
+    val store = browser.store
+    // Подменю «Добавить в группу» открывается в том же окне; при каждом новом открытии меню начинаем с главного.
+    var groups by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded) { if (expanded) groups = false }
+
+    SegMenuPopup(
+        visible = expanded,
+        onDismiss = onDismiss,
+        position = rememberAnchorMenuPosition(),
+        origin = TransformOrigin(0.5f, if (fromBottom) 1f else 0f),
     ) {
-        val run: (() -> Unit) -> () -> Unit = { action -> { onDismiss(); action() } }
-        if (hasPage) {
-            DropdownMenuItem(
-                text = { Text("Скопировать") },
-                leadingIcon = { Icon(HripsIcons.Copy, null) },
-                onClick = run(onCopy),
+        val act: (() -> Unit) -> () -> Unit = { action -> { onDismiss(); action() } }
+        val entries = if (groups) {
+            groupPickerEntries(
+                store = store,
+                current = store.groupOf(tab.id),
+                onBack = { groups = false },
+                onPick = { g ->
+                    onDismiss()
+                    store.assignTab(tab.id, g)
+                    Notices.show("Вкладка добавлена в группу: ${store.groupName(g)}")
+                },
+                onNew = { onDismiss(); creating = true },
             )
-            DropdownMenuItem(
-                text = { Text("Поделиться") },
-                leadingIcon = { Icon(HripsIcons.Share, null) },
-                onClick = run(onShare),
+        } else {
+            val pinned = store.isPinned(tab.id)
+            val first = buildList {
+                if (!tab.home) {
+                    add(MenuEntry(HripsIcons.Share, "Поделиться", onClick = act(onShare)))
+                    add(MenuEntry(HripsIcons.Copy, "Скопировать", onClick = act(onCopy)))
+                }
+                add(MenuEntry(HripsIcons.Link, "Вставить и перейти", onClick = act(onPasteGo)))
+            }
+            val second: List<MenuEntry> = if (tab.isPrivate) {
+                emptyList()
+            } else {
+                listOf(
+                    MenuEntry(HripsIcons.Folder, "Добавить в группу", submenu = true, onClick = { groups = true }),
+                    MenuEntry(
+                        if (pinned) HripsIcons.TabUnpin else HripsIcons.TabPin,
+                        if (pinned) "Открепить вкладку" else "Закрепить вкладку",
+                        onClick = act { store.setPinned(tab.id, !pinned) },
+                    ),
+                )
+            }
+            val third = listOf(
+                MenuEntry(HripsIcons.Close, "Закрыть все (${browser.tabs.size})", danger = true, onClick = act(onCloseAll)),
+                MenuEntry(HripsIcons.Close, "Закрыть вкладку", danger = true, onClick = act(onCloseTab)),
             )
+            listOf(first, second, third)
         }
-        DropdownMenuItem(
-            text = { Text("Вставить и перейти") },
-            leadingIcon = { Icon(HripsIcons.Link, null) },
-            onClick = run(onPasteGo),
-        )
-        DropdownMenuItem(
-            text = { Text("Закрыть вкладку") },
-            leadingIcon = { Icon(HripsIcons.Close, null) },
-            onClick = run(onCloseTab),
-        )
-        DropdownMenuItem(
-            text = { Text("Закрыть все вкладки", color = cs.error) },
-            leadingIcon = { Icon(HripsIcons.Trash, null, tint = cs.error) },
-            onClick = run(onCloseAll),
+        SegMenuColumn(entries)
+    }
+
+    if (creating) {
+        GroupDialog(
+            title = "Новая группа",
+            initialName = "",
+            initialIcon = 1,
+            onSave = { n, i ->
+                val g = store.addTabGroup(n, i)
+                store.assignTab(tab.id, g.id)
+                creating = false
+                Notices.show("Вкладка добавлена в группу: ${g.name}")
+            },
+            onDelete = null,
+            onDismiss = { creating = false },
         )
     }
 }

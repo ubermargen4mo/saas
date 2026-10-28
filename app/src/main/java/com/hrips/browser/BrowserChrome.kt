@@ -50,6 +50,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun AddressBar(
     tab: Tab,
+    browser: Browser,
     onSearch: () -> Unit,
     engine: SearchEngine,
     query: String?,
@@ -240,7 +241,9 @@ internal fun AddressBar(
             PillMenu(
                 expanded = menuOpen,
                 onDismiss = { menuOpen = false },
-                hasPage = !tab.home,
+                browser = browser,
+                tab = tab,
+                fromBottom = false,
                 onCopy = onCopy,
                 onShare = onShare,
                 onPasteGo = onPasteGo,

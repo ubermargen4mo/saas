@@ -14,7 +14,10 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -27,6 +30,8 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
@@ -46,6 +51,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -67,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.compositeOver
@@ -98,6 +105,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -278,7 +287,8 @@ private fun tabSubtitle(tab: Tab): String = when {
 /** Доля отрезка [from, to] прогресса: 0 до его начала, 1 после конца. Для ступенчатого появления частей экрана. */
 private fun stage(p: Float, from: Float, to: Float): Float = ((p - from) / (to - from)).coerceIn(0f, 1f)
 
-private val SWITCHER_BAR_H = 52.dp
+// Нижняя панель обзора: пилюля и кнопки 42 dp, как у адресной строки (HripsLayout.BarHeight).
+private val SWITCHER_BAR_H = HripsLayout.BarHeight
 private val SWITCHER_TOP_H = 40.dp
 private const val STRIP_REACH = 9
 
@@ -287,8 +297,60 @@ private class CoordsHolder {
     fun rect(): UiRect = c?.takeIf { it.isAttached }?.boundsInRoot() ?: UiRect.Zero
 }
 
-private class SwitcherEnv {
+private class SwitcherEnv(val browser: Browser) {
     var currentHolder: CoordsHolder? = null
+
+    // Меню по удержанию карточки: вкладка и прямоугольник её карточки в окне.
+    var menuTab by mutableStateOf<Tab?>(null)
+    var menuRect by mutableStateOf(UiRect.Zero)
+
+    // Выбор нескольких вкладок («Выбрать вкладки» в меню).
+    var selecting by mutableStateOf(false)
+    val picked = mutableStateListOf<String>()
+
+    // Перестановка: какую карточку тянут, какая возвращается на место и на сколько каждая смещена от своей ячейки.
+    var draggingId by mutableStateOf<String?>(null)
+    var settlingId by mutableStateOf<String?>(null)
+    var dragX by mutableFloatStateOf(0f)
+    var dragY by mutableFloatStateOf(0f)
+
+    // Палец, поднятый после удержания, не должен «нажать» карточку и открыть вкладку.
+    var swallowClick = false
+
+    fun isHeld(id: String) = draggingId == id || settlingId == id
+
+    fun togglePicked(id: String) {
+        if (!picked.remove(id)) picked.add(id)
+    }
+
+    fun startSelecting(first: String) {
+        picked.clear()
+        picked.add(first)
+        selecting = true
+    }
+
+    fun stopSelecting() {
+        selecting = false
+        picked.clear()
+    }
+
+    fun endDrag(id: String) {
+        if (draggingId == id) {
+            draggingId = null
+            settlingId = id
+        }
+    }
+
+    /** Вкладка [id] встаёт на место вкладки [targetId]. Закреплённые и обычные друг с другом не меняются местами. */
+    fun swap(id: String, targetId: String): Boolean {
+        val store = browser.store
+        if (store.isPinned(id) != store.isPinned(targetId)) return false
+        val from = browser.tabs.indexOfFirst { it.id == id }
+        val to = browser.tabs.indexOfFirst { it.id == targetId }
+        if (from < 0 || to < 0) return false
+        browser.moveTab(from, to)
+        return true
+    }
 }
 
 @Composable
@@ -330,6 +392,8 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         derivedStateOf {
             val qq = qState.value
             browser.tabs.mapIndexedNotNull { i, t -> if (!t.isPrivate && store.groupOf(t.id) == groupId && t.matches(qq)) i to t else null }
+                // Закреплённые идут первыми (сортировка устойчивая: порядок внутри каждой части прежний).
+                .sortedBy { if (store.isPinned(it.second.id)) 0 else 1 }
         }
     }
     val privList by remember(browser) {
@@ -340,7 +404,7 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
     }
 
     var mode by remember { mutableIntStateOf(if (browser.current.isPrivate) 1 else 0) }
-    val env = remember { SwitcherEnv() }
+    val env = remember(browser) { SwitcherEnv(browser) }
 
     val modeP = animateFloatAsState(mode.toFloat(), tween(MOVE_MS, easing = FastOutSlowInEasing), label = "mode")
     val progress: () -> Float = { modeP.value.coerceIn(0f, 1f) }
@@ -391,9 +455,16 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
         onClose()
     }
     val onOpen: (Int) -> Unit = { i ->
-        browser.currentIndex = i
-        origins.expandStamp++
-        onClose()
+        if (env.swallowClick) {
+            // Палец поднят после удержания: меню уже показано (или карточку переставляли), вкладку не открываем.
+            env.swallowClick = false
+        } else if (env.selecting) {
+            browser.tabs.getOrNull(i)?.let { env.togglePicked(it.id) }
+        } else {
+            browser.currentIndex = i
+            origins.expandStamp++
+            onClose()
+        }
     }
     val onCloseTab: (Tab) -> Unit = { tab ->
         val i = browser.tabs.indexOf(tab)
@@ -437,6 +508,44 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             }
         }
     }
+
+    // Отпущенная после перестановки карточка плавно возвращается из-под пальца в свою ячейку.
+    LaunchedEffect(env.settlingId) {
+        val id = env.settlingId ?: return@LaunchedEffect
+        val ax = Animatable(env.dragX)
+        val ay = Animatable(env.dragY)
+        coroutineScope {
+            launch { ax.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)) { env.dragX = value } }
+            launch { ay.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)) { env.dragY = value } }
+        }
+        if (env.settlingId == id) {
+            env.settlingId = null
+            env.dragX = 0f
+            env.dragY = 0f
+        }
+    }
+
+    // «Выбрать вкладки»: закрываем отмеченные одним действием, с возвратом.
+    val closeSelected: () -> Unit = {
+        val ids = env.picked.toList()
+        env.stopSelecting()
+        if (ids.isNotEmpty()) {
+            closeTick++
+            val before = browser.closedTabs.size
+            ids.forEach { id ->
+                val i = browser.tabs.indexOfFirst { it.id == id }
+                if (i >= 0) browser.closeTab(i, deferEngine = true)
+            }
+            val undoable = (browser.closedTabs.size - before).coerceAtLeast(0)
+            if (undoable > 0) {
+                Notices.show("Закрыто вкладок: ${ids.size}", "Вернуть") { repeat(undoable) { browser.reopenLast() } }
+            } else {
+                Notices.show("Закрыто вкладок: ${ids.size}")
+            }
+        }
+    }
+    // Вкладка, для которой в меню выбрали «Новая группа»: название спрашиваем диалогом.
+    var newGroupFor by remember { mutableStateOf<Tab?>(null) }
 
     Box(
         Modifier
@@ -521,17 +630,56 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
             }
         }
 
-        SwitcherBar(
-            count = normalCount,
-            privatePage = mode == 1,
-            reveal = reveal,
-            from = fromRect,
-            fromText = fromText,
-            onNew = { onNew(mode == 1) },
-            onSelectPrivate = { mode = if (it) 1 else 0 },
-            onSearch = { searching = true },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        if (env.selecting) {
+            SelectionBar(
+                count = env.picked.size,
+                onDone = { env.stopSelecting() },
+                onClose = closeSelected,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        } else {
+            SwitcherBar(
+                count = normalCount,
+                privatePage = mode == 1,
+                reveal = reveal,
+                from = fromRect,
+                fromText = fromText,
+                onNew = { onNew(mode == 1) },
+                onSelectPrivate = { mode = if (it) 1 else 0 },
+                onSearch = { searching = true },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        env.menuTab?.let { held ->
+            key(held.id) {
+                TabHoldMenu(
+                    browser = browser,
+                    env = env,
+                    tab = held,
+                    closeAllLabel = if (held.isPrivate) "Закрыть приватные" else "Закрыть все вкладки",
+                    onCloseAll = closeAll,
+                    onCloseTab = onCloseTab,
+                    onDuplicated = onClose,
+                    onNewGroup = { newGroupFor = it },
+                )
+            }
+        }
+        newGroupFor?.let { target ->
+            GroupDialog(
+                title = "Новая группа",
+                initialName = "",
+                initialIcon = 1,
+                onSave = { n, i ->
+                    val g = store.addTabGroup(n, i)
+                    store.assignTab(target.id, g.id)
+                    newGroupFor = null
+                    Notices.show("Вкладка перемещена: ${g.name}")
+                },
+                onDelete = null,
+                onDismiss = { newGroupFor = null },
+            )
+        }
 
         if (showClosed) {
             ClosedTabsSheet(browser, onDismiss = { showClosed = false }, onRestored = { showClosed = false; onClose() })
@@ -587,6 +735,13 @@ private fun TabGridPage(
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
     }
+    DragAutoScroll(
+        env = env,
+        span = { id -> state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id }?.let { it.offset.y.toFloat() to (it.offset.y + it.size.height).toFloat() } },
+        viewport = { state.layoutInfo.viewportStartOffset.toFloat() to (state.layoutInfo.viewportEndOffset - state.layoutInfo.afterContentPadding).toFloat() },
+        scroll = { dy -> state.scrollBy(dy) },
+        onMoved = { id -> reorderInGrid(state, env, id) },
+    )
     // Смах вверх закрывает вкладку, пока сетка не может прокрутиться дальше вниз (всё помещается или список упёрся в конец).
     // Иначе тот же жест листает сетку: у вертикальной прокрутки и у смаха вверх один и тот же жест, и две вещи сразу он не умеет.
     val swipeClose by remember(state) { derivedStateOf { !state.canScrollForward } }
@@ -603,12 +758,22 @@ private fun TabGridPage(
         modifier = Modifier.fillMaxSize(),
     ) {
         gridItems(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
+            val held = env.isHeld(t.id)
             GridSwipeUpToClose(
-                enabled = swipeClose,
+                enabled = swipeClose && !env.selecting,
                 onClose = { onClose(t) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)),
+                    // Тянутую карточку не анимируем как соседей: она идёт за пальцем и остаётся поверх.
+                    .then(if (held) Modifier.zIndex(1f) else Modifier.animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)))
+                    .graphicsLayer {
+                        if (held) {
+                            translationX = env.dragX
+                            translationY = env.dragY
+                            scaleX = 1.04f
+                            scaleY = 1.04f
+                        }
+                    },
             ) {
                 Column(Modifier.fillMaxWidth()) {
                     TabCard(
@@ -620,8 +785,9 @@ private fun TabGridPage(
                         modifier = Modifier.fillMaxWidth().aspectRatio(cardAspect),
                         clean = true,
                         corner = 20.dp,
+                        onMoved = { reorderInGrid(state, env, t.id) },
                     )
-                    TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp), query)
+                    TabTitleRow(t, Modifier.fillMaxWidth().height(34.dp), query, pinned = env.browser.store.isPinned(t.id))
                 }
             }
         }
@@ -647,6 +813,13 @@ private fun TabListPage(
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
     }
+    DragAutoScroll(
+        env = env,
+        span = { id -> state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id }?.let { it.offset.toFloat() to (it.offset + it.size).toFloat() } },
+        viewport = { state.layoutInfo.viewportStartOffset.toFloat() to (state.layoutInfo.viewportEndOffset - state.layoutInfo.afterContentPadding).toFloat() },
+        scroll = { dy -> state.scrollBy(dy) },
+        onMoved = { id -> reorderInList(state, env, id) },
+    )
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             state = state,
@@ -655,13 +828,24 @@ private fun TabListPage(
             modifier = Modifier.widthIn(max = 640.dp).fillMaxHeight(),
         ) {
             items(list, key = { tabKey(it.second) }, contentType = { "tab" }) { (i, t) ->
+                val held = env.isHeld(t.id)
                 SwipeToClose(
                     onClose = { onClose(t) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)),
+                        .then(if (held) Modifier.zIndex(1f) else Modifier.animateItem(fadeInSpec = null, placementSpec = tween<IntOffset>(MOVE_MS, easing = FastOutSlowInEasing), fadeOutSpec = tween<Float>(FADE_OUT_MS)))
+                        .graphicsLayer {
+                            if (held) {
+                                translationY = env.dragY
+                                scaleX = 1.02f
+                                scaleY = 1.02f
+                            }
+                        },
                 ) {
-                    TabRow(tab = t, selected = i == current, env = env, onOpen = { onOpen(i) }, onClose = { onClose(t) }, query = query)
+                    TabRow(
+                        tab = t, selected = i == current, env = env, onOpen = { onOpen(i) }, onClose = { onClose(t) }, query = query,
+                        onMoved = { reorderInList(state, env, t.id) },
+                    )
                 }
             }
         }
@@ -739,7 +923,7 @@ private fun TabCardsPage(
                                 modifier = Modifier.fillMaxWidth().height(ch),
                                 big = true,
                             )
-                            TabTitleRow(t, Modifier.fillMaxWidth().height(titleH), query)
+                            TabTitleRow(t, Modifier.fillMaxWidth().height(titleH), query, pinned = env.browser.store.isPinned(t.id))
                         }
                     }
                 }
@@ -759,7 +943,7 @@ private fun TabCardsPage(
 
 /** Подпись под карточкой: значок сайта и название, как под превью вкладок в Safari. */
 @Composable
-private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier, query: String = "") {
+private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier, query: String = "", pinned: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Row(modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         TabIcon(tab, 20.dp)
@@ -770,6 +954,10 @@ private fun TabTitleRow(tab: Tab, modifier: Modifier = Modifier, query: String =
             color = cs.onSurface,
             modifier = Modifier.weight(1f, fill = false),
         )
+        if (pinned) {
+            Spacer(Modifier.width(6.dp))
+            Icon(HripsIcons.TabPin, "Закреплена", Modifier.size(14.dp), tint = cs.onSurfaceVariant)
+        }
     }
 }
 
@@ -1035,6 +1223,8 @@ private fun TabCard(
     // Чистый «экран» со скруглёнными углами без подписи внутри: она рисуется под карточкой (карусель и сетка).
     clean: Boolean = big,
     corner: Dp = 28.dp,
+    // Вызывается после каждого сдвига при перетаскивании; null: карточку переставлять нельзя (карусель).
+    onMoved: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val holder = remember { CoordsHolder() }
@@ -1048,10 +1238,15 @@ private fun TabCard(
                 .background(cs.surfaceContainerLowest)
                 .border(if (selected) 3.dp else 0.5.dp, if (selected) cs.primary else cs.onSurface.copy(alpha = 0.14f), screen)
                 .semantics { this.selected = selected }
+                .tabHold(env, tab, holder, onMoved)
                 .clickable(onClick = onOpen),
         ) {
             TabPreview(tab, mini = false, small = !big, modifier = Modifier.fillMaxSize())
-            CloseTabButton(tab, Modifier.align(Alignment.TopEnd).padding(4.dp), onClose)
+            if (env.selecting) {
+                SelectBadge(tab.id in env.picked, Modifier.align(Alignment.TopEnd).padding(4.dp))
+            } else {
+                CloseTabButton(tab, Modifier.align(Alignment.TopEnd).padding(4.dp), onClose)
+            }
         }
         return
     }
@@ -1061,11 +1256,16 @@ private fun TabCard(
             .clip(HripsShapes.L)
             .background(if (selected) cs.primary else cs.surfaceContainerHigh)
             .semantics { this.selected = selected }
+            .tabHold(env, tab, holder, onMoved)
             .clickable(onClick = onOpen),
     ) {
         Box(Modifier.fillMaxSize().padding(4.dp).clip(HripsShapes.ML).background(cs.surfaceContainerLowest)) {
             TabPreview(tab, mini = false, small = !big, modifier = Modifier.fillMaxSize())
-            CloseTabButton(tab, Modifier.align(Alignment.TopEnd), onClose)
+            if (env.selecting) {
+                SelectBadge(tab.id in env.picked, Modifier.align(Alignment.TopEnd))
+            } else {
+                CloseTabButton(tab, Modifier.align(Alignment.TopEnd), onClose)
+            }
             Row(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -1096,10 +1296,14 @@ private fun TabRow(
     onOpen: () -> Unit,
     onClose: () -> Unit,
     query: String = "",
+    onMoved: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val holder = remember { CoordsHolder() }
+    // Меню по удержанию встаёт у всей строки, а не у превью, к которому привязана анимация открытия.
+    val rowHolder = remember { CoordsHolder() }
     if (selected) SideEffect { env.currentHolder = holder }
+    val pinned = env.browser.store.isPinned(tab.id)
     val titleColor = if (selected) cs.onPrimaryContainer else cs.onSurface
     val subColor = if (selected) cs.onPrimaryContainer.copy(alpha = 0.72f) else cs.onSurfaceVariant
     Row(
@@ -1109,6 +1313,8 @@ private fun TabRow(
             .clip(HripsShapes.ML)
             .background(if (selected) cs.primaryContainer else cs.surfaceContainerHigh)
             .semantics { this.selected = selected }
+            .onPlaced { rowHolder.c = it }
+            .tabHold(env, tab, rowHolder, onMoved)
             .clickable(onClick = onOpen)
             .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1119,11 +1325,21 @@ private fun TabRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(tab.label(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, color = titleColor)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(tab.label(), Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall, color = titleColor)
+                if (pinned) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(HripsIcons.TabPin, "Закреплена", Modifier.size(14.dp), tint = subColor)
+                }
+            }
             Text(tabSubtitle(tab), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = subColor)
         }
-        IconButton(onClick = onClose) {
-            Icon(HripsIcons.Close, "Закрыть вкладку ${tab.label()}", tint = titleColor)
+        if (env.selecting) {
+            SelectBadge(tab.id in env.picked)
+        } else {
+            IconButton(onClick = onClose) {
+                Icon(HripsIcons.Close, "Закрыть вкладку ${tab.label()}", tint = titleColor)
+            }
         }
     }
 }
@@ -1342,7 +1558,7 @@ private fun SegMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composab
 
 private val GROUP_ICONS get() = listOf(HripsIcons.Home, HripsIcons.Folder, HripsIcons.Star, HripsIcons.Globe, HripsIcons.Layers, HripsIcons.Grid, HripsIcons.Person)
 
-private fun groupIcon(i: Int) = GROUP_ICONS[i.coerceIn(0, GROUP_ICONS.lastIndex)]
+internal fun groupIcon(i: Int) = GROUP_ICONS[i.coerceIn(0, GROUP_ICONS.lastIndex)]
 
 /**
  * Группа вкладок по центру сверху, как в Safari: значок и название («Личные» по умолчанию).
@@ -1421,7 +1637,7 @@ private class TabGroupRow(val id: String, val name: String, val icon: Int)
 /** Название и значок группы; для созданных пользователем групп есть ещё удаление (вкладки уходят в «Личные»). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GroupDialog(
+internal fun GroupDialog(
     title: String,
     initialName: String,
     initialIcon: Int,
@@ -1791,5 +2007,278 @@ private fun AccentAddButton(bg: Color, fg: Color, label: String, size: Dp = 44.d
         contentAlignment = Alignment.Center,
     ) {
         Icon(HripsIcons.Add, null, Modifier.size(26.dp), tint = fg)
+    }
+}
+
+
+/**
+ * Удержание карточки. Сразу после долгого нажатия появляется меню. Если палец после этого пошёл, меню прячется и
+ * карточка едет за пальцем (перестановка); [onMoved] вызывается после каждого сдвига и решает, не пора ли поменяться
+ * местами с соседом. [onMoved] = null: переставлять нельзя (карусель), остаётся только меню.
+ * Нажатие, которое придёт вместе с подъёмом пальца, проглатывается через [SwitcherEnv.swallowClick].
+ */
+@Composable
+private fun Modifier.tabHold(env: SwitcherEnv, tab: Tab, holder: CoordsHolder, onMoved: (() -> Unit)?): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val movedNow by rememberUpdatedState(onMoved)
+    val tabNow by rememberUpdatedState(tab)
+    val id = tab.id
+    return this.pointerInput(id) {
+        var total = Offset.Zero
+        var armed = false
+        val finish: () -> Unit = {
+            if (armed) {
+                armed = false
+                env.endDrag(id)
+                scope.launch {
+                    delay(150)
+                    env.swallowClick = false
+                }
+            }
+        }
+        detectDragGesturesAfterLongPress(
+            onDragStart = {
+                total = Offset.Zero
+                armed = !env.selecting
+                if (armed) {
+                    env.swallowClick = true
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    env.menuRect = holder.rect()
+                    env.menuTab = tabNow
+                }
+            },
+            onDrag = { change, amount ->
+                if (armed) {
+                    change.consume()
+                    total += amount
+                    if (env.draggingId == id) {
+                        env.dragX += amount.x
+                        env.dragY += amount.y
+                        movedNow?.invoke()
+                    } else if (movedNow != null && total.getDistance() > viewConfiguration.touchSlop * 2f) {
+                        env.menuTab = null
+                        env.settlingId = null
+                        env.dragX = total.x
+                        env.dragY = total.y
+                        env.draggingId = id
+                        movedNow?.invoke()
+                    }
+                }
+            },
+            onDragEnd = finish,
+            onDragCancel = finish,
+        )
+    }
+}
+
+/** Список: перетаскиваемая строка занимает место той, над серединой которой оказалась. */
+private fun reorderInList(state: LazyListState, env: SwitcherEnv, id: String) {
+    val infos = state.layoutInfo.visibleItemsInfo
+    val me = infos.firstOrNull { it.key == id } ?: return
+    val center = me.offset + me.size / 2f + env.dragY
+    val target = infos.firstOrNull { it.key != id && center >= it.offset && center <= it.offset + it.size } ?: return
+    val targetId = target.key as? String ?: return
+    if (env.swap(id, targetId)) {
+        val newOffset = if (target.index > me.index) target.offset + target.size - me.size else target.offset
+        env.dragY += (me.offset - newOffset).toFloat()
+    }
+}
+
+/** Сетка: то же, но в двух измерениях. Ячейки одного размера, поэтому новое место карточки - это старое место соседа. */
+private fun reorderInGrid(state: LazyGridState, env: SwitcherEnv, id: String) {
+    val infos = state.layoutInfo.visibleItemsInfo
+    val me = infos.firstOrNull { it.key == id } ?: return
+    val cx = me.offset.x + me.size.width / 2f + env.dragX
+    val cy = me.offset.y + me.size.height / 2f + env.dragY
+    val target = infos.firstOrNull {
+        it.key != id &&
+            cx >= it.offset.x && cx <= it.offset.x + it.size.width &&
+            cy >= it.offset.y && cy <= it.offset.y + it.size.height
+    } ?: return
+    val targetId = target.key as? String ?: return
+    if (env.swap(id, targetId)) {
+        env.dragX += (me.offset.x - target.offset.x).toFloat()
+        env.dragY += (me.offset.y - target.offset.y).toFloat()
+    }
+}
+
+/**
+ * Пока тянут карточку к верхнему или нижнему краю, список сам прокручивается: перестановка не ограничена одним экраном.
+ * После прокрутки смещение карточки пересчитывается, чтобы она осталась под пальцем.
+ */
+@Composable
+private fun DragAutoScroll(
+    env: SwitcherEnv,
+    span: (String) -> Pair<Float, Float>?,
+    viewport: () -> Pair<Float, Float>,
+    scroll: suspend (Float) -> Float,
+    onMoved: (String) -> Unit,
+) {
+    val density = LocalDensity.current
+    val edge = with(density) { 72.dp.toPx() }
+    val step = with(density) { 12.dp.toPx() }
+    LaunchedEffect(env.draggingId) {
+        val id = env.draggingId ?: return@LaunchedEffect
+        while (true) {
+            withFrameNanos { }
+            val (top, bottom) = span(id) ?: continue
+            val (viewTop, viewBottom) = viewport()
+            val dy = when {
+                top + env.dragY < viewTop + edge -> -step
+                bottom + env.dragY > viewBottom - edge -> step
+                else -> 0f
+            }
+            if (dy != 0f) {
+                val used = scroll(dy)
+                if (used != 0f) {
+                    env.dragY += used
+                    onMoved(id)
+                }
+            }
+        }
+    }
+}
+
+/** Кружок выбора вместо крестика, когда включено «Выбрать вкладки». */
+@Composable
+private fun SelectBadge(on: Boolean, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Box(modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(if (on) cs.primary else cs.surface.copy(alpha = 0.9f))
+                .border(1.5.dp, if (on) cs.primary else cs.onSurfaceVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (on) Icon(HripsIcons.Check, "Выбрана", Modifier.size(16.dp), tint = cs.onPrimary)
+        }
+    }
+}
+
+/**
+ * Меню по удержанию вкладки, как у адресной строки: сегменты без подложки. Внизу отдельным сегментом «Закрыть все».
+ * «Переместить» открывает список групп прямо в этом же окне. «Новая группа» уходит в диалог выше по дереву.
+ */
+@Composable
+private fun TabHoldMenu(
+    browser: Browser,
+    env: SwitcherEnv,
+    tab: Tab,
+    closeAllLabel: String,
+    onCloseAll: () -> Unit,
+    onCloseTab: (Tab) -> Unit,
+    onDuplicated: () -> Unit,
+    onNewGroup: (Tab) -> Unit,
+) {
+    val context = LocalContext.current
+    val store = browser.store
+    var groups by remember { mutableStateOf(false) }
+    val dismiss: () -> Unit = { env.menuTab = null }
+    val act: (() -> Unit) -> () -> Unit = { action -> { dismiss(); action() } }
+    val priv = tab.isPrivate
+    val pinned = store.isPinned(tab.id)
+
+    SegMenuPopup(
+        visible = true,
+        onDismiss = dismiss,
+        position = rememberHoldMenuPosition(env.menuRect),
+        origin = TransformOrigin(0.5f, 0f),
+    ) {
+        val entries = if (groups) {
+            groupPickerEntries(
+                store = store,
+                current = store.groupOf(tab.id),
+                onBack = { groups = false },
+                onPick = { g ->
+                    dismiss()
+                    store.assignTab(tab.id, g)
+                    Notices.show("Вкладка перемещена: ${store.groupName(g)}")
+                },
+                onNew = { dismiss(); onNewGroup(tab) },
+            )
+        } else {
+            val main = buildList {
+                if (!tab.home && tab.url.isNotBlank()) {
+                    add(MenuEntry(HripsIcons.Link, "Копировать ссылку", onClick = act {
+                        val ok = runCatching {
+                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("", tab.url))
+                        }.isSuccess
+                        Notices.show(if (ok) "Адрес скопирован" else "Не удалось скопировать")
+                    }))
+                }
+                if (!priv) {
+                    add(MenuEntry(
+                        if (pinned) HripsIcons.TabUnpin else HripsIcons.TabPin,
+                        if (pinned) "Открепить вкладку" else "Закрепить вкладку",
+                        onClick = act { store.setPinned(tab.id, !pinned) },
+                    ))
+                }
+                add(MenuEntry(HripsIcons.Layers, "Дублировать вкладку", onClick = act {
+                    val origin = browser.tabs.indexOf(tab)
+                    val copy = browser.newTab(tab.url, incognito = priv, returnToPrevious = false)
+                    if (!priv) store.assignTab(copy.id, store.groupOf(tab.id))
+                    val at = browser.tabs.indexOf(copy)
+                    if (origin >= 0 && at > origin + 1) browser.moveTab(at, origin + 1)
+                    onDuplicated()
+                }))
+                add(MenuEntry(HripsIcons.CheckCircle, "Выбрать вкладки", onClick = act { env.startSelecting(tab.id) }))
+                if (!priv) add(MenuEntry(HripsIcons.Folder, "Переместить", submenu = true, onClick = { groups = true }))
+                add(MenuEntry(HripsIcons.Close, "Закрыть вкладку", danger = true, onClick = act { onCloseTab(tab) }))
+            }
+            listOf(
+                main,
+                listOf(MenuEntry(HripsIcons.Close, closeAllLabel, danger = true, onClick = act(onCloseAll))),
+            )
+        }
+        SegMenuColumn(entries)
+    }
+}
+
+/** Нижняя панель режима «Выбрать вкладки»: той же высоты, что и обычная (42 dp). */
+@Composable
+private fun SelectionBar(count: Int, onDone: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val palette = rememberBarPalette()
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = HripsLayout.BarMargin, vertical = HripsLayout.BarGap),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Row(
+            Modifier.widthIn(max = 560.dp).fillMaxWidth().height(SWITCHER_BAR_H),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BarPill(palette, Modifier.height(SWITCHER_BAR_H)) {
+                BarButton(onClick = onDone, wrap = true) {
+                    Text("Готово", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+            BarPill(palette, Modifier.weight(1f).height(SWITCHER_BAR_H)) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (count == 0) "Выберите вкладки" else "Выбрано: $count",
+                        maxLines = 1,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+            }
+            BarPill(palette, Modifier.height(SWITCHER_BAR_H)) {
+                BarButton(onClick = onClose, enabled = count > 0, wrap = true) {
+                    Text(
+                        "Закрыть",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (count > 0) cs.error else LocalContentColor.current,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            }
+        }
     }
 }
