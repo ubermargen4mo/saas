@@ -44,7 +44,7 @@ private class SheetNav(val icon: ImageVector, val label: String, val badge: Int?
  * Меню «⋯» на телефоне: нижняя шторка.
  * Одна тема (primary + нейтральные поверхности), без разноцветных плиток и необычных форм:
  * шапка, двойная кнопка «Новая вкладка / Приватная», сегментный ряд разделов, общие инструменты.
- * Действия над страницей (закладка, найти, перевод, PDF, ПК-версия, без рекламы и т. д.) переехали в `PageOptionsSheet`.
+ * Действия над страницей (закладка, найти, перевод, PDF, ПК-версия, без рекламы и т. д.) переехали в `PageOptionsMenu`.
  */
 @Composable
 internal fun ToolsSheet(
@@ -88,8 +88,6 @@ internal fun ToolsSheet(
         SheetNav(HripsIcons.Download, "Загрузки", onClick = act { onDownloads() }),
     )
 
-    val (letter, title, subtitle) = toolsHeaderOf(tab)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -103,10 +101,8 @@ internal fun ToolsSheet(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ToolsHeader(letter, title, subtitle, Modifier.toolsIn(0), tab = tab)
-
             // Двойная кнопка: внешние углы — таблетка, внутренние — маленькие.
-            Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(0), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 ToolButton(
                     "Новая вкладка", HripsIcons.Add, cs.primary, cs.onPrimary,
                     Corners(28.dp, 8.dp, 8.dp, 28.dp), Modifier.weight(1.4f),
@@ -119,7 +115,7 @@ internal fun ToolsSheet(
                 )
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(2), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 nav.forEachIndexed { i, n ->
                     SegTile(
                         n.icon, n.label, segCorners(nav.size, nav.size, i, 28.dp, 8.dp), Modifier.weight(1f),
@@ -128,14 +124,14 @@ internal fun ToolsSheet(
                 }
             }
 
-            Column(Modifier.fillMaxWidth().toolsIn(3), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.fillMaxWidth().toolsIn(2), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 tools.forEachIndexed { i, t ->
                     ToolRow(t.icon, t.label, segCorners(tools.size, 1, i, 24.dp, 8.dp), onClick = t.onClick)
                 }
             }
 
             if (browser.privateCount > 0) {
-                DangerPill("Закрыть приватные (${browser.privateCount})", Modifier.toolsIn(4), onClick = act { browser.closePrivateTabs() })
+                DangerPill("Закрыть приватные (${browser.privateCount})", Modifier.toolsIn(3), onClick = act { browser.closePrivateTabs() })
             }
             Spacer(Modifier.height(16.dp))
         }

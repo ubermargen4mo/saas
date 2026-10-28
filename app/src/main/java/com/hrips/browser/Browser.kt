@@ -23,6 +23,10 @@ fun applyPrivateDefaults(runtime: GeckoRuntime) {
     runtime.settings.setFingerprintingProtectionPrivateBrowsing(true)
 }
 
+fun applyTextScale(runtime: GeckoRuntime, percent: Int) {
+    runtime.settings.setFontSizeFactor(percent / 100f)
+}
+
 fun applyTrackingProtection(runtime: GeckoRuntime, on: Boolean) {
     runtime.settings.contentBlocking.setAntiTracking(
         if (on) ContentBlocking.AntiTracking.DEFAULT else ContentBlocking.AntiTracking.NONE
@@ -351,6 +355,12 @@ class Browser(
         val hosts = store.desktopSites.toList()
         store.clearDesktopSites()
         hosts.forEach { h -> tabs.forEach { if (!it.isPrivate && it.siteHost() == h && it.desktopMode) it.applyDesktop(false, reload = true) } }
+    }
+
+    /** Размер текста страниц: сохраняем и сразу применяем к движку (страницы перерисовываются без перезагрузки). */
+    fun setTextScale(percent: Int) {
+        store.updateTextScale(percent)
+        applyTextScale(runtime, store.textScale)
     }
 
     fun setTracking(on: Boolean) {

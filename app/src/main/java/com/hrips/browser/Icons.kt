@@ -229,6 +229,23 @@ object HripsIcons {
         }
     }
 
+    // Поиск по странице в меню параметров: листок с лупой в правом нижнем углу (как в образце).
+    val FindPage by lazy {
+        icon("FindPage", stroke = 1.7f) {
+            moveTo(12.5f, 21f); horizontalLineTo(7f)
+            arcToRelative(3f, 3f, 0f, false, true, -3f, -3f)
+            verticalLineTo(6f)
+            arcToRelative(3f, 3f, 0f, false, true, 3f, -3f)
+            horizontalLineTo(15f)
+            arcToRelative(3f, 3f, 0f, false, true, 3f, 3f)
+            verticalLineTo(10f)
+            moveTo(8f, 8f); horizontalLineTo(14f)
+            moveTo(8f, 12f); horizontalLineTo(11f)
+            circle(16f, 16.5f, 3f)
+            moveTo(21f, 21.5f); lineToRelative(-2.9f, -2.9f)
+        }
+    }
+
     val QrScan by lazy {
         icon("QrScan") {
             moveTo(3f, 8f); verticalLineTo(6f); arcToRelative(2f, 2f, 0f, false, true, 2f, -2f); horizontalLineTo(8f)
@@ -575,6 +592,14 @@ object HripsIcons {
             roundRect(4f, 2.5f, 16f, 19f, 3.4f)
             moveTo(7.6f, 9f); lineTo(9.2f, 9f); circle(10.9f, 9f, 1.7f); moveTo(12.6f, 9f); lineTo(16.4f, 9f)
             moveTo(7.6f, 15f); lineTo(12f, 15f); circle(13.7f, 15f, 1.7f); moveTo(15.4f, 15f); lineTo(16.4f, 15f)
+        }
+    }
+    // Кнопка меню сайта в адресной панели (как в Safari): три строки убывающей длины, прижатые влево.
+    val SiteMenu by lazy {
+        icon("SiteMenu", stroke = 2.2f) {
+            moveTo(4.5f, 7f); horizontalLineTo(19.5f)
+            moveTo(4.5f, 12f); horizontalLineTo(15.5f)
+            moveTo(4.5f, 17f); horizontalLineTo(11.5f)
         }
     }
     val BarMoreH by lazy { fillIcon("BarMoreH") { circle(5f, 12f, 1.9f); circle(12f, 12f, 1.9f); circle(19f, 12f, 1.9f) } }

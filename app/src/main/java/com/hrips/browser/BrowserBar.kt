@@ -592,13 +592,30 @@ internal fun BottomBar(
                                 inert = collapsed,
                                 modifier = Modifier.size(36.dp),
                             ) {
-                                // Параметры страницы: шторка с действиями над страницей. Если соединение небезопасно, значок красный.
-                                Icon(
-                                    if (tab.home) HripsIcons.Search else HripsIcons.PageOptions,
-                                    if (tab.home) "Поиск" else "Параметры страницы",
-                                    Modifier.size(24.dp),
-                                    tint = if (!tab.home && tab.trust == Trust.WARNING) cs.error else LocalContentColor.current,
-                                )
+                                // Меню сайта. Если включено действие (чтение, перевод, ПК-версия), вместо значка меню стоит значок
+                                // этого действия, подсвеченный. Красным значок бывает только у загруженной небезопасной страницы:
+                                // пока страница грузится, защита ещё не известна, и красный был бы ложной тревогой.
+                                val active = when {
+                                    tab.home -> null
+                                    tab.readerActive -> HripsIcons.Reader
+                                    tab.translated || tab.translating -> HripsIcons.Translate
+                                    tab.desktopMode -> HripsIcons.Desktop
+                                    else -> null
+                                }
+                                val warn = !tab.home && !tab.loading && tab.trust == Trust.WARNING
+                                if (active != null && !warn) {
+                                    Box(
+                                        Modifier.size(32.dp).background(cs.primary.copy(alpha = 0.18f), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) { Icon(active, "Включено действие над страницей", Modifier.size(22.dp), tint = cs.primary) }
+                                } else {
+                                    Icon(
+                                        if (tab.home) HripsIcons.Search else active ?: HripsIcons.SiteMenu,
+                                        if (tab.home) "Поиск" else "Меню сайта",
+                                        Modifier.size(24.dp),
+                                        tint = if (warn) cs.error else LocalContentColor.current,
+                                    )
+                                }
                             }
                         }
 

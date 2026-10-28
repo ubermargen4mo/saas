@@ -35,8 +35,8 @@ object HripsLayout {
     val PhoneBarGap = 8.dp
 
     // Размеры сняты с образцов (Safari, iOS 26) и пересчитаны на экран шириной 360 dp: измерено по пикселям,
-    // точность около ±1 dp. Нижняя панель: три капсулы высотой 40 dp, поля 26 dp, зазор 8 dp.
-    val BarHeight = 40.dp
+    // точность около ±1 dp. Нижняя панель: три капсулы высотой 42 dp (было 40), поля 26 dp, зазор 8 dp.
+    val BarHeight = 42.dp
     val BarSideMargin = 26.dp
     val BarTextSp = 14
     // Свёрнутая пилюля (как в Safari): только домен, ширина строго по тексту. Высота 25 dp, боковые поля 15 dp, текст 10 sp жирным.
@@ -46,10 +46,10 @@ object HripsLayout {
     val BarGap = 8.dp
     val BarMargin = 12.dp
 
-    // Ряд поиска: кружок «Готово» 38 dp, капсулы поля и стрелок 36 dp, поля 12 dp, зазор между ними 8 dp.
+    // Ряд поиска: кружок «Готово» и капсулы поля и стрелок одной высоты 38 dp (на 2 dp больше прежних капсул), поля 12 dp, зазор между ними 8 dp.
     // Пилюля домена стоит в 12 dp над рядом, ряд в 12 dp над клавиатурой.
-    val FindCircle = 38.dp
-    val FindPill = 36.dp
+    val FindPill = 38.dp
+    val FindCircle = FindPill
     val FindGap = 12.dp
     val FindTextSp = 14
 

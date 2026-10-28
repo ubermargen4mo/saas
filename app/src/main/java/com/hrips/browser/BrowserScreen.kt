@@ -712,7 +712,7 @@ fun BrowserScreen(browser: Browser) {
     }
 
     if (showPageOptions && !wide) {
-        PageOptionsSheet(
+        PageOptionsMenu(
             onDismiss = { showPageOptions = false },
             browser = browser,
             tab = tab,

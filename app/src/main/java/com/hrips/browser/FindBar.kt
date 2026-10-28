@@ -132,7 +132,7 @@ internal fun FindBottomBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = M
         BarPill(palette, pressHost = false, modifier = Modifier.weight(1f).height(HripsLayout.FindPill)) {
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    HripsIcons.FindInPage, null,
+                    HripsIcons.Search, null,
                     Modifier.padding(start = 9.dp).size(22.dp),
                     tint = cs.onSurfaceVariant,
                 )

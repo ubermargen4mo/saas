@@ -30,6 +30,7 @@ class HripsApp : Application() {
             })
             applyTrackingProtection(it, store.trackingProtection)
             applyPrivateDefaults(it)
+            applyTextScale(it, store.textScale)
             PrivacyEngine.apply(it, store)
             GeckoColors.attach()
             NetworkTuning.apply()
