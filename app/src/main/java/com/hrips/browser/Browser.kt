@@ -357,10 +357,13 @@ class Browser(
         hosts.forEach { h -> tabs.forEach { if (!it.isPrivate && it.siteHost() == h && it.desktopMode) it.applyDesktop(false, reload = true) } }
     }
 
-    /** Размер текста страниц: сохраняем и сразу применяем к движку (страницы перерисовываются без перезагрузки). */
+    /** Размер текста страниц в процентах. Не сохраняется: при новом запуске приложения снова 100 %. Применяется к движку сразу. */
+    var textScale by mutableStateOf(100)
+        private set
+
     fun setTextScale(percent: Int) {
-        store.updateTextScale(percent)
-        applyTextScale(runtime, store.textScale)
+        textScale = percent
+        applyTextScale(runtime, percent)
     }
 
     fun setTracking(on: Boolean) {

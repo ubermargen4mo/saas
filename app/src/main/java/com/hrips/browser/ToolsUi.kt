@@ -343,6 +343,8 @@ internal fun ToolRow(
     trailing: ImageVector? = null,
     enabled: Boolean = true,
     danger: Boolean = false,
+    // Свой значок вместо векторного (например, значок приложения). Рисуется в рамке 21 dp, как обычный.
+    leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -365,7 +367,11 @@ internal fun ToolRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(icon, null, Modifier.size(21.dp), tint = if (danger) cs.error else if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
+            if (leading != null) {
+                Box(Modifier.size(21.dp), contentAlignment = Alignment.Center) { leading() }
+            } else {
+                Icon(icon, null, Modifier.size(21.dp), tint = if (danger) cs.error else if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
+            }
             Text(label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             if (trailing != null) Icon(trailing, null, Modifier.size(18.dp), tint = if (selected) cs.primary else cs.onSurfaceVariant)
         }

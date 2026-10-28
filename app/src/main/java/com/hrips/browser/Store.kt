@@ -124,16 +124,6 @@ class Store(context: Context) {
     var suggestionsOn by mutableStateOf(prefs.getBoolean("suggest", true))
         private set
 
-    /** Размер текста на страницах в процентах (50..200), общий для всех сайтов. Ползунок в меню параметров страницы. */
-    var textScale by mutableStateOf(prefs.getInt("text_scale", 100).coerceIn(TEXT_SCALE_MIN, TEXT_SCALE_MAX))
-        private set
-
-    fun updateTextScale(percent: Int) {
-        val v = percent.coerceIn(TEXT_SCALE_MIN, TEXT_SCALE_MAX)
-        textScale = v
-        prefs.edit().putInt("text_scale", v).apply()
-    }
-
     var keepPageInBackground by mutableStateOf(prefs.getBoolean("keep_page_bg", true))
         private set
 
@@ -669,9 +659,3 @@ class Store(context: Context) {
     }
 
 }
-
-const val TEXT_SCALE_MIN = 50
-const val TEXT_SCALE_MAX = 200
-
-/** Ступени ползунка размера текста, %: мельче шаги возле 100, крупнее по краям (как в Safari). */
-val TEXT_SCALE_STEPS = intArrayOf(50, 75, 85, 100, 115, 125, 150, 175, 200)

@@ -40,6 +40,25 @@ object PageActions {
         }
     }
 
+    /** Приложение, которое открывает адрес страницы (не браузер): имя и значок. Нет такого - null. Запрос к системе синхронный, звать не с главного потока. */
+    class AppTarget(val label: String, val icon: android.graphics.drawable.Drawable)
+
+    @Suppress("DEPRECATION")
+    fun appFor(context: Context, url: String): AppTarget? = runCatching {
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val pm = context.packageManager
+        val all = if (Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(view, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
+        } else {
+            pm.queryIntentActivities(view, PackageManager.MATCH_ALL)
+        }
+        // У браузеров фильтр без адреса сайта (любые ссылки), у приложений сайта он с конкретным адресом.
+        val app = all.firstOrNull {
+            it.activityInfo.packageName != context.packageName && it.filter?.authoritiesIterator()?.hasNext() == true
+        } ?: return@runCatching null
+        AppTarget(app.loadLabel(pm).toString(), app.loadIcon(pm))
+    }.getOrNull()
+
     fun openInApp(context: Context, url: String) {
         val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
         val none = { Notices.show("Для этого сайта нет приложения") }
