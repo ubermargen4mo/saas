@@ -476,17 +476,7 @@ fun BrowserScreen(browser: Browser) {
         // Планшет: адресная строка сверху и не сворачивается, поэтому тот же ряд поиска, что на телефоне,
         // плавает под ней на всю ширину. Нулевая высота: ряд лежит поверх страницы и ничего не сдвигает.
         if (wide) {
-            Box(Modifier.fillMaxWidth().height(0.dp).zIndex(1f)) {
-                Box(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true)) {
-                    AnimatedVisibility(
-                        visible = findOpen && !tab.home,
-                        enter = fadeIn(tween(HripsMotion.ChromeMs)) + slideInVertically(tween(HripsMotion.ChromeMs)) { -it },
-                        exit = fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it },
-                    ) {
-                        key(tab.id) { FindBottomBar(tab, onClose = { findOpen = false }, modifier = Modifier.padding(top = HripsLayout.BarGap)) }
-                    }
-                }
-            }
+            TabletFindOverlay(tab, visible = findOpen && !tab.home, onClose = { findOpen = false })
         }
 
         }
@@ -827,4 +817,20 @@ fun openAutofillSettings(context: android.content.Context) {
         }
     }
     Notices.show("Откройте: Настройки → Пароли и аккаунты → Автозаполнение")
+}
+
+/** Ряд поиска планшета: нулевая высота, рисуется поверх страницы под адресной строкой. Вынесен из Column, чтобы не ловить DSL_SCOPE_VIOLATION. */
+@Composable
+private fun TabletFindOverlay(tab: Tab, visible: Boolean, onClose: () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(0.dp).zIndex(1f)) {
+        Box(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true)) {
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(HripsMotion.ChromeMs)) + slideInVertically(tween(HripsMotion.ChromeMs)) { -it },
+                exit = fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it },
+            ) {
+                key(tab.id) { FindBottomBar(tab, onClose = onClose, modifier = Modifier.padding(top = HripsLayout.BarGap)) }
+            }
+        }
+    }
 }
