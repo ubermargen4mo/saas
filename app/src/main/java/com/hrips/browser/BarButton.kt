@@ -58,6 +58,8 @@ fun BarButton(
     onLongClick: (() -> Unit)? = null,
     // По размеру содержимого (но не меньше 44 dp): для широких кнопок вроде «Приватные» или счётчика вкладок.
     wrap: Boolean = false,
+    // Вообще не принимает нажатия: касание проходит сквозь кнопку к тому, что под ней (у свёрнутой панели это «развернуть»).
+    inert: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
@@ -89,14 +91,16 @@ fun BarButton(
     Box(
         modifier
             .then(if (wrap) Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 44.dp) else Modifier.size(48.dp))
-            .combinedClickable(
-                interactionSource = source,
-                indication = null,
-                // Долгое нажатие работает и у неактивной кнопки (например, «назад» без истории открывает список вкладок).
-                enabled = enabled || onLongClick != null,
-                role = Role.Button,
-                onClick = { if (enabled) onClick() },
-                onLongClick = onLongClick,
+            .then(
+                if (inert) Modifier else Modifier.combinedClickable(
+                    interactionSource = source,
+                    indication = null,
+                    // Долгое нажатие работает и у неактивной кнопки (например, «назад» без истории открывает список вкладок).
+                    enabled = enabled || onLongClick != null,
+                    role = Role.Button,
+                    onClick = { if (enabled) onClick() },
+                    onLongClick = onLongClick,
+                ),
             ),
         contentAlignment = Alignment.Center,
     ) {

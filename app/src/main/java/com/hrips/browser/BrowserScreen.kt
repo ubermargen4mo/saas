@@ -23,6 +23,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
@@ -32,6 +34,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -158,6 +161,8 @@ fun BrowserScreen(browser: Browser) {
     }
     val backEnabled = !tab.home && (tab.canGoBack || opener != null || tab.hasReturn)
     BackHandler(enabled = canReturnToPage || tab.canGoBack || tab.hasReturn || opener != null || tab.fromApp) { goBack() }
+    // Объявлен после общего «назад», поэтому имеет приоритет: сначала закрываем читалку, а не уходим со страницы.
+    BackHandler(enabled = tab.readerActive) { tab.closeReader() }
 
     DisposableEffect(tab.id) {
         tab.ensureLoaded()
@@ -273,7 +278,19 @@ fun BrowserScreen(browser: Browser) {
         TabThumbs.prefetch(appCtx, ids, small = true)
     }
 
-    val collapsed = !wide && !tab.home && tab.chromeHidden && !showTools
+    // Поиск по странице на телефоне (как в Safari): внизу ряд поиска, над ним нижняя панель, принудительно свёрнутая в домен.
+    val findPhone = findOpen && !wide && !tab.home && !fs
+    val collapsed = !wide && !tab.home && (tab.chromeHidden || findPhone) && !showTools
+    val findLift by animateDpAsState(
+        if (findPhone) HripsLayout.BarHeight + HripsLayout.BarGap else 0.dp,
+        HripsMotion.barCollapse(),
+        label = "findLift",
+    )
+    // Развернуть панель во время поиска значит закончить поиск: вместе им внизу не поместиться.
+    val expandBar: () -> Unit = {
+        if (findOpen) findOpen = false
+        tab.expandChrome()
+    }
 
     // Панель плавает поверх страницы, а сайт должен знать, сколько внизу закрыто: тогда его собственные
     // нижние панели (YouTube и др.) встают над нашей, как в Safari. setVerticalClipping работает в композиторе,
@@ -287,10 +304,16 @@ fun BrowserScreen(browser: Browser) {
         label = "pageClip",
     )
     val navBottomPx = WindowInsets.navigationBars.getBottom(clipDensity)
-    val clipActive = !fs && !wide && !tab.home && !WindowInsets.isImeVisible
-    LaunchedEffect(clipActive, navBottomPx, clipDensity, tab.session) {
-        snapshotFlow { barClipDp.value }.collectLatest { h ->
-            val px = if (clipActive) navBottomPx + with(clipDensity) { (HripsLayout.BarGap + h + 6.dp).roundToPx() } else 0
+    val imeShown = WindowInsets.isImeVisible
+    // Во время поиска страница сжимается над клавиатурой, а ряд поиска и пилюля домена лежат поверх её низа:
+    // сайту сообщаем, сколько там закрыто (под клавиатурой навигационную панель считать не надо).
+    val clipActive = !fs && !wide && !tab.home && (!imeShown || findPhone)
+    val imeInsets = WindowInsets.ime
+    LaunchedEffect(clipActive, navBottomPx, clipDensity, tab.session, imeShown, findPhone) {
+        snapshotFlow { barClipDp.value + findLift }.collectLatest { h ->
+            // Страница не ужимается: клавиатура лежит поверх неё, поэтому при поиске закрыт ещё и её верх.
+            val base = if (findPhone) maxOf(imeInsets.getBottom(clipDensity), navBottomPx) else if (imeShown) 0 else navBottomPx
+            val px = if (clipActive) base + with(clipDensity) { (HripsLayout.BarGap + h + 6.dp).roundToPx() } else 0
             pageClip[0] = px
             runCatching { viewRef[0]?.setVerticalClipping(px) }
         }
@@ -450,8 +473,20 @@ fun BrowserScreen(browser: Browser) {
         }
         }
 
-        if (findOpen && !tab.home) {
-            key(tab.id) { FindBar(tab, onClose = { findOpen = false }) }
+        // Планшет: адресная строка сверху и не сворачивается, поэтому тот же ряд поиска, что на телефоне,
+        // плавает под ней на всю ширину. Нулевая высота: ряд лежит поверх страницы и ничего не сдвигает.
+        if (wide) {
+            Box(Modifier.fillMaxWidth().height(0.dp).zIndex(1f)) {
+                Box(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true)) {
+                    AnimatedVisibility(
+                        visible = findOpen && !tab.home,
+                        enter = fadeIn(tween(HripsMotion.ChromeMs)) + slideInVertically(tween(HripsMotion.ChromeMs)) { -it },
+                        exit = fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it },
+                    ) {
+                        key(tab.id) { FindBottomBar(tab, onClose = { findOpen = false }, modifier = Modifier.padding(top = HripsLayout.BarGap)) }
+                    }
+                }
+            }
         }
 
         }
@@ -512,6 +547,19 @@ fun BrowserScreen(browser: Browser) {
         if (wide && !fs) Spacer(Modifier.windowInsetsPadding(navInsets))
     }
 
+    // Телефон: ряд поиска плавает над клавиатурой на месте свёрнутой нижней панели.
+    AnimatedVisibility(
+        visible = findPhone,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+            .padding(bottom = HripsLayout.BarGap),
+        enter = fadeIn(tween(HripsMotion.ChromeMs)) + slideInVertically(tween(HripsMotion.ChromeMs)) { it },
+        exit = fadeOut(tween(120)) + slideOutVertically(tween(160)) { it },
+    ) {
+        key(tab.id) { FindBottomBar(tab, onClose = { findOpen = false }) }
+    }
+
     if (!fs && !wide) {
         BottomBar(
             tab = tab,
@@ -530,8 +578,8 @@ fun BrowserScreen(browser: Browser) {
             onAddress = { openSearch() },
             onMore = { showTools = true },
             onDownloads = { showDownloads = true },
-            onExpand = { tab.expandChrome() },
-            onSwipeUp = { if (collapsed) tab.expandChrome() else requestTabs() },
+            onExpand = expandBar,
+            onSwipeUp = { if (collapsed) expandBar() else requestTabs() },
             onSwipeDown = { if (!tab.home) tab.collapseChrome() },
             onCopy = copyAddress,
             onShare = shareAddress,
@@ -562,8 +610,12 @@ fun BrowserScreen(browser: Browser) {
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = HripsLayout.BarGap),
+                // Во время поиска панель стоит над рядом поиска и над клавиатурой.
+                .then(
+                    if (findPhone) Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    else Modifier.navigationBarsPadding(),
+                )
+                .padding(bottom = HripsLayout.BarGap + findLift),
         )
     }
 

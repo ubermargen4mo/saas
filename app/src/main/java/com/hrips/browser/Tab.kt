@@ -185,6 +185,24 @@ class Tab(
         translating = false
     }
 
+    /** Режим чтения (`ReaderMode`): страница похожа на статью и читалка сейчас открыта поверх неё. */
+    var readerable by mutableStateOf(false)
+        private set
+    var readerActive by mutableStateOf(false)
+        private set
+
+    private fun resetReader() {
+        readerable = false
+        readerActive = false
+    }
+
+    /** Открывает читалку или закрывает, если она открыта. */
+    fun toggleReader() {
+        if (!ReaderMode.toggle(session)) Notices.show("Режим чтения недоступен на этой странице")
+    }
+
+    fun closeReader() = ReaderMode.close(session)
+
     /** Начало загрузки основной страницы и признак, что первая отрисовка уже учтена (только для журнала замеров). */
     private var navStartedAt = 0L
     private var paintLogged = true
@@ -344,6 +362,11 @@ class Tab(
         )
         PageText.register(s, id)
         ThemeColor.register(s, id) { c -> if (s === session) themeColor = c }
+        ReaderMode.register(
+            s,
+            onState = { isArticle, active -> if (s === session) { readerable = isArticle; readerActive = active } },
+            onFail = { if (s === session) Notices.show("Не удалось выделить статью на этой странице") },
+        )
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(sess: GeckoSession, pageUrl: String) {
                 if (sess !== session) return
@@ -357,6 +380,7 @@ class Tab(
                 navStartedAt = SystemClock.elapsedRealtime()
                 paintLogged = false
                 resetTranslation()
+                resetReader()
                 loading = true
                 progress = 0
                 skipVisit = imageSearchPending && pageUrl.startsWith("data:text/html")
@@ -872,6 +896,7 @@ class Tab(
         errorTarget = null
         themeColor = null
         themeHost = null
+        resetReader()
         lazyState = null
         sessionState = null
         sessionStateVersion++

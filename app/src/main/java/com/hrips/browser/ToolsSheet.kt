@@ -84,6 +84,9 @@ internal fun ToolsSheet(
             }))
             add(SheetAction(HripsIcons.FindInPage, "Найти", onClick = act { onFind() }))
             add(SheetAction(HripsIcons.Qr, "QR-код", onClick = act { onQr() }))
+            if (hasSite && (tab.readerable || tab.readerActive)) {
+                add(SheetAction(HripsIcons.Reader, if (tab.readerActive) "Закрыть чтение" else "Чтение", tab.readerActive, act { tab.toggleReader() }))
+            }
             if (hasSite && !PageActions.isTranslated(tab)) {
                 val back = tab.translated || tab.translating
                 add(SheetAction(HripsIcons.Translate, if (back) "Оригинал" else "Перевести", back, act { PageActions.translate(tab, browser) }))

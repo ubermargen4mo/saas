@@ -67,6 +67,7 @@ class HripsApp : Application() {
         hoverPreview.install()
         PageText.install(runtime)
         ThemeColor.install(runtime)
+        ReaderMode.install(runtime)
         Browser(runtime, store, downloads, permissions, prompts, adBlock, external, media, extensions).also { b ->
             extensions.openTab = { url, active, engineWillLoad -> b.openForExtension(url, active, engineWillLoad) }
             extensions.init()

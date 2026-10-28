@@ -433,6 +433,19 @@ object HripsIcons {
         }
     }
 
+    val Reader by lazy {
+        icon("Reader") {
+            moveTo(12f, 6.5f)
+            curveTo(10.5f, 5f, 7.5f, 4.5f, 3.5f, 5f)
+            verticalLineTo(18.5f)
+            curveTo(7.5f, 18f, 10.5f, 18.5f, 12f, 20f)
+            curveTo(13.5f, 18.5f, 16.5f, 18f, 20.5f, 18.5f)
+            verticalLineTo(5f)
+            curveTo(16.5f, 4.5f, 13.5f, 5f, 12f, 6.5f)
+            moveTo(12f, 6.5f); verticalLineTo(20f)
+        }
+    }
+
     val PlusCircle by lazy { icon("PlusCircle") { circle(12f, 12f, 9.5f); moveTo(8f, 12f); horizontalLineTo(16f); moveTo(12f, 8f); verticalLineTo(16f) } }
     val ChevronRight by lazy { icon("ChevronRight") { moveTo(9f, 6f); lineTo(15f, 12f); lineTo(9f, 18f) } }
 

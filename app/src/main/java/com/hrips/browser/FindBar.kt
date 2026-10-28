@@ -3,19 +3,25 @@ package com.hrips.browser
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,15 +34,20 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-@Composable
-fun FindBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = Modifier) {
-    var query by remember { mutableStateOf("") }
-    var current by remember { mutableIntStateOf(0) }
-    var total by remember { mutableIntStateOf(0) }
-    var found by remember { mutableStateOf(true) }
-    val focus = remember { FocusRequester() }
+/** Состояние «найти на странице»: запрос и счётчик совпадений. Один и тот же ряд поиска на телефоне и на планшете. */
+@Stable
+internal class FinderState(private val tab: Tab) {
+    var query by mutableStateOf("")
+        private set
+    var current by mutableIntStateOf(0)
+        private set
+    var total by mutableIntStateOf(0)
+        private set
+    var found by mutableStateOf(true)
+        private set
 
     fun run(text: String, backwards: Boolean) {
         if (text.isEmpty()) {
@@ -56,63 +67,125 @@ fun FindBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = Modifier) {
         }, { })
     }
 
-    LaunchedEffect(tab.id, tab.session) {
-        tab.finderSetHighlights()
-        focus.requestFocus()
+    fun setQuery(text: String) {
+        query = text
+        run(text, false)
     }
+
+    fun next() = run(query, false)
+
+    fun previous() = run(query, true)
+
+    /** «3/12», «0» если ничего нет, «…» пока движок считает; пусто, пока запрос пуст. */
+    val counter: String
+        get() = when {
+            query.isEmpty() -> ""
+            !found -> "0"
+            total > 0 -> "$current/$total"
+            else -> "…"
+        }
+}
+
+@Composable
+internal fun rememberFinder(tab: Tab): FinderState {
+    val state = remember { FinderState(tab) }
+    LaunchedEffect(tab.id, tab.session) { tab.finderSetHighlights() }
     DisposableEffect(tab.session) { onDispose { tab.finderClear() } }
+    return state
+}
+
+/**
+ * Поиск по странице, как в Safari: нижний ряд из трёх элементов. Круглая кнопка «Готово», капсула с лупой
+ * и полем ввода, капсула со стрелками «предыдущее / следующее». Свёрнутая панель с доменом стоит прямо над рядом
+ * (см. `BrowserScreen`). Ряд плавает поверх страницы, клавиатура лежит поверх неё, страница не ужимается.
+ * На планшете ряд тот же, но стоит сверху под адресной строкой на всю ширину (адресная строка там не сворачивается). Ряд сидит на тех же отступах и тех же капсулах (`BarPill`), что и нижняя панель браузера.
+ */
+@Composable
+internal fun FindBottomBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val finder = rememberFinder(tab)
+    val cs = MaterialTheme.colorScheme
+    val palette = rememberBarPalette()
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(tab.id, tab.session) { focus.requestFocus() }
     BackHandler { onClose() }
 
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = HripsLayout.BarMargin),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
-                value = query,
-                onValueChange = { query = it; run(it, false) },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = if (found) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { run(query, false) }),
-                modifier = Modifier.weight(1f).padding(start = 20.dp, top = 12.dp, bottom = 12.dp).focusRequester(focus),
-                decorationBox = { inner ->
-                    Box {
-                        if (query.isEmpty()) {
-                            Text(
-                                "Найти на странице",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                        }
-                        inner()
-                    }
-                },
-            )
-            if (query.isNotEmpty()) {
-                Text(
-                    when {
-                        !found -> "0"
-                        total > 0 -> "$current/$total"
-                        else -> "…"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+        Surface(
+            shape = CircleShape,
+            color = cs.primary,
+            contentColor = cs.onPrimary,
+            shadowElevation = 6.dp,
+            modifier = Modifier.size(HripsLayout.BarHeight),
+        ) {
+            BarButton(onClick = onClose, modifier = Modifier.fillMaxSize()) {
+                Icon(HripsIcons.Check, "Готово", Modifier.size(24.dp))
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+
+        BarPill(palette, pressHost = false, modifier = Modifier.weight(1f).height(HripsLayout.BarHeight)) {
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    HripsIcons.Search, null,
+                    Modifier.padding(start = 16.dp).size(20.dp),
+                    tint = cs.onSurfaceVariant,
                 )
+                BasicTextField(
+                    value = finder.query,
+                    onValueChange = finder::setQuery,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = if (finder.found) cs.onSurface else cs.error,
+                    ),
+                    cursorBrush = SolidColor(cs.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { finder.next() }),
+                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp).focusRequester(focus),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (finder.query.isEmpty()) {
+                                Text(
+                                    "Найти",
+                                    color = cs.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+                if (finder.query.isNotEmpty()) {
+                    Text(
+                        finder.counter,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = cs.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                    BarButton(onClick = { finder.setQuery("") }, modifier = Modifier.size(36.dp)) {
+                        Icon(HripsIcons.Close, "Очистить", Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(4.dp))
+                } else {
+                    Spacer(Modifier.width(12.dp))
+                }
             }
-            IconButton(onClick = { run(query, true) }, enabled = query.isNotEmpty()) {
-                Icon(HripsIcons.ChevronDown, "Предыдущее", Modifier.rotate(180f))
+        }
+        Spacer(Modifier.width(8.dp))
+
+        BarPill(palette) {
+            Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                BarButton(onClick = finder::previous, enabled = finder.query.isNotEmpty(), modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.ChevronDown, "Предыдущее", Modifier.size(22.dp).rotate(180f))
+                }
+                BarButton(onClick = finder::next, enabled = finder.query.isNotEmpty(), modifier = Modifier.size(40.dp)) {
+                    Icon(HripsIcons.ChevronDown, "Следующее", Modifier.size(22.dp))
+                }
             }
-            IconButton(onClick = { run(query, false) }, enabled = query.isNotEmpty()) {
-                Icon(HripsIcons.ChevronDown, "Следующее")
-            }
-            IconButton(onClick = onClose) { Icon(HripsIcons.Close, "Закрыть поиск") }
         }
     }
 }

@@ -218,6 +218,9 @@ private fun ToolsPopup(
 
                     val rows = buildList {
                         if (onPage) {
+                            if (hasSite && (tab.readerable || tab.readerActive)) {
+                                add(MenuAction(HripsIcons.Reader, if (tab.readerActive) "Закрыть режим чтения" else "Режим чтения", tab.readerActive) { onDismiss(); tab.toggleReader() })
+                            }
                             if (hasSite && !PageActions.isTranslated(tab)) {
                                 val back = tab.translated || tab.translating
                                 add(MenuAction(HripsIcons.Translate, if (back) "Показать оригинал" else "Перевести", back) { onDismiss(); PageActions.translate(tab, browser) })

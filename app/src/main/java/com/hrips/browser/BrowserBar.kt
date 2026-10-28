@@ -410,6 +410,7 @@ internal fun BottomBar(
                     BarButton(
                         onClick = onBack,
                         enabled = backEnabled,
+                        inert = collapsed,
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             tabsOpen = true
@@ -428,7 +429,7 @@ internal fun BottomBar(
                             shrinkHorizontally(motion.fastSpatialSpec<IntSize>()) +
                             scaleOut(motion.fastSpatialSpec<Float>(), targetScale = 0.6f),
                     ) {
-                        BarButton(onClick = onForward, modifier = Modifier.size(width = 34.dp, height = 40.dp)) {
+                        BarButton(onClick = onForward, inert = collapsed, modifier = Modifier.size(width = 34.dp, height = 40.dp)) {
                             Icon(HripsIcons.BarChevronForward, "Вперёд", Modifier.size(26.dp))
                         }
                     }
@@ -588,6 +589,7 @@ internal fun BottomBar(
                         ) {
                             BarButton(
                                 onClick = { if (tab.home) onAddress() else showSecurity = true },
+                                inert = collapsed,
                                 modifier = Modifier.size(36.dp),
                             ) {
                                 Icon(
@@ -657,7 +659,7 @@ internal fun BottomBar(
                             contentAlignment = Alignment.Center,
                         ) {
                             if (!tab.home) {
-                                BarButton(onClick = { tab.reloadOrStop() }, modifier = Modifier.size(36.dp)) {
+                                BarButton(onClick = { tab.reloadOrStop() }, inert = collapsed, modifier = Modifier.size(36.dp)) {
                                     AnimatedContent(
                                         targetState = tab.loading,
                                         transitionSpec = {
@@ -695,8 +697,8 @@ internal fun BottomBar(
         Box(Modifier.collapseWidth(t)) {
             BarPill(palette, Modifier.appearLayer(appearRight, rise)) {
                 Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AnimatedDownloadsSlot(downloads, onClick = onDownloads, size = 40.dp, centered = true, barStyle = true)
-                    BarButton(onClick = onMore, modifier = Modifier.size(40.dp)) {
+                    AnimatedDownloadsSlot(downloads, onClick = { if (!collapsed) onDownloads() }, size = 40.dp, centered = true, barStyle = true)
+                    BarButton(onClick = onMore, inert = collapsed, modifier = Modifier.size(40.dp)) {
                         Icon(HripsIcons.BarMore, "Меню", Modifier.size(22.dp))
                     }
                 }
