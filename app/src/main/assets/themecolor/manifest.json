@@ -1,0 +1,29 @@
+{
+  "manifest_version": 2,
+  "name": "Цвет страницы для шапки браузера",
+  "description": "Отдаёт приложению цвет сайта (фон страницы у верхнего края, запасной вариант: meta theme-color), чтобы шапка на планшете подстраивалась под сайт.",
+  "version": "1.1",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "themecolor@hrips.app"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
