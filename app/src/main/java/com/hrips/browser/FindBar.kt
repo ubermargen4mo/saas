@@ -67,7 +67,7 @@ internal class FinderState(private val tab: Tab) {
         }, { })
     }
 
-    fun setQuery(text: String) {
+    fun updateQuery(text: String) {
         query = text
         run(text, false)
     }
@@ -135,7 +135,7 @@ internal fun FindBottomBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = M
                 )
                 BasicTextField(
                     value = finder.query,
-                    onValueChange = finder::setQuery,
+                    onValueChange = finder::updateQuery,
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = if (finder.found) cs.onSurface else cs.error,
@@ -166,7 +166,7 @@ internal fun FindBottomBar(tab: Tab, onClose: () -> Unit, modifier: Modifier = M
                         maxLines = 1,
                         modifier = Modifier.padding(horizontal = 6.dp),
                     )
-                    BarButton(onClick = { finder.setQuery("") }, modifier = Modifier.size(36.dp)) {
+                    BarButton(onClick = { finder.updateQuery("") }, modifier = Modifier.size(36.dp)) {
                         Icon(HripsIcons.Close, "Очистить", Modifier.size(18.dp), tint = cs.onSurfaceVariant)
                     }
                     Spacer(Modifier.width(4.dp))
