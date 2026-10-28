@@ -55,16 +55,18 @@ object ThemeColor {
         extension?.let { attach(session, binding, it) }
     }
 
+    private fun parseHex(hex: String): Color? =
+        if (hex.length == 7 && hex[0] == '#') {
+            runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
+        } else null
+
     private fun attach(session: GeckoSession, binding: Binding, ext: WebExtension) {
         runCatching {
             session.webExtensionController.setMessageDelegate(
                 ext,
                 object : WebExtension.MessageDelegate {
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                        val hex = (message as? JSONObject)?.optString("color").orEmpty()
-                        val color = if (hex.length == 7 && hex[0] == '#') {
-                            runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
-                        } else null
+                        val color = parseHex((message as? JSONObject)?.optString("color").orEmpty())
                         MainThread.handler.post { binding.onColor(color) }
                         return null
                     }

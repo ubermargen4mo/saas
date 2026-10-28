@@ -42,6 +42,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -540,6 +543,28 @@ fun BrowserScreen(browser: Browser) {
         }
 
         if (wide && !fs) Spacer(Modifier.windowInsetsPadding(navInsets))
+    }
+
+    // Заглушка под нижней капсулой (только телефон). Сайт знает, сколько внизу закрыто (setVerticalClipping), и поднимает
+    // свои нижние панели над капсулой, но за капсулой оставалась видна прокручиваемая страница. Закрываем эту зону обычным
+    // цветом фона приложения. Высота та же, что у закрытой зоны, поэтому сворачивание капсулы и ряд поиска двигают заглушку
+    // вместе со страницей. На главной и в полноэкранном режиме её нет.
+    val stubOn = clipActive && !tab.errorPage
+    val stubAlpha by animateFloatAsState(if (stubOn) 1f else 0f, tween(HripsMotion.ChromeMs), label = "pageStub")
+    val stubColor = MaterialTheme.colorScheme.surface
+    if (!fs && !wide && !tab.home) {
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .layout { measurable, constraints ->
+                    val base = if (findPhone) maxOf(imeInsets.getBottom(clipDensity), navBottomPx) else if (imeShown) 0 else navBottomPx
+                    val h = base + (HripsLayout.BarGap + barClipDp.value + findLift + 6.dp).roundToPx()
+                    val placeable = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
+                    layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+                }
+                .drawBehind { if (stubAlpha > 0.01f) drawRect(stubColor, alpha = stubAlpha) },
+        )
     }
 
     // Телефон: ряд поиска плавает над клавиатурой на месте свёрнутой нижней панели.

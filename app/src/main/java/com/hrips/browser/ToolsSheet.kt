@@ -31,20 +31,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.pm.ShortcutManagerCompat
 import kotlinx.coroutines.launch
 
-private class SheetAction(
-    val icon: ImageVector,
-    val label: String,
-    val active: Boolean = false,
-    val onClick: () -> Unit,
-)
-
-private class SheetNav(val icon: ImageVector, val label: String, val badge: Int? = null, val onClick: () -> Unit)
+private class SheetTile(val icon: ImageVector, val label: String, val badge: Int? = null, val onClick: () -> Unit)
 
 /**
  * Меню «⋯» на телефоне: нижняя шторка.
- * Одна тема (primary + нейтральные поверхности), без разноцветных плиток и необычных форм:
- * шапка, двойная кнопка «Новая вкладка / Приватная», сегментный ряд разделов, общие инструменты.
- * Действия над страницей (закладка, найти, перевод, PDF, ПК-версия, без рекламы и т. д.) переехали в `PageOptionsMenu`.
+ * Одна тема (primary + нейтральные поверхности), без разноцветных плиток и необычных форм. Три блока сверху вниз:
+ * двойная кнопка «Новая вкладка / Приватная»; одна сетка 4×2 из восьми разделов и инструментов (значок над короткой
+ * подписью, одна высота, один цвет значков); «Закрыть приватные», если они есть. Шторка вдвое ниже прежней,
+ * все цели нажатия крупные и стоят у нижнего края, где достаёт большой палец.
+ * Действия над страницей (закладка, найти, перевод, PDF, ПК-версия, без рекламы и т. д.) живут в `PageOptionsMenu`.
  */
 @Composable
 internal fun ToolsSheet(
@@ -59,12 +54,7 @@ internal fun ToolsSheet(
     onTabs: () -> Unit,
     onExtensions: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
-    val store = browser.store
-    val onPage = !tab.home
-    val hasSite = tab.siteHost() != null
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -73,20 +63,18 @@ internal fun ToolsSheet(
     }
     val act: (() -> Unit) -> () -> Unit = { action -> { close(); action() } }
 
-    // Общие инструменты: список с полными подписями, без тесных плиток.
-    val tools = listOf(
-        SheetAction(HripsIcons.QrScan, "Сканер QR-кодов", onClick = act { onScanQr() }),
-        SheetAction(HripsIcons.Fullscreen, "На весь экран", onClick = act { onFullscreen() }),
-        SheetAction(HripsIcons.Puzzle, "Расширения", onClick = act { onExtensions() }),
-        SheetAction(HripsIcons.Settings, "Настройки", onClick = act { onSettings() }),
+    // Верхний ряд: разделы браузера. Нижний ряд: общие инструменты. Подписи короткие, чтобы влезали в одну строку.
+    val tiles = listOf(
+        SheetTile(HripsIcons.Layers, "Вкладки", browser.tabs.size, act { onTabs() }),
+        SheetTile(HripsIcons.Star, "Закладки", onClick = act { onLibrary(0) }),
+        SheetTile(HripsIcons.History, "История", onClick = act { onLibrary(1) }),
+        SheetTile(HripsIcons.Download, "Загрузки", onClick = act { onDownloads() }),
+        SheetTile(HripsIcons.QrScan, "QR-сканер", onClick = act { onScanQr() }),
+        SheetTile(HripsIcons.Fullscreen, "Весь экран", onClick = act { onFullscreen() }),
+        SheetTile(HripsIcons.Puzzle, "Расширения", onClick = act { onExtensions() }),
+        SheetTile(HripsIcons.Settings, "Настройки", onClick = act { onSettings() }),
     )
-
-    val nav = listOf(
-        SheetNav(HripsIcons.Layers, "Вкладки", browser.tabs.size, act { onTabs() }),
-        SheetNav(HripsIcons.Star, "Закладки", onClick = act { onLibrary(0) }),
-        SheetNav(HripsIcons.History, "История", onClick = act { onLibrary(1) }),
-        SheetNav(HripsIcons.Download, "Загрузки", onClick = act { onDownloads() }),
-    )
+    val cols = 4
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -115,26 +103,25 @@ internal fun ToolsSheet(
                 )
             }
 
-            Row(Modifier.fillMaxWidth().toolsIn(1), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                nav.forEachIndexed { i, n ->
-                    SegTile(
-                        n.icon, n.label, segCorners(nav.size, nav.size, i, 28.dp, 8.dp), Modifier.weight(1f),
-                        height = 80.dp, badge = n.badge, onClick = n.onClick,
-                    )
-                }
-            }
-
-            Column(Modifier.fillMaxWidth().toolsIn(2), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                tools.forEachIndexed { i, t ->
-                    ToolRow(t.icon, t.label, segCorners(tools.size, 1, i, 24.dp, 8.dp), onClick = t.onClick)
+            // Одна сетка 4×2: большие углы только на внешнем контуре, между плитками зазор 2 dp.
+            Column(Modifier.fillMaxWidth().toolsIn(1), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                tiles.chunked(cols).forEachIndexed { r, rowTiles ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        rowTiles.forEachIndexed { c, t ->
+                            SegTile(
+                                t.icon, t.label, segCorners(tiles.size, cols, r * cols + c, 28.dp, 8.dp), Modifier.weight(1f),
+                                height = 84.dp, badge = t.badge, labelSize = 12.sp, labelLines = 1,
+                                iconTint = cs.primary, onClick = t.onClick,
+                            )
+                        }
+                    }
                 }
             }
 
             if (browser.privateCount > 0) {
-                DangerPill("Закрыть приватные (${browser.privateCount})", Modifier.toolsIn(3), onClick = act { browser.closePrivateTabs() })
+                DangerPill("Закрыть приватные (${browser.privateCount})", Modifier.toolsIn(2), onClick = act { browser.closePrivateTabs() })
             }
             Spacer(Modifier.height(16.dp))
         }
     }
 }
-

@@ -1487,6 +1487,8 @@ private fun SwitcherHeader(
 /**
  * «⋯» слева сверху. Сюда переехали вид (список, сетка, карточки) и история: нижняя панель осталась только для
  * самого частого (новая вкладка, приватный режим, счётчик, поиск). Нажимается целиком, как кнопки нижней панели.
+ * Меню того же вида и размера, что меню по удержанию адресной строки и вкладки (SegMenuPopup + SegMenuColumn):
+ * подложка, ширина 231 dp, строки по 36 dp. Встаёт под кнопкой, растёт из её угла.
  */
 @Composable
 private fun SwitcherMenu(
@@ -1503,44 +1505,48 @@ private fun SwitcherMenu(
         BarPill(rememberBarPalette(), Modifier.size(SWITCHER_TOP_H)) {
             BarButton(onClick = { menu = true }) { Icon(HripsIcons.BarMore, "Ещё") }
         }
-        SegMenu(expanded = menu, onDismiss = { menu = false }) {
+        SegMenuPopup(
+            visible = menu,
+            onDismiss = { menu = false },
+            position = rememberBelowStartMenuPosition(),
+            origin = TransformOrigin(0f, 0f),
+        ) {
+            val act: (() -> Unit) -> () -> Unit = { action -> { menu = false; action() } }
             val views = listOf(
                 Triple(0, "Список", HripsIcons.Rows),
                 Triple(1, "Сетка", HripsIcons.Grid),
                 Triple(2, "Карточки", HripsIcons.Layers),
+            ).map { (v, label, icon) ->
+                MenuEntry(icon, label, checked = v == view, onClick = act { onView(v) })
+            }
+            val second = buildList {
+                add(MenuEntry(HripsIcons.History, "История", onClick = act(onHistory)))
+                if (!privatePage) {
+                    add(
+                        MenuEntry(
+                            HripsIcons.History,
+                            if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые",
+                            enabled = closedCount > 0,
+                            onClick = act(onClosed),
+                        ),
+                    )
+                }
+            }
+            val third = listOf(
+                MenuEntry(
+                    HripsIcons.Trash,
+                    if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки",
+                    danger = true,
+                    onClick = act(onCloseAll),
+                ),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                views.forEachIndexed { i, (v, label, icon) ->
-                    ToolRow(
-                        icon, label, segCorners(views.size, 1, i, 22.dp, 6.dp),
-                        selected = v == view,
-                        trailing = if (v == view) HripsIcons.Check else null,
-                    ) { menu = false; onView(v) }
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                val hasClosed = !privatePage
-                val n = if (hasClosed) 2 else 1
-                ToolRow(HripsIcons.History, "История", segCorners(n, 1, 0, 22.dp, 6.dp)) { menu = false; onHistory() }
-                if (hasClosed) {
-                    ToolRow(
-                        HripsIcons.History,
-                        if (closedCount > 0) "Недавно закрытые ($closedCount)" else "Недавно закрытые",
-                        segCorners(n, 1, 1, 22.dp, 6.dp),
-                        enabled = closedCount > 0,
-                    ) { menu = false; onClosed() }
-                }
-            }
-            ToolRow(
-                HripsIcons.Trash, if (privatePage) "Закрыть приватные вкладки" else "Закрыть все вкладки",
-                Corners.all(22.dp), danger = true,
-            ) { menu = false; onCloseAll() }
+            SegMenuColumn(listOf(views, second, third))
         }
     }
 }
 
 /**
- * Меню экрана вкладок в стиле меню инструментов: панель surfaceContainer с большим скруглением, внутри сегментные
+ * Меню выбора группы в стиле меню инструментов: панель surfaceContainer с большим скруглением, внутри сегментные
  * группы строк (внешние углы большие, внутренние маленькие, при нажатии строка округляется).
  */
 @Composable
@@ -2159,7 +2165,7 @@ private fun SelectBadge(on: Boolean, modifier: Modifier = Modifier) {
 }
 
 /**
- * Меню по удержанию вкладки, как у адресной строки: сегменты без подложки. Внизу отдельным сегментом «Закрыть все».
+ * Меню по удержанию вкладки, как у адресной строки: сегменты на подложке. Внизу отдельным сегментом «Закрыть все».
  * «Переместить» открывает список групп прямо в этом же окне. «Новая группа» уходит в диалог выше по дереву.
  */
 @Composable

@@ -204,6 +204,8 @@ internal fun SegTile(
     badge: Int? = null,
     labelSize: androidx.compose.ui.unit.TextUnit = 11.5.sp,
     labelLines: Int = 2,
+    // Свой цвет значка в выключенном состоянии (по умолчанию onSurfaceVariant).
+    iconTint: Color? = null,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -222,7 +224,7 @@ internal fun SegTile(
             verticalArrangement = Arrangement.Center,
         ) {
             Box {
-                Icon(icon, null, Modifier.size(24.dp), tint = if (on) cs.primary else cs.onSurfaceVariant)
+                Icon(icon, null, Modifier.size(24.dp), tint = if (on) cs.primary else iconTint ?: cs.onSurfaceVariant)
                 if (badge != null) {
                     Box(
                         Modifier
