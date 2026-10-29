@@ -25,11 +25,10 @@
   var view = null;          // { host, root, scroller, ... } пока читалка открыта
 
   // ---------- связь с приложением ----------
-  // Только sendNativeMessage (как у остальных встроенных расширений). Команды от приложения приходят ответом на
-  // «длинный запрос» poll: приложение держит ответ, пока ему нечего сказать, и отдаёт его, когда нужна команда.
+  // Страница -> приложение: sendNativeMessage (как у остальных встроенных расширений). Команды приложения приходят
+  // обратно через фоновый скрипт (клик по browserAction -> tabs.sendMessage), см. background.js.
 
   var attempts = 0;
-  var polling = false;
 
   // Приложение может подключить расширение к вкладке позже, чем страница загрузилась, поэтому не сдаёмся:
   // пауза растёт до 5 секунд и остаётся такой (раньше после десяти неудач связь пропадала до перезагрузки страницы).
@@ -64,50 +63,16 @@
     send({ t: 'state', active: !!view }, function (ok) { if (!ok) retryLater(report); });
   }
 
-  // Запрос «poll» может потеряться (приложение пересоздало делегат, страница вернулась из кэша, связь оборвалась):
-  // тогда promise не завершится никогда. Поэтому у каждого запроса есть номер, а сторож перезапускает цепочку, если
-  // ответа нет дольше, чем приложение вообще держит запрос (там 5 с). Ответ устаревшего запроса игнорируется.
-  var pollGen = 0;
-  var pollSince = 0;
-  var POLL_DEAD_MS = 15000;
-
-  function poll() {
-    if (polling) return;
-    polling = true;
-    var gen = ++pollGen;
-    pollSince = Date.now();
-    send({ t: 'poll' }, function (ok, r) {
-      if (gen !== pollGen) return;   // этот запрос уже заменён новым
-      polling = false;
-      if (!ok) {
-        // Приложение ещё не подключило делегат к этой вкладке (или связь оборвалась): пробуем снова.
-        if (attempts < 3) { try { console.log('[hripsReader] poll не прошёл, попытка ' + (attempts + 1)); } catch (e) {} }
-        retryLater(poll);
-        return;
-      }
-      var cmd = r && r.cmd;
-      // Следующий запрос назначаем ДО выполнения команды: любая ошибка в команде не должна обрывать связь
-      // (раньше после исключения в onCommand цепочка «poll» умирала до перезагрузки страницы).
-      setTimeout(poll, cmd ? 0 : 50);
-      if (cmd) {
-        try { onCommand(r); } catch (e) {
-          var m = 'ошибка команды: ' + (e && e.message || e);
-          log(m);
-          send({ t: 'fail', why: m });
-        }
-      }
-    });
-  }
-
-  function restartPoll(why) {
-    log('poll перезапущен: ' + why);
-    polling = false;
-    poll();
-  }
-
-  setInterval(function () {
-    if (polling && Date.now() - pollSince > POLL_DEAD_MS) restartPoll('нет ответа ' + Math.round((Date.now() - pollSince) / 1000) + ' с');
-  }, 5000);
+  // Команды приходят от фонового скрипта (browser.tabs.sendMessage), см. background.js.
+  browser.runtime.onMessage.addListener(function (msg) {
+    if (!msg || !msg.cmd) return undefined;
+    try { onCommand(msg); } catch (e) {
+      var m = 'ошибка команды: ' + (e && e.message || e);
+      log(m);
+      send({ t: 'fail', why: m });
+    }
+    return Promise.resolve({ ok: true });
+  });
 
   function onCommand(msg) {
     var cmd = msg && msg.cmd;
@@ -521,11 +486,7 @@
   // Единственное, что работает всё время, это ожидание команды (один висящий запрос).
   log('скрипт запущен, Readability ' + (typeof Readability === 'function' ? 'есть' : 'НЕТ'));
   hello();
-  poll();
 
   // Возврат на страницу из кэша «назад/вперёд»: состояние приложения могло сброситься.
-  window.addEventListener('pageshow', function (ev) { if (ev.persisted) { report(); restartPoll('возврат из кэша'); } });
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && polling && Date.now() - pollSince > POLL_DEAD_MS) restartPoll('вкладка снова видна');
-  });
+  window.addEventListener('pageshow', function (ev) { if (ev.persisted) report(); });
 })();

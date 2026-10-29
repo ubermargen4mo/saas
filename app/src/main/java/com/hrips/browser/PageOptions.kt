@@ -283,11 +283,11 @@ private fun RoundButton(
 }
 
 @Composable
-private fun AppIcon(bmp: ImageBitmap) {
+internal fun AppIcon(bmp: ImageBitmap) {
     Image(bmp, null, Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)))
 }
 
-private fun Drawable.toIconBitmap(px: Int): ImageBitmap {
+internal fun Drawable.toIconBitmap(px: Int): ImageBitmap {
     val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bmp)
     setBounds(0, 0, px, px)

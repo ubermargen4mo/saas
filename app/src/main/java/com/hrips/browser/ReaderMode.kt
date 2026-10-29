@@ -12,10 +12,10 @@ import org.mozilla.geckoview.WebExtension
  * от Mozilla и рисует её поверх страницы (закрытый shadow DOM). Адрес, история и сама страница не меняются:
  * «назад» закрывает читалку, перезагрузка и переход возвращают обычный вид.
  *
- * В отличие от остальных расширений здесь нужна связь в обе стороны. Порты (`connectNative`) в содержимом страницы
- * ненадёжны, поэтому всё идёт через `sendNativeMessage`: страница присылает состояние («читалка
- * открыта») и ошибку разбора, а команды `toggle` / `open` / `close` / `ping` мы отдаём ответом на её висящий
- * запрос `poll`.
+ * Связь: страница -> приложение через `sendNativeMessage` («hello», «state», «fail», «log»). Приложение -> страница
+ * идёт кликом по действию расширения ([WebExtension.Action.click]): фоновый скрипт получает `browserAction.onClicked`
+ * и пересылает команду в страницу активной вкладки. Раньше команды отдавались ответом на висящий запрос страницы,
+ * но в GeckoView такой ответ до страницы не доходил (по журналу: запрос «забран», а страница молчит).
  * Текст статьи в приложение не отправляется и нигде не хранится; расширение помнит только размер шрифта,
  * гарнитуру и тему читалки.
  *
@@ -23,54 +23,20 @@ import org.mozilla.geckoview.WebExtension
  */
 object ReaderMode {
     private const val NATIVE_APP = "hripsReader"
-    private const val EXTENSION_ID = "reader@hrips.app"
+    const val EXTENSION_ID = "reader@hrips.app"
 
     private const val TAG = "Reader"
 
     // Страница может выйти на связь с паузой до 5 секунд (JS повторяет «poll» с растущей паузой), поэтому ждём дольше.
     private const val ANSWER_MS = 8_000L
 
-    // Висящий «poll» не держим дольше этого: отвечаем пустым ответом, и страница тут же присылает новый. Так цепочка
-    // «poll» сама лечится: если страница потеряла свой запрос (перезагрузка скрипта, кэш «назад/вперёд», сбой связи),
-    // за несколько секунд она снова на связи, а не молчит до перезагрузки вкладки.
-    private const val POLL_HOLD_MS = 5_000L
-
     private class Binding(
         val onState: (active: Boolean) -> Unit,
         val onFail: () -> Unit,
         val onUnavailable: () -> Unit,
     ) {
-        /** Висящий ответ на «poll» страницы: им отдаём команду. */
-        var pending: GeckoResult<Any>? = null
-
-        /** Таймер, который по истечении [POLL_HOLD_MS] отпускает висящий «poll» пустым ответом. */
-        var holdTimer: Runnable? = null
-
-        /** Забирает висящий «poll» (и гасит его таймер). null, если страница сейчас не ждёт. */
-        fun takePending(): GeckoResult<Any>? {
-            holdTimer?.let { MainThread.handler.removeCallbacks(it) }
-            holdTimer = null
-            val p = pending
-            pending = null
-            return p
-        }
-
-        /** Запоминает новый висящий «poll» и ставит ему срок жизни. */
-        fun hold(r: GeckoResult<Any>) {
-            pending = r
-            val t = Runnable {
-                if (pending === r) {
-                    holdTimer = null
-                    pending = null
-                    runCatching { r.complete(JSONObject()) }
-                }
-            }
-            holdTimer = t
-            MainThread.handler.postDelayed(t, POLL_HOLD_MS)
-        }
-
-        /** Команда, которую некому было отдать (страница ещё не вышла на связь): уйдёт с ближайшим «poll». */
-        var queued: String? = null
+        /** Читалка сейчас открыта (по последнему «state» страницы). */
+        var active = false
 
         /** Ждём ответ страницы («state» или «fail») на последнюю команду; по таймеру сообщаем, что страница молчит. */
         var waiting: Runnable? = null
@@ -81,13 +47,21 @@ object ReaderMode {
         /** Когда отправили последнюю команду (для журнала: за сколько страница ответила). */
         var postedAt = 0L
 
-        var polls = 0
         var seq = 0
 
         fun answered() {
             waiting?.let { MainThread.handler.removeCallbacks(it) }
             waiting = null
         }
+    }
+
+    /** Действие расширения: клик по нему и есть команда «открыть/закрыть читалку» для активной вкладки. */
+    private var action: WebExtension.Action? = null
+
+    /** Вызывается из [Extensions]: у встроенного расширения читалки приходит своё действие, в список кнопок его не кладём. */
+    fun onAction(a: WebExtension.Action) {
+        action = a
+        AppLog.i(TAG) { "действие расширения получено" }
     }
 
     private val sessions = java.util.WeakHashMap<GeckoSession, Binding>()
@@ -185,7 +159,7 @@ object ReaderMode {
                             "state" -> {
                                 val active = json.optBoolean("active")
                                 AppLog.i(TAG) { "страница сообщила: читалка ${if (active) "открыта" else "закрыта"}" }
-                                MainThread.handler.post { binding.answered(); binding.onState(active) }
+                                MainThread.handler.post { binding.active = active; binding.answered(); binding.onState(active) }
                                 GeckoResult.fromValue(JSONObject())
                             }
                             "fail" -> {
@@ -194,22 +168,8 @@ object ReaderMode {
                                 GeckoResult.fromValue(JSONObject())
                             }
                             "poll" -> {
-                                // Новый запрос заменяет старый (страница перезагрузилась). Если команда ждала связи, отдаём её сразу.
-                                val r = GeckoResult<Any>()
-                                MainThread.handler.post {
-                                    binding.polls++
-                                    binding.takePending()?.let { old -> runCatching { old.complete(JSONObject()) } }
-                                    val q = binding.queued
-                                    if (q != null) {
-                                        binding.queued = null
-                                        AppLog.i(TAG) { "poll #${binding.polls}: отдаю отложенную команду «$q»" }
-                                        r.complete(JSONObject().put("cmd", q))
-                                    } else {
-                                        binding.hold(r)
-                                        if (binding.polls <= 3) AppLog.i(TAG) { "poll #${binding.polls}: жду команду" }
-                                    }
-                                }
-                                r
+                                // Старые версии скрипта (до 1.5) ещё могут слать poll: отвечаем сразу, ничего не держим.
+                                GeckoResult.fromValue(JSONObject())
                             }
                             else -> {
                                 AppLog.w(TAG, "неизвестный тип сообщения: «$type»")
@@ -226,33 +186,28 @@ object ReaderMode {
         }
     }
 
-    private fun post(binding: Binding, cmd: String) {
+    private fun post(binding: Binding, cmd: String): Boolean {
         val n = ++binding.seq
         binding.postedAt = android.os.SystemClock.elapsedRealtime()
-        val pending = binding.takePending()
-        if (pending != null) {
-            AppLog.i(TAG) { "команда #$n «$cmd»: отдаю сразу, страница ждёт (hello=${binding.pageReady})" }
-            runCatching { pending.complete(JSONObject().put("cmd", cmd)) }
-                .onFailure { AppLog.w(TAG, "не удалось отдать команду «$cmd»", it) }
-        } else {
-            // Страница ещё не вышла на связь (только что загрузилась): команда уйдёт с её первым «poll».
-            binding.queued = cmd
-            AppLog.i(TAG) { "команда #$n «$cmd»: страницы на связи нет, откладываю (hello=${binding.pageReady}, poll-ов=${binding.polls})" }
+        val a = action
+        if (a == null) {
+            AppLog.w(TAG, "команда #$n «$cmd»: у расширения нет действия (клик отправить некуда)")
+            return false
+        }
+        AppLog.i(TAG) { "команда #$n «$cmd»: клик по действию (hello=${binding.pageReady})" }
+        runCatching { a.click() }.onFailure {
+            AppLog.w(TAG, "не удалось кликнуть по действию «$cmd»", it)
+            return false
         }
         binding.answered()
         val timeout = Runnable {
             binding.waiting = null
-            val hadQueue = binding.queued != null
-            binding.queued = null
-            AppLog.w(
-                TAG,
-                "команда #$n «$cmd»: страница не ответила за ${ANSWER_MS / 1000} с " +
-                    "(hello=${binding.pageReady}, poll-ов=${binding.polls}, команда так и не была забрана=$hadQueue)",
-            )
+            AppLog.w(TAG, "команда #$n «$cmd»: страница не ответила за ${ANSWER_MS / 1000} с (hello=${binding.pageReady})")
             binding.onUnavailable()
         }
         binding.waiting = timeout
         MainThread.handler.postDelayed(timeout, ANSWER_MS)
+        return true
     }
 
     /** Открывает читалку, а если она открыта, закрывает. false, если расширение к вкладке не подключено. */
@@ -267,8 +222,7 @@ object ReaderMode {
             return false
         }
         AppLog.i(TAG) { "toggle: запрос" }
-        post(b, "toggle")
-        return true
+        return post(b, "toggle")
     }
 
     /** Почему [toggle] вернул false: для сообщения пользователю. */
@@ -280,19 +234,21 @@ object ReaderMode {
 
     fun close(session: GeckoSession) {
         sessions[session]?.let {
-            AppLog.i(TAG) { "close: запрос" }
-            post(it, "close")
+            // Клик по действию всегда «переключить»: закрываем, только если читалка открыта.
+            if (it.active) {
+                AppLog.i(TAG) { "close: запрос" }
+                post(it, "toggle")
+            }
         }
     }
 
     /** Новая загрузка в сессии: ответ и команда прежней страницы больше ничего не значат. */
     fun reset(session: GeckoSession) {
         sessions[session]?.let { b ->
-            AppLog.i(TAG) { "новая загрузка: сбрасываю состояние (hello=${b.pageReady}, была команда=${b.queued != null})" }
+            AppLog.i(TAG) { "новая загрузка: сбрасываю состояние (hello=${b.pageReady})" }
             b.answered()
-            b.queued = null
             b.pageReady = false
-            b.takePending()?.let { runCatching { it.complete(JSONObject()) } }
+            b.active = false
         }
     }
 }

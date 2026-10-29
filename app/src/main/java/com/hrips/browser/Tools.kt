@@ -74,6 +74,7 @@ private class MenuAction(
     val label: String,
     val checked: Boolean = false,
     val trailing: ImageVector? = null,
+    val leading: (@Composable () -> Unit)? = null,
     val onClick: () -> Unit,
 )
 
@@ -109,6 +110,11 @@ private fun ToolsPopup(
     val store = browser.store
     val onPage = !tab.home
     val hasSite = tab.siteHost() != null
+    // Приложение сайта (если есть): его значок и название вместо общего «В приложении». Системный запрос, не на главном потоке.
+    val siteApp by androidx.compose.runtime.produceState<PageActions.AppTarget?>(null, tab.url, hasSite) {
+        value = if (hasSite) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { PageActions.appFor(context, tab.url) } else null
+    }
+    val siteAppIcon = remember(siteApp) { siteApp?.icon?.toIconBitmap(96) }
     var sub by remember { mutableStateOf(false) }
     LaunchedEffect(expanded) { if (!expanded) sub = false }
 
@@ -225,7 +231,11 @@ private fun ToolsPopup(
                                 val back = tab.translated || tab.translating
                                 add(MenuAction(HripsIcons.Translate, if (back) "Показать оригинал" else "Перевести", back) { onDismiss(); PageActions.translate(tab, browser) })
                             }
-                            if (hasSite) add(MenuAction(HripsIcons.Open, "В приложении") { onDismiss(); PageActions.openInApp(context, tab.url) })
+                            if (hasSite) add(MenuAction(
+                                HripsIcons.Open,
+                                siteApp?.label?.let { "Открыть в $it" } ?: "В приложении",
+                                leading = siteAppIcon?.let { bmp -> { AppIcon(bmp) } },
+                            ) { onDismiss(); PageActions.openInApp(context, tab.url) })
                             add(MenuAction(HripsIcons.FilePdf, "Сохранить PDF") { onDismiss(); PageActions.savePdf(tab, browser.downloads) })
                             add(MenuAction(HripsIcons.Capture, "Снимок") { onDismiss(); onScreenshot() })
                             add(MenuAction(HripsIcons.PlusCircle, "Добавить в…", trailing = HripsIcons.ChevronRight) { sub = true })
@@ -235,7 +245,7 @@ private fun ToolsPopup(
                     }
                     Column(Modifier.fillMaxWidth().toolsIn(index++), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         rows.forEachIndexed { i, a ->
-                            ToolRow(a.icon, a.label, segCorners(rows.size, 1, i, 22.dp, 6.dp), trailing = a.trailing, onClick = a.onClick)
+                            ToolRow(a.icon, a.label, segCorners(rows.size, 1, i, 22.dp, 6.dp), trailing = a.trailing, leading = a.leading, onClick = a.onClick)
                         }
                     }
 

@@ -146,6 +146,11 @@ class Extensions(private val runtime: GeckoRuntime) {
     private fun attach(ext: WebExtension) {
         ext.setActionDelegate(object : WebExtension.ActionDelegate {
             override fun onBrowserAction(extension: WebExtension, session: GeckoSession?, action: WebExtension.Action) {
+                if (extension.id == ReaderMode.EXTENSION_ID) {
+                    // Действие читалки служит каналом команд из приложения, кнопкой в списке оно не является.
+                    if (session == null) ReaderMode.onAction(action)
+                    return
+                }
                 if (session == null) actions[extension.id] = action
             }
 
