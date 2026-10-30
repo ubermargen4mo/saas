@@ -1,0 +1,269 @@
+package com.hrips.browser
+
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
+import android.net.Uri
+import android.os.Build
+import android.view.PixelCopy
+import android.view.View
+import android.view.WindowManager
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.runBlocking
+import org.mozilla.geckoview.TranslationsController
+
+object PageActions {
+
+    fun share(context: Context, tab: Tab) {
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, tab.url)
+            .putExtra(Intent.EXTRA_SUBJECT, tab.title)
+        try {
+            context.startActivity(Intent.createChooser(send, null))
+        } catch (e: ActivityNotFoundException) {
+            Notices.show("Нет приложения для отправки")
+        }
+    }
+
+    /** Приложение, которое открывает адрес страницы (не браузер): имя и значок. Нет такого - null. Запрос к системе синхронный, звать не с главного потока. */
+    class AppTarget(val label: String, val icon: android.graphics.drawable.Drawable)
+
+    @Suppress("DEPRECATION")
+    fun appFor(context: Context, url: String): AppTarget? = runCatching {
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val pm = context.packageManager
+        val all = if (Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(view, PackageManager.ResolveInfoFlags.of((PackageManager.MATCH_ALL or PackageManager.GET_RESOLVED_FILTER).toLong()))
+        } else {
+            pm.queryIntentActivities(view, PackageManager.MATCH_ALL or PackageManager.GET_RESOLVED_FILTER)
+        }
+        // Без GET_RESOLVED_FILTER система не заполняет ResolveInfo.filter, и приложение сайта никогда не находилось.
+        // У браузеров фильтр без адреса сайта (любые ссылки), у приложений сайта он с конкретным адресом.
+        // Без QUERY_ALL_PACKAGES (Android 11+) приложений сайтов в списке нет вовсе: видны одни браузеры.
+        val others = all.filter { it.activityInfo.packageName != context.packageName }
+        val app = others.firstOrNull { it.filter?.authoritiesIterator()?.hasNext() == true }
+        AppLog.i("OpenInApp") {
+            "кандидатов ${all.size}, не наших ${others.size}, с адресом сайта ${others.count { it.filter?.authoritiesIterator()?.hasNext() == true }}, " +
+                "выбрано ${app?.activityInfo?.packageName ?: "ничего"}"
+        }
+        if (app == null) return@runCatching null
+        AppTarget(app.loadLabel(pm).toString(), app.loadIcon(pm))
+    }.onFailure { AppLog.w("OpenInApp", "не удалось найти приложение сайта", it) }.getOrNull()
+
+    fun openInApp(context: Context, url: String) {
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val none = { Notices.show("Для этого сайта нет приложения") }
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                context.startActivity(view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER))
+            } else {
+                val app = context.packageManager.queryIntentActivities(view, PackageManager.MATCH_ALL or PackageManager.GET_RESOLVED_FILTER).firstOrNull {
+                    it.activityInfo.packageName != context.packageName && it.filter?.authoritiesIterator()?.hasNext() == true
+                }
+                if (app == null) none() else context.startActivity(view.setPackage(app.activityInfo.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        } catch (e: ActivityNotFoundException) {
+            none()
+        }
+    }
+
+    /**
+     * Перевод страницы. Основной путь: встроенный перевод Gecko (Firefox Translations), как в Fenix. Он работает на
+     * устройстве: ни адрес, ни текст страницы никуда не отправляются, страница переводится на месте (входы и закрытые
+     * страницы не ломаются). Если для пары языков ещё нет моделей, сначала спрашиваем о скачивании
+     * ([Browser.translatePrompt]). Повторное нажатие на переведённой странице возвращает оригинал.
+     * Запасной путь [googleFallback] нужен, когда встроенный перевод не умеет язык страницы.
+     */
+    fun translate(tab: Tab, browser: Browser) {
+        if (tab.translated || tab.translating) {
+            restoreOriginal(tab)
+            return
+        }
+        val from = tab.translateLang
+        val to = (tab.translateTo ?: Locale.getDefault().language).ifBlank { "ru" }
+        if (from == null) {
+            googleFallback(tab, "Язык страницы не определён или не поддерживается встроенным переводом")
+            return
+        }
+        if (from.equals(to, ignoreCase = true)) {
+            Notices.show("Страница уже на вашем языке")
+            return
+        }
+        AppLog.i("Translate") { "запрос перевода $from -> $to" }
+        try {
+            TranslationsController.RuntimeTranslation.checkPairDownloadSize(from, to).accept({ bytes ->
+                val size = bytes ?: 0L
+                if (size > 0L) browser.translatePrompt = TranslatePrompt(tab, from, to, size) else startTranslate(tab, from, to)
+            }, { e ->
+                AppLog.w("Translate", "не удалось проверить размер языковых моделей", e)
+                googleFallback(tab, "Встроенный перевод недоступен")
+            })
+        } catch (e: Exception) {
+            AppLog.w("Translate", "встроенный перевод недоступен", e)
+            googleFallback(tab, "Встроенный перевод недоступен")
+        }
+    }
+
+    /** Запускает перевод; при необходимости GeckoView сам скачает языковые модели. */
+    fun startTranslate(tab: Tab, from: String, to: String) {
+        val translation = tab.session.sessionTranslation
+        if (translation == null) {
+            googleFallback(tab, "Встроенный перевод недоступен")
+            return
+        }
+        tab.translating = true
+        Notices.show("Перевожу страницу…")
+        val options = TranslationsController.SessionTranslation.TranslationOptions.Builder().downloadModel(true).build()
+        translation.translate(from, to, options).accept({
+            AppLog.i("Translate") { "перевод $from -> $to запущен" }
+        }, { e ->
+            tab.translating = false
+            AppLog.w("Translate", "перевод $from -> $to не удался", e)
+            Notices.show("Не удалось перевести страницу")
+        })
+    }
+
+    fun restoreOriginal(tab: Tab) {
+        val translation = tab.session.sessionTranslation ?: return
+        translation.restoreOriginalPage().accept({
+            tab.translated = false
+            tab.translating = false
+        }, { e ->
+            AppLog.w("Translate", "не удалось вернуть оригинал", e)
+            Notices.show("Не удалось вернуть оригинал")
+        })
+    }
+
+    /** Прокси Google Translate: адрес страницы уходит в Google, поэтому только в обычных вкладках и с предупреждением. */
+    private fun googleFallback(tab: Tab, reason: String) {
+        if (tab.isPrivate) {
+            Notices.show("$reason. В приватной вкладке перевод через Google выключен")
+            return
+        }
+        Notices.show("$reason. Открываю через Google Translate: адрес страницы будет отправлен в Google")
+        val lang = Locale.getDefault().language.ifBlank { "ru" }
+        tab.load("https://translate.google.com/translate?sl=auto&tl=$lang&u=" + Uri.encode(tab.url))
+    }
+
+    fun languageName(code: String): String =
+        Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code }
+
+    fun isTranslated(tab: Tab): Boolean {
+        val h = siteKey(tab.url) ?: return false
+        return h == "translate.google.com" || h.endsWith(".translate.goog")
+    }
+
+    fun addToStartPage(context: Context, store: Store, tab: Tab) {
+        if (store.speedDial.any { it.url == tab.url }) {
+            Notices.show("Уже есть на начальной странице")
+            return
+        }
+        store.addDial(tab.url, tab.title.ifBlank { tab.siteHost() ?: tab.url })
+        Notices.show("Добавлено на начальную страницу")
+    }
+
+    fun addToHomeScreen(context: Context, tab: Tab) {
+        if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
+            Notices.show("Лаунчер не поддерживает ярлыки")
+            return
+        }
+        val host = tab.siteHost() ?: return
+        val url = tab.url
+        val label = tab.title.ifBlank { host }.take(24)
+        val private = tab.isPrivate
+        // Значок сайта (как в Fenix) достаём в фоне: загрузка может ходить в сеть. В приватной вкладке лишних запросов вне
+        // приватного режима не делаем, там и в случае отсутствия значка рисуем букву на цветном фоне.
+        AppExecutors.startThread("hrips-shortcut") {
+            val icon = if (private) null else runCatching { runBlocking { Favicons.load(context.applicationContext, host) } }
+                .getOrNull()?.asAndroidBitmap()?.takeIf { it.width >= MIN_SHORTCUT_ICON_PX }
+            MainThread.run { pinShortcut(context, url, label, host, icon) }
+        }
+    }
+
+    private const val MIN_SHORTCUT_ICON_PX = 48
+
+    private fun pinShortcut(context: Context, url: String, label: String, host: String, favicon: Bitmap?) {
+        val palette = intArrayOf(0xFF5B4BB5.toInt(), 0xFF00796B.toInt(), 0xFFC2410C.toInt(), 0xFF1D4ED8.toInt(), 0xFFA21CAF.toInt(), 0xFF4D7C0F.toInt())
+        val bmp = Bitmap.createBitmap(216, 216, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        if (favicon != null) {
+            // Значок по центру безопасной зоны адаптивной иконки (внутренние две трети) на белом фоне.
+            c.drawColor(0xFFFFFFFF.toInt())
+            val src = if (favicon.config == Bitmap.Config.HARDWARE) favicon.copy(Bitmap.Config.ARGB_8888, false) else favicon
+            val scaled = Bitmap.createScaledBitmap(src, 120, 120, true)
+            c.drawBitmap(scaled, 48f, 48f, Paint(Paint.FILTER_BITMAP_FLAG))
+        } else {
+            c.drawColor(palette[Math.floorMod(host.hashCode(), palette.size)])
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt(); textSize = 100f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+            c.drawText(host.first().uppercase(), 108f, 108f - (p.descent() + p.ascent()) / 2, p)
+        }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setClass(context, MainActivity::class.java)
+        val info = ShortcutInfoCompat.Builder(context, "site-" + url.hashCode())
+            .setShortLabel(label)
+            .setIcon(IconCompat.createWithAdaptiveBitmap(bmp))
+            .setIntent(intent)
+            .build()
+        ShortcutManagerCompat.requestPinShortcut(context, info, null)
+    }
+
+    private fun safeName(s: String) = sanitizeFileName(s, fallback = "page", maxLength = 80)
+
+    fun savePdf(tab: Tab, downloads: Downloads) {
+        val baseName = safeName(tab.title.ifBlank { tab.siteHost() ?: "page" })
+        val name = if (baseName.endsWith(".pdf", ignoreCase = true)) baseName
+        else "${baseName.take(76)}.pdf"
+        try {
+            tab.saveAsPdf().accept({ stream ->
+                if (stream == null) downloads.toast("Не удалось сохранить PDF")
+                else downloads.saveStream(name, "application/pdf", tab.isPrivate) { stream }
+            }, { downloads.toast("Не удалось сохранить PDF") })
+        } catch (_: Exception) {
+            downloads.toast("Не удалось сохранить PDF")
+        }
+    }
+
+    fun screenshot(activity: Activity?, view: View?, tab: Tab, downloads: Downloads) {
+        if (activity == null || view == null || tab.home || view.width == 0 || view.height == 0 ||
+            (view as? org.mozilla.geckoview.GeckoView)?.session !== tab.session
+        ) {
+            downloads.toast("Нечего снимать"); return
+        }
+        if ((activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0) {
+            downloads.toast("Снимки в приватных вкладках выключены. Включить: Настройки, Конфиденциальность"); return
+        }
+        try {
+            val loc = IntArray(2)
+            view.getLocationInWindow(loc)
+            val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            val rect = Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height)
+            PixelCopy.request(activity.window, rect, bmp, { result ->
+                if (result != PixelCopy.SUCCESS) {
+                    downloads.toast("Не удалось сделать снимок"); return@request
+                }
+                val name = "hrips-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".png"
+                downloads.saveStream(name, "image/png", tab.isPrivate) {
+                    val out = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    ByteArrayInputStream(out.toByteArray())
+                }
+            }, MainThread.handler)
+        } catch (_: Exception) {
+            downloads.toast("Не удалось сделать снимок")
+        }
+    }
+}
