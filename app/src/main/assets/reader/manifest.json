@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "Режим чтения",
+  "description": "Выделяет статью на странице (Readability от Mozilla) и показывает её поверх страницы в удобном для чтения виде. Страница и адрес не меняются, ничего не сохраняется, кроме настроек вида (размер, шрифт, тема).",
+  "version": "1.5",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "reader@hrips.app"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "Readability.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "Режим чтения"
+  }
+}
