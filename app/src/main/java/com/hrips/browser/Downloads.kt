@@ -950,7 +950,27 @@ class Downloads(private val context: Context) {
         context.getSystemService(NotificationManager::class.java).notify(item.id, n)
     }
 
+    /** Файл в папке, выбранной в настройках (дерево SAF). Нет папки или она недоступна: null, сохраняем в системную. */
+    private fun openInChosenFolder(item: DownloadItem): Pair<OutputStream, Uri>? {
+        val tree = prefs.getString("dl_tree", null)?.let { Uri.parse(it) } ?: return null
+        return try {
+            val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
+            val doc = android.provider.DocumentsContract.createDocument(
+                context.contentResolver, parent, item.mime.ifBlank { "application/octet-stream" }, item.name,
+            ) ?: return null
+            val out = context.contentResolver.openOutputStream(doc)
+            if (out == null) {
+                runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, doc) }
+                null
+            } else out to doc
+        } catch (e: Exception) {
+            android.util.Log.w("Downloads", "chosen folder unavailable", e)
+            null
+        }
+    }
+
     private fun openOutput(item: DownloadItem): Pair<OutputStream, Uri> {
+        openInChosenFolder(item)?.let { return it }
         if (Build.VERSION.SDK_INT >= 29) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, item.name)
@@ -980,7 +1000,7 @@ class Downloads(private val context: Context) {
     }
 
     private fun markFinished(uri: Uri) {
-        if (Build.VERSION.SDK_INT >= 29 && uri.scheme == "content") {
+        if (Build.VERSION.SDK_INT >= 29 && uri.scheme == "content" && uri.authority == MediaStore.AUTHORITY) {
             val v = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
             val updated = context.contentResolver.update(uri, v, null, null)
             if (updated != 1) error("Не удалось завершить файл в Загрузках")
@@ -989,7 +1009,9 @@ class Downloads(private val context: Context) {
 
     private fun delete(uri: Uri) {
         runCatching {
-            if (uri.scheme == "content") context.contentResolver.delete(uri, null, null)
+            if (uri.scheme == "content" && uri.authority != MediaStore.AUTHORITY) {
+                android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+            } else if (uri.scheme == "content") context.contentResolver.delete(uri, null, null)
             else uri.path?.let { File(it).delete() }
         }
     }

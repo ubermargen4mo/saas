@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 
 internal val StatusOk = Color(0xFF5DBB7B)
 internal val StatusWarn = Color(0xFFF2C94C)
+internal val StatusBad = Color(0xFFEF6B5F)
 private val StatusInk = Color(0xFF14231A)
 
 /**
@@ -121,75 +124,70 @@ internal fun StatusRow(
 }
 
 /**
- * Шапка «О программе» в духе карточки устройства из Support: плитка с логотипом, название, строки со сведениями
- * (версия, движок, Android) и большая кнопка обновления.
+ * Кнопка обновления на экране «О программе»: акцентная, на всю ширину; над ней строка состояния
+ * («Установлена последняя версия», «Доступна версия …», ошибка). Действие зависит от состояния [Updater].
  */
 @Composable
-internal fun AboutHeader(app: HripsApp, version: String, gecko: String) {
+internal fun UpdateButton(app: HripsApp, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(shape = HripsShapes.XL, color = cs.surfaceContainerHigh, modifier = Modifier.size(width = 136.dp, height = 112.dp)) {
-            Box(contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(R.drawable.logo_hrips),
-                    contentDescription = "hrips",
-                    contentScale = ContentScale.Fit,
-                    colorFilter = ColorFilter.tint(cs.onSurface),
-                    modifier = Modifier.fillMaxWidth(0.62f).height(40.dp),
-                )
-            }
+    val st = Updater.state
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        val note: Pair<String, Boolean>? = when (st) {
+            is Updater.State.UpToDate -> "Установлена последняя версия" to true
+            is Updater.State.Failed -> st.message.ifBlank { "Не удалось проверить обновления" } to false
+            is Updater.State.Available -> "Доступна версия ${st.info.versionName}" + (if (st.info.size > 0) " (${st.info.size / 1_000_000} МБ)" else "") to false
+            is Updater.State.Ready -> "Файл ${st.info.versionName} загружен и проверен" to true
+            else -> null
         }
-        Spacer(Modifier.height(16.dp))
-        Text("hrips", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
-        AboutLine(HripsIcons.Package, if (version.isBlank()) "Версия неизвестна" else "Версия $version", cs.onSurfaceVariant)
-        AboutLine(HripsIcons.Globe, if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko", cs.onSurfaceVariant)
-        AboutLine(HripsIcons.Shield, "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", cs.onSurfaceVariant)
-        if (Updater.available) {
-            Spacer(Modifier.height(16.dp))
-            val st = Updater.state
-            val note: Pair<String, Boolean>? = when (st) {
-                is Updater.State.UpToDate -> "Установлена последняя версия" to true
-                is Updater.State.Failed -> st.message.ifBlank { "Не удалось проверить обновления" } to false
-                is Updater.State.Available -> "Доступна версия ${st.info.versionName}" + (if (st.info.size > 0) " (${st.info.size / 1_000_000} МБ)" else "") to false
-                is Updater.State.Ready -> "Файл ${st.info.versionName} загружен и проверен" to true
-                else -> null
+        note?.let { (text, ok) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(if (ok) HripsIcons.Check else HripsIcons.Alert, null, Modifier.size(18.dp), tint = if (ok) StatusOk else StatusWarn)
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, textAlign = TextAlign.Center)
             }
-            note?.let { (text, ok) ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(if (ok) HripsIcons.Check else HripsIcons.Alert, null, Modifier.size(18.dp), tint = if (ok) StatusOk else StatusWarn)
-                    Text(text, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, textAlign = TextAlign.Center)
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-            val (label, action) = when (st) {
-                is Updater.State.Checking -> "Проверяю…" to null
-                is Updater.State.Available -> "Скачать ${st.info.versionName}" to { Updater.download(app, st.info) }
-                is Updater.State.Downloading -> "Скачиваю ${st.percent}%" to null
-                is Updater.State.Ready -> "Установить ${st.info.versionName}" to { Updater.install(context) }
-                else -> "Проверить обновления" to { Updater.check(app, manual = true) }
-            }
-            Surface(
-                onClick = { action?.invoke() },
-                enabled = action != null,
-                shape = CircleShape,
-                color = cs.inverseSurface,
-                contentColor = cs.inverseOnSurface,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(label, style = MaterialTheme.typography.titleMedium)
-                }
+            Spacer(Modifier.height(12.dp))
+        }
+        val (label, action) = when (st) {
+            is Updater.State.Checking -> "Проверяю…" to null
+            is Updater.State.Available -> "Скачать ${st.info.versionName}" to { Updater.download(app, st.info) }
+            is Updater.State.Downloading -> "Скачиваю ${st.percent}%" to null
+            is Updater.State.Ready -> "Установить ${st.info.versionName}" to { Updater.install(context) }
+            else -> "Проверить обновления" to { Updater.check(app, manual = true) }
+        }
+        Surface(
+            onClick = { action?.invoke() },
+            enabled = action != null,
+            shape = CircleShape,
+            color = cs.primary,
+            contentColor = cs.onPrimary,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(label, style = MaterialTheme.typography.titleMedium)
             }
         }
     }
 }
 
+/** Строка с ползунком: название и значение справа (акцентом), ползунок под ними. Сегмент группы, как у остальных строк. */
 @Composable
-private fun AboutLine(icon: ImageVector, text: String, tint: Color) {
-    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, Modifier.size(16.dp), tint = tint)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = tint)
+internal fun SliderRow(
+    title: String,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    shape: Shape,
+    onChange: (Float) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = shape, color = cs.surfaceContainerHigh, contentColor = cs.onSurface, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                Text(valueText, style = MaterialTheme.typography.labelLarge, color = cs.primary)
+            }
+            Slider(value = value, onValueChange = onChange, valueRange = range, steps = steps)
+        }
     }
 }

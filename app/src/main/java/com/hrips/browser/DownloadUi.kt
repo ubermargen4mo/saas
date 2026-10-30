@@ -72,6 +72,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
@@ -233,8 +235,13 @@ fun DownloadsButton(
 private val ICON_SIZE = 24.dp
 private val RING_SIZE = 32.dp
 
+/** Кольцо загрузки: толщина и волнистость задаются в настройках «Загрузки». */
 @Composable
-private fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
+internal fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
+    val store = (LocalContext.current.applicationContext as HripsApp).store
+    val thick = store.dlRingThick
+    val wavy = store.dlRingWavy
+    val amp = if (wavy) store.dlRingAmp else 0f
     val color = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
     val shown by animateFloatAsState(progress.coerceAtLeast(0f), tween(350), label = "ringProgress")
@@ -246,16 +253,44 @@ private fun DownloadRing(progress: Float, modifier: Modifier = Modifier) {
         )
     } else null
     Canvas(modifier) {
-        val w = 2.5.dp.toPx()
-        val topLeft = Offset(w / 2, w / 2)
-        val arc = Size(size.width - w, size.height - w)
-        drawArc(track, 0f, 360f, false, topLeft, arc, style = Stroke(w))
-        if (progress < 0f) {
-            drawArc(color, rotation?.value ?: 0f, 110f, false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
+        val w = thick.dp.toPx()
+        if (!wavy) {
+            val topLeft = Offset(w / 2, w / 2)
+            val arc = Size(size.width - w, size.height - w)
+            drawArc(track, 0f, 360f, false, topLeft, arc, style = Stroke(w))
+            if (progress < 0f) {
+                drawArc(color, rotation?.value ?: 0f, 110f, false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
+            } else {
+                drawArc(color, -90f, 360f * shown.coerceAtLeast(0.03f), false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
+            }
         } else {
-            drawArc(color, -90f, 360f * shown.coerceAtLeast(0.03f), false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
+            val a = amp.dp.toPx()
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = (size.minDimension - w) / 2f - a
+            val stroke = Stroke(w, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            drawPath(wavyArc(c, r, a, -90f, 359f), track, style = stroke)
+            if (progress < 0f) {
+                drawPath(wavyArc(c, r, a, rotation?.value ?: 0f, 110f), color, style = stroke)
+            } else {
+                drawPath(wavyArc(c, r, a, -90f, 359f * shown.coerceAtLeast(0.03f)), color, style = stroke)
+            }
         }
     }
+}
+
+/** Дуга, радиус которой колеблется синусоидой (9 волн на круг). */
+private fun wavyArc(c: Offset, r: Float, amp: Float, startDeg: Float, sweepDeg: Float): Path {
+    val p = Path()
+    val steps = (kotlin.math.abs(sweepDeg) / 3f).toInt().coerceAtLeast(2)
+    for (i in 0..steps) {
+        val deg = startDeg + sweepDeg * i / steps
+        val rad = Math.toRadians(deg.toDouble())
+        val rr = r + amp * sin(9.0 * rad).toFloat()
+        val x = c.x + rr * kotlin.math.cos(rad).toFloat()
+        val y = c.y + rr * sin(rad).toFloat()
+        if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+    }
+    return p
 }
 
 @Composable

@@ -111,11 +111,7 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         contentScale = ContentScale.Fit,
                         colorFilter = ColorFilter.tint(textColor),
                     )
-                    if (showSearch) {
-                        Spacer(Modifier.height(HripsSpace.L))
-                        StartClock(textColor)
-                        Spacer(Modifier.height(HripsSpace.L))
-                    }
+                    if (showSearch) Spacer(Modifier.height(HripsSpace.XL))
                     val searchHeight = 56.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
                     if (showSearch) Surface(
                         onClick = onSearch,
@@ -314,13 +310,11 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
                         .padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // Квадрат с закруглением, как кнопка «+» в «Часах»: акцентный контейнер, тёмный значок.
-                    Box(
-                        Modifier.size(tile).clip(RoundedCornerShape(tileR)).background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(HripsIcons.Add, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
+                    ShapeBadge(
+                        HripsIcons.Add, tile, badge = Badge.COOKIE9,
+                        container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        content = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(Modifier.height(HripsSpace.S))
                     Text(
                         "Добавить",
@@ -375,38 +369,6 @@ fun StartPage(store: Store, wallpaper: ImageBitmap?, onOpen: (String) -> Unit, o
             confirmButton = { HripsTextButton(onClick = { store.removeDial(e); toDelete = null }) { Text("Удалить") } },
             dismissButton = { HripsTextButton(onClick = { toDelete = null }) { Text("Отмена") } },
         )
-    }
-}
-
-/** Крупные часы и дата над строкой поиска, как в приложении «Часы»: обновляются на границе минуты. */
-@Composable
-private fun StartClock(color: Color) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var now by remember { mutableStateOf(java.time.LocalDateTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = java.time.LocalDateTime.now()
-            kotlinx.coroutines.delay(60_000L - (System.currentTimeMillis() % 60_000L) + 50L)
-        }
-    }
-    val h24 = android.text.format.DateFormat.is24HourFormat(context)
-    val locale = java.util.Locale.getDefault()
-    val time = now.format(java.time.format.DateTimeFormatter.ofPattern(if (h24) "H:mm" else "h:mm", locale))
-    val suffix = if (h24) "" else now.format(java.time.format.DateTimeFormatter.ofPattern("a", locale)).uppercase(locale)
-    val date = now.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM", locale))
-        .replaceFirstChar { it.titlecase(locale) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                time,
-                color = color,
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = androidx.compose.ui.unit.TextUnit(64f, androidx.compose.ui.unit.TextUnitType.Sp)),
-            )
-            if (suffix.isNotEmpty()) {
-                Text(suffix, Modifier.padding(start = 6.dp, bottom = 12.dp), color = color, style = MaterialTheme.typography.titleLarge)
-            }
-        }
-        Text(date, color = color.copy(alpha = 0.8f), style = MaterialTheme.typography.titleMedium)
     }
 }
 

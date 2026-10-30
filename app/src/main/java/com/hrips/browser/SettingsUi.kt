@@ -67,6 +67,8 @@ internal fun toneOf(tone: Int): Tone {
     return when (tone) {
         1 -> Tone(cs.secondary, cs.onSecondary, cs.secondaryContainer, cs.onSecondaryContainer)
         2 -> Tone(cs.tertiary, cs.onTertiary, cs.tertiaryContainer, cs.onTertiaryContainer)
+        // Нейтральный: серый фон как у остальных строк, значок акцентный.
+        3 -> Tone(cs.primary, cs.onPrimary, cs.surfaceContainerHigh, cs.onSurface)
         else -> Tone(cs.primary, cs.onPrimary, cs.primaryContainer, cs.onPrimaryContainer)
     }
 }

@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -98,13 +99,13 @@ import androidx.compose.runtime.compositionLocalOf
 
 enum class SettingsPage(val title: String, val subtitle: String) {
     SEARCH("Поиск", "Поисковая система, подсказки"),
-    HOME("Внешний вид", "Значок приложения, обои"),
+    HOME("Внешний вид", "Иконка приложения, обои"),
     PRIVACY("Конфиденциальность", "Трекеры, очистка данных, приватный режим"),
     PASSWORDS("Пароли и автозаполнение", "Сохранённые пароли, автозаполнение, импорт"),
     PERMISSIONS("Разрешения", "Камера, микрофон, местоположение, уведомления"),
     DESKTOP("Версия для ПК", "Сайты, где она включена"),
     MEDIA("Медиа", "Управление из шторки, картинка в картинке"),
-    DOWNLOADS("Загрузки", "Подтверждение, список файлов"),
+    DOWNLOADS("Загрузки", "Подтверждение, папка, индикатор"),
     PERFORMANCE("Производительность", "Память, фоновые вкладки"),
     ABOUT("О программе", "Версия, движок"),
 }
@@ -138,8 +139,8 @@ private val index = listOf(
     SettingEntry("Поисковая система", "google yandex duckduckgo bing поиск движок", SettingsPage.SEARCH),
     SettingEntry("История поиска", "очистить запросы", SettingsPage.SEARCH),
     SettingEntry("Обои главной страницы", "фон картинка фото", SettingsPage.HOME),
-    SettingEntry("Значок приложения", "иконка лого креветка синяя оранжевая серая icon", SettingsPage.HOME),
-    SettingEntry("Внешний вид", "оформление тема значок обои", SettingsPage.HOME),
+    SettingEntry("Иконка приложения", "значок лого креветка синяя оранжевая серая icon", SettingsPage.HOME),
+    SettingEntry("Внешний вид", "оформление тема иконка значок обои", SettingsPage.HOME),
     SettingEntry("Вкладки на планшете", "панель вкладок сверху снизу слева скрыть показывать", SettingsPage.HOME),
     SettingEntry("Скриншоты в приватных вкладках", "приватный режим снимок экрана", SettingsPage.PRIVACY),
     SettingEntry("Очистить данные", "история cookies куки кэш удалить", SettingsPage.PRIVACY),
@@ -161,7 +162,8 @@ private val index = listOf(
     SettingEntry("Картинка в картинке", "pip видео окно", SettingsPage.MEDIA),
     SettingEntry("Управление в уведомлении", "фоновое воспроизведение музыка шторка", SettingsPage.MEDIA),
     SettingEntry("Спрашивать перед загрузкой", "подтверждение скачивание", SettingsPage.DOWNLOADS),
-    SettingEntry("Список загрузок", "файлы скачанные", SettingsPage.DOWNLOADS),
+    SettingEntry("Папка загрузок", "куда сохраняются файлы каталог", SettingsPage.DOWNLOADS),
+    SettingEntry("Индикатор загрузки", "кольцо волна толщина", SettingsPage.DOWNLOADS),
     SettingEntry("Экономия памяти", "память фоновые вкладки выгрузка suspend performance", SettingsPage.PERFORMANCE),
     SettingEntry("Версия", "о программе движок gecko", SettingsPage.ABOUT),
 )
@@ -352,27 +354,33 @@ private fun QuickAndSections(browser: Browser, app: HripsApp, selected: Settings
         Column(Modifier.toolsIn(0)) { DefaultBrowserRow() }
         Spacer(Modifier.height(12.dp))
 
-        val adState = when {
-            adBlock.error != null -> "Недоступна"
-            adBlock.extension == null -> "Загрузка…"
-            adBlock.enabled -> "Включена"
-            else -> "Выключена"
-        }
         Column(Modifier.toolsIn(1)) {
-            QuickTilesRow {
-                QuickTile(
-                    HripsIcons.Block, "Блокировка рекламы", adState, adBlock.enabled, adBlock.extension != null,
-                    { adBlock.setBlocking(it) }, Modifier.weight(1f),
-                )
-                QuickTile(
-                    HripsIcons.Shield, "Защита от трекеров", if (store.trackingProtection) "Включена" else "Выключена",
-                    store.trackingProtection, true, { browser.setTracking(it) }, Modifier.weight(1f),
-                )
-                QuickTile(
-                    HripsIcons.KeyboardLine, "Подсказки при вводе", if (store.suggestionsOn) "Включены" else "Выключены",
-                    store.suggestionsOn, true, { store.updateSuggestions(it) }, Modifier.weight(1f),
-                )
-            }
+            Group(
+                { sh ->
+                    PanelSwitch(
+                        "Блокировка рекламы",
+                        when {
+                            adBlock.error != null -> "Недоступна"
+                            adBlock.extension == null -> "Загрузка…"
+                            else -> "Скрывает рекламу на сайтах (uBlock Origin)"
+                        },
+                        adBlock.enabled, { adBlock.setBlocking(it) },
+                        enabled = adBlock.extension != null, icon = HripsIcons.Block, shape = sh,
+                    )
+                },
+                { sh ->
+                    PanelSwitch(
+                        "Защита от трекеров", "Блокирует трекеры и слежку за вами",
+                        store.trackingProtection, { browser.setTracking(it) }, icon = HripsIcons.Shield, shape = sh,
+                    )
+                },
+                { sh ->
+                    PanelSwitch(
+                        "Подсказки при вводе", "Варианты запросов от поисковой системы",
+                        store.suggestionsOn, { store.updateSuggestions(it) }, icon = HripsIcons.KeyboardLine, shape = sh,
+                    )
+                },
+            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -399,23 +407,37 @@ private fun DefaultBrowserRow() {
         owner?.lifecycle?.addObserver(obs)
         onDispose { owner?.lifecycle?.removeObserver(obs) }
     }
-    val check: (@Composable () -> Unit)? = if (isDefault) ({ Icon(HripsIcons.Check, null, tint = MaterialTheme.colorScheme.onSecondaryContainer) }) else null
+    val launch: (android.content.Intent) -> Unit = { intent ->
+        try {
+            launcher.launch(intent)
+        } catch (e: Exception) {
+            runCatching { context.startActivity(DefaultBrowser.settingsIntent()) }
+        }
+    }
+    val openSettings = { launch(DefaultBrowser.settingsIntent()) }
+    val makeDefault = { launch(DefaultBrowser.requestIntent(context)) }
+    // Галочка: зелёная, на мягкой зелёной подложке.
+    val check: (@Composable () -> Unit)? = if (isDefault) ({
+        Box(Modifier.size(36.dp).clip(CircleShape).background(StatusOk.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
+            Icon(HripsIcons.Check, null, Modifier.size(20.dp), tint = StatusOk)
+        }
+    }) else null
     HeroBanner(
         title = "Браузер по умолчанию",
-        subtitle = if (isDefault) "hrips открывает ссылки из других приложений" else "Сделать hrips браузером по умолчанию",
+        subtitle = null,
         icon = HripsIcons.Compass,
         badge = Badge.COOKIE9,
-        tone = if (isDefault) 1 else 0,
+        tone = 3,
         badgeSize = 48.dp,
-        onClick = {
-            val intent = if (isDefault) DefaultBrowser.settingsIntent() else DefaultBrowser.requestIntent(context)
-            try {
-                launcher.launch(intent)
-            } catch (e: Exception) {
-                runCatching { context.startActivity(DefaultBrowser.settingsIntent()) }
-            }
-        },
+        onClick = if (isDefault) openSettings else null,
         trailing = check,
+        action = if (isDefault) null else ({
+            Button(
+                shapes = ButtonDefaults.shapes(),
+                onClick = makeDefault,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) { Text("Сделать по умолчанию", style = MaterialTheme.typography.titleSmall) }
+        }),
     )
 }
 
@@ -501,7 +523,7 @@ private fun HomePage(app: HripsApp, onBack: () -> Unit) {
                 },
             )
         }
-        SectionTitle("Значок приложения")
+        SectionTitle("Иконка приложения")
         AppIconPicker()
 
         SectionTitle("Обои главной страницы")
@@ -564,9 +586,9 @@ private fun AppIconPicker() {
                                 if (!isSelected) {
                                     if (AppIcons.set(context, icon)) {
                                         selected = icon
-                                        Notices.show("Значок изменён. На рабочем столе он может обновиться через пару секунд")
+                                        Notices.show("Иконка изменена. На рабочем столе она может обновиться через пару секунд")
                                     } else {
-                                        Notices.show("Не удалось сменить значок")
+                                        Notices.show("Не удалось сменить иконку")
                                     }
                                 }
                             }
@@ -610,9 +632,7 @@ private class StatusCheck(val title: String, val ok: Boolean, val okText: String
 private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
     val store = browser.store
     val context = LocalContext.current
-    var clearHistory by remember { mutableStateOf(true) }
-    var clearCookies by remember { mutableStateOf(false) }
-    var clearCache by remember { mutableStateOf(true) }
+    var showClear by remember { mutableStateOf(false) }
 
     PageScaffold("Конфиденциальность", onBack) {
         val on = store.trackingProtection
@@ -636,17 +656,23 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
         )
         val okCount = checks.count { it.ok }
         val allOk = okCount == checks.size
+        // Зелёный: всё включено; красный: ничего или почти ничего; иначе жёлтый. Дуги того же цвета, что и круг.
+        val tone = when {
+            allOk -> StatusOk
+            okCount * 3 <= checks.size -> StatusBad
+            else -> StatusWarn
+        }
         Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             StatusRing(
                 filled = okCount, total = checks.size,
-                center = if (allOk) StatusOk else StatusWarn,
-                arc = StatusOk,
+                center = tone,
+                arc = tone,
                 icon = if (allOk) HripsIcons.Check else HripsIcons.Alert,
                 size = 120.dp,
             )
             Spacer(Modifier.height(20.dp))
             Text(
-                if (allOk) "Защита включена" else "Защиту можно улучшить",
+                if (allOk) "Защита включена" else if (tone == StatusBad) "Защита почти не включена" else "Защиту можно улучшить",
                 style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center,
             )
@@ -683,30 +709,17 @@ private fun PrivacyPage(browser: Browser, onBack: () -> Unit) {
         NetworkPrivacySection(browser)
 
         SectionTitle("Очистить данные")
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ToggleChip("История", clearHistory, { clearHistory = it }, Modifier.weight(1f))
-            ToggleChip("Cookies", clearCookies, { clearCookies = it }, Modifier.weight(1f))
-            ToggleChip("Кэш", clearCache, { clearCache = it }, Modifier.weight(1f))
-        }
-        Reveal(clearCookies) {
-            Callout("Cookies и данные сайтов: вы выйдете из аккаунтов на сайтах", Modifier.padding(top = 8.dp), icon = HripsIcons.Alert)
-        }
-        Spacer(Modifier.height(12.dp))
-        Button(shapes = ButtonDefaults.shapes(),
-            enabled = clearHistory || clearCookies || clearCache,
-            onClick = {
-                if (clearHistory) { store.clearHistory(); store.clearSearches() }
-                if (clearHistory || clearCache) {
-                    TabThumbs.clear(context)
-                    PageImages.clear(context)
-                    browser.tabs.forEach { it.thumbnail = null }
-                }
-                browser.clearData(clearCookies, clearCache) {
-                    Notices.show("Данные очищены")
-                }
+        Group(
+            { s ->
+                PanelItem(
+                    "Очистить данные", subtitle = "История, cookies, кэш", icon = HripsIcons.Trash,
+                    onClick = { showClear = true },
+                    trailing = { Icon(HripsIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    shape = s,
+                )
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("Очистить", style = MaterialTheme.typography.titleMedium) }
+        )
+        if (showClear) ClearDataSheet(browser) { showClear = false }
     }
 }
 
@@ -730,13 +743,34 @@ private fun PermissionsPage(onSitePermissions: () -> Unit, onBack: () -> Unit) {
     val okCount = system.count { it.third }
 
     PageScaffold("Разрешения", onBack) {
-        HeroBanner(
-            title = "Права в Android",
-            subtitle = "Выдано $okCount из ${system.size}",
-            icon = HripsIcons.ShieldCheck,
-            badge = Badge.PENTAGON,
-            tone = if (okCount == system.size) 1 else 2,
-        )
+        // Сводка: слева список прав с отметками, справа крупное число выданных.
+        val cs = MaterialTheme.colorScheme
+        Row(
+            Modifier.fillMaxWidth().clip(HripsShapes.XL).background(cs.surfaceContainerHigh).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier.weight(1.4f).clip(HripsShapes.ML).background(cs.surfaceContainerLow).padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                system.forEach { (title, _, ok) ->
+                    Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                        Box(Modifier.size(20.dp).clip(CircleShape).background(if (ok) StatusOk else StatusWarn), contentAlignment = Alignment.Center) {
+                            Icon(if (ok) HripsIcons.Check else HripsIcons.Alert, null, Modifier.size(12.dp), tint = Color(0xFF14231A))
+                        }
+                    }
+                }
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "$okCount",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = if (okCount == system.size) StatusOk else StatusWarn,
+                )
+                Text("из ${system.size} выдано", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
+        }
 
         SectionTitle("Сайты")
         Group(
@@ -844,11 +878,30 @@ private fun PerformancePage(browser: Browser, onBack: () -> Unit) {
     }
 }
 
+/** Подпись папки загрузок: путь внутри хранилища из адреса дерева SAF. */
+private fun folderLabel(tree: String?): String {
+    if (tree == null) return "Загрузки (системная папка)"
+    return runCatching {
+        val id = android.provider.DocumentsContract.getTreeDocumentId(Uri.parse(tree))
+        id.substringAfter(':', "").ifBlank { "Внутренняя память" }
+    }.getOrDefault("Выбранная папка")
+}
+
 @Composable
 private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads: () -> Unit) {
     val store = browser.store
-    val downloads = browser.downloads
-    val hasFinished = downloads.items.any { !downloads.isOngoing(it) }
+    val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            store.updateDlTree(uri.toString())
+        }
+    }
     PageScaffold("Загрузки", onBack) {
         Group(
             { s ->
@@ -858,16 +911,75 @@ private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads:
                     shape = s,
                 )
             },
+            { s ->
+                PanelItem(
+                    "Папка загрузок", subtitle = folderLabel(store.dlTree), icon = HripsIcons.Folder,
+                    onClick = { picker.launch(null) },
+                    trailing = { Icon(HripsIcons.ChevronRight, null, tint = cs.onSurfaceVariant) },
+                    shape = s,
+                )
+            },
         )
-        SectionTitle("Файлы")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionTile(HripsIcons.File, "Список загрузок", "Скачанные файлы и текущие загрузки", onOpenDownloads, Modifier.weight(1f))
-            ActionTile(
-                HripsIcons.Trash, "Очистить список", "Сами файлы останутся на устройстве",
-                { downloads.clearFinished() }, Modifier.weight(1f), enabled = hasFinished,
-            )
+        if (store.dlTree != null) {
+            HripsTextButton(
+                onClick = {
+                    store.dlTree?.let { t ->
+                        runCatching {
+                            context.contentResolver.releasePersistableUriPermission(
+                                Uri.parse(t), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                            )
+                        }
+                    }
+                    store.updateDlTree(null)
+                },
+            ) { Text("Вернуть системную папку «Загрузки»") }
         }
-        Callout("Файлы сохраняются в «Загрузки» на устройстве", Modifier.padding(top = 8.dp), icon = HripsIcons.Folder)
+        Callout(
+            "Новые загрузки сохраняются в выбранную папку. Файлы, скачанные раньше, остаются на месте.",
+            Modifier.padding(top = 8.dp), icon = HripsIcons.Folder,
+        )
+
+        SectionTitle("Индикатор загрузки")
+        val demo by androidx.compose.animation.core.rememberInfiniteTransition(label = "ringDemo").animateFloat(
+            0.08f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(
+                androidx.compose.animation.core.tween(3600, easing = androidx.compose.animation.core.LinearEasing),
+                androidx.compose.animation.core.RepeatMode.Restart,
+            ),
+            label = "demo",
+        )
+        Box(
+            Modifier.fillMaxWidth().height(150.dp).clip(HripsShapes.XL).background(cs.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Настоящий размер кольца (32 dp) с кнопкой загрузок внутри, увеличенный для просмотра.
+            Box(Modifier.size(48.dp).graphicsLayer { scaleX = 2.6f; scaleY = 2.6f }, contentAlignment = Alignment.Center) {
+                DownloadRing(demo, Modifier.size(32.dp))
+                Icon(HripsIcons.Download, null, Modifier.size(24.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val rows = buildList<@Composable (androidx.compose.ui.graphics.Shape) -> Unit> {
+            add { s ->
+                SliderRow(
+                    "Толщина", "%.1f dp".format(store.dlRingThick), store.dlRingThick, 1.5f..6f, 8, s,
+                ) { store.updateDlRingThick(it) }
+            }
+            if (store.dlRingWavy) {
+                add { s ->
+                    SliderRow(
+                        "Высота волны", "%.1f dp".format(store.dlRingAmp), store.dlRingAmp, 0.5f..3f, 4, s,
+                    ) { store.updateDlRingAmp(it) }
+                }
+            }
+            add { s ->
+                PanelSwitch(
+                    "Волнистое кольцо", "Заполненная часть кольца идёт волной",
+                    store.dlRingWavy, { store.updateDlRingWavy(it) }, shape = s,
+                )
+            }
+        }
+        Group(*rows.toTypedArray())
     }
 }
 
@@ -883,15 +995,29 @@ private fun AboutPage(app: HripsApp, onBack: () -> Unit) {
         }.getOrDefault("")
     }
     PageScaffold("О программе", onBack) {
-        AboutHeader(app, version, gecko)
+        HeroBanner(
+            title = "hrips",
+            subtitle = if (version.isBlank()) "Версия неизвестна" else "Версия $version",
+            icon = HripsIcons.Globe,
+            badge = Badge.SUNNY,
+            tone = 0,
+        )
         SectionTitle("Сборка")
         Group(
             { s ->
-                PanelItem("Блокировка рекламы", value = "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "", icon = HripsIcons.Shield, shape = s)
+                PanelItem("Движок", value = if (gecko.isBlank()) "GeckoView" else "GeckoView $gecko", shape = s)
+            },
+            { s ->
+                PanelItem("Блокировка рекламы", value = "uBlock Origin" + if (app.adBlock.extension == null) " (не загружена)" else "", shape = s)
+            },
+            { s ->
+                PanelItem("Android", value = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", shape = s)
             },
         )
         if (Updater.available) {
             SectionTitle("Обновления")
+            UpdateButton(app)
+            Spacer(Modifier.height(12.dp))
             Group(
                 { s ->
                     PanelSwitch(

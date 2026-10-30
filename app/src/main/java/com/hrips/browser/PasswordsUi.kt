@@ -227,7 +227,7 @@ internal fun PasswordsSettingsPage(app: HripsApp, onOpenPasswords: () -> Unit, o
                 subtitle = if (vault.logins.isEmpty()) "Пока ничего не сохранено" else "Сохранено: " + passwordsCount(vault.logins.size),
                 icon = HripsIcons.PasswordKey,
                 badge = Badge.CLOVER,
-                tone = 1,
+                tone = 3,
                 action = {
                     Button(
                         shapes = ButtonDefaults.shapes(),
@@ -241,7 +241,7 @@ internal fun PasswordsSettingsPage(app: HripsApp, onOpenPasswords: () -> Unit, o
                 subtitle = "Hrips использует автозаполнение Android: Google, Bitwarden, 1Password и другие менеджеры.",
                 icon = HripsIcons.PasswordKey,
                 badge = Badge.CLOVER,
-                tone = 1,
+                tone = 3,
                 action = {
                     Button(
                         shapes = ButtonDefaults.shapes(),
@@ -255,7 +255,7 @@ internal fun PasswordsSettingsPage(app: HripsApp, onOpenPasswords: () -> Unit, o
                 subtitle = "Hrips не сохраняет и не подставляет пароли.",
                 icon = HripsIcons.Lock,
                 badge = Badge.CLOVER,
-                tone = 2,
+                tone = 3,
             )
         }
 
