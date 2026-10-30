@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -53,8 +52,8 @@ import kotlin.math.roundToInt
  * Меню в стиле iOS 26 (Safari): по удержанию адресной строки и по удержанию вкладки в обзоре.
  * Размеры сняты с образца и пересчитаны на экран шириной 360 dp (множитель 0,77, как у нижней панели):
  * ширина 231 dp, шаг строк 39 dp, шаг групп 57 dp, зазор до адресной строки 15 dp.
- * Меню лежит на подложке (скруглённая панель surfaceContainer с тенью и тонкой рамкой): каждая строка - отдельный
- * сегмент (большие углы только на внешнем контуре группы), группы разделены отступом внутри подложки.
+ * Подложки нет: сегменты лежат прямо на странице, внутри группы без зазоров (большие углы только на внешнем
+ * контуре группы, между сегментами малые), группы разделены зазором 4 dp, у каждой группы своя тень.
  * Размер один на все меню (удержание адресной строки, удержание вкладки, «⋯» в менеджере вкладок).
  */
 
@@ -72,15 +71,15 @@ internal class MenuEntry(
 internal object SegMenuSpec {
     val Width = 231.dp
     val RowHeight = 36.dp
-    val ItemGap = 3.dp
-    val Big = 18.dp
-    val Small = 6.dp
-    // Подложка: поле вокруг сегментов и радиус (Big + поле, чтобы углы сегментов и подложки были концентричными).
-    val PlatePad = 8.dp
-    val PlateRadius = 26.dp
-    // Зазор между группами внутри подложки (было 21 dp без подложки).
-    val GroupGap = 8.dp
-    // Запас вокруг подложки под тень: окно Popup обрезает всё, что рисуется за его границей.
+    // Внутри группы сегменты стыкуются без зазора.
+    val ItemGap = 0.dp
+    val Big = 14.dp
+    val Small = 4.dp
+    // Зазор между группами (был 8 dp, теперь вдвое меньше).
+    val GroupGap = 4.dp
+    // Поле внутри прокручиваемой области: прокрутка обрезает всё за своей границей, тени групп нужно место.
+    val Inset = 6.dp
+    // Запас вокруг меню под тень: окно Popup обрезает всё, что рисуется за его границей.
     val ShadowPad = 14.dp
     // Зазор между меню и адресной строкой: 20 px образца.
     val AnchorGap = 15.dp
@@ -123,29 +122,26 @@ private fun SegRow(e: MenuEntry, corners: Corners) {
 }
 
 /**
- * Подложка и группы пунктов: внутри группы зазор 3 dp, между группами 8 dp. Пустые группы пропускаются.
- * Подложка рисуется здесь, поэтому у всех меню на сегментах один вид и один размер.
+ * Группы пунктов без подложки: внутри группы сегменты встык, между группами [SegMenuSpec.GroupGap].
+ * Пустые группы пропускаются. Все меню на сегментах рисуются здесь, поэтому вид и размер у них один.
  */
 @Composable
 internal fun SegMenuColumn(groups: List<List<MenuEntry>>, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(SegMenuSpec.PlateRadius),
-        color = cs.surfaceContainer,
-        contentColor = cs.onSurface,
-        shadowElevation = 8.dp,
-        border = BorderStroke(0.5.dp, cs.onSurface.copy(alpha = 0.10f)),
+    Column(
+        modifier
+            .width(SegMenuSpec.Width + SegMenuSpec.Inset * 2)
+            .heightIn(max = 440.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(SegMenuSpec.Inset),
+        verticalArrangement = Arrangement.spacedBy(SegMenuSpec.GroupGap),
     ) {
-        Column(
-            Modifier.width(SegMenuSpec.Width).heightIn(max = 440.dp).verticalScroll(rememberScrollState()).padding(SegMenuSpec.PlatePad),
-            verticalArrangement = Arrangement.spacedBy(SegMenuSpec.GroupGap),
-        ) {
-            groups.filter { it.isNotEmpty() }.forEach { g ->
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SegMenuSpec.ItemGap)) {
-                    g.forEachIndexed { i, e ->
-                        SegRow(e, segCorners(g.size, 1, i, SegMenuSpec.Big, SegMenuSpec.Small))
-                    }
+        groups.filter { it.isNotEmpty() }.forEach { g ->
+            Column(
+                Modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(SegMenuSpec.Big)),
+                verticalArrangement = Arrangement.spacedBy(SegMenuSpec.ItemGap),
+            ) {
+                g.forEachIndexed { i, e ->
+                    SegRow(e, segCorners(g.size, 1, i, SegMenuSpec.Big, SegMenuSpec.Small))
                 }
             }
         }
@@ -153,8 +149,8 @@ internal fun SegMenuColumn(groups: List<List<MenuEntry>>, modifier: Modifier = M
 }
 
 /*
- * Окно меню шире подложки на [SegMenuSpec.ShadowPad] с каждой стороны (запас под тень), поэтому положение
- * считается по размеру подложки (popupContentSize минус запас), а итоговое смещение сдвигается на этот запас.
+ * Окно меню шире самих сегментов на [SegMenuSpec.ShadowPad] + [SegMenuSpec.Inset] с каждой стороны (запас под тень),
+ * поэтому положение считается по размеру сегментов (popupContentSize минус запас), а смещение сдвигается на этот запас.
  */
 
 /** Над якорем (адресная строка внизу) по центру; если сверху не помещается, то под ним (адресная строка планшета). */
@@ -169,6 +165,28 @@ private class AnchorMenuPosition(private val gap: Int, private val margin: Int, 
         val h = popupContentSize.height - pad * 2
         val maxX = (windowSize.width - w - margin).coerceAtLeast(margin)
         val x = (anchorBounds.center.x - w / 2).coerceIn(margin, maxX)
+        val above = anchorBounds.top - gap - h
+        val maxY = (windowSize.height - h - margin).coerceAtLeast(margin)
+        val y = if (above >= margin) above else (anchorBounds.bottom + gap).coerceIn(margin, maxY)
+        return IntOffset(x - pad, y - pad)
+    }
+}
+
+/**
+ * Правый край меню по правому краю якоря («⋯» у правого края экрана): над якорем, а если сверху не помещается
+ * (планшет, якорь у верха), то под ним.
+ */
+private class EndAnchorMenuPosition(private val gap: Int, private val margin: Int, private val pad: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val w = popupContentSize.width - pad * 2
+        val h = popupContentSize.height - pad * 2
+        val maxX = (windowSize.width - w - margin).coerceAtLeast(margin)
+        val x = (anchorBounds.right - w).coerceIn(margin, maxX)
         val above = anchorBounds.top - gap - h
         val maxY = (windowSize.height - h - margin).coerceAtLeast(margin)
         val y = if (above >= margin) above else (anchorBounds.bottom + gap).coerceIn(margin, maxY)
@@ -220,7 +238,17 @@ internal fun rememberAnchorMenuPosition(): PopupPositionProvider {
     val density = LocalDensity.current
     return remember(density) {
         with(density) {
-            AnchorMenuPosition(SegMenuSpec.AnchorGap.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), SegMenuSpec.ShadowPad.roundToPx())
+            AnchorMenuPosition(SegMenuSpec.AnchorGap.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), (SegMenuSpec.ShadowPad + SegMenuSpec.Inset).roundToPx())
+        }
+    }
+}
+
+@Composable
+internal fun rememberEndAnchorMenuPosition(): PopupPositionProvider {
+    val density = LocalDensity.current
+    return remember(density) {
+        with(density) {
+            EndAnchorMenuPosition(8.dp.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), (SegMenuSpec.ShadowPad + SegMenuSpec.Inset).roundToPx())
         }
     }
 }
@@ -230,7 +258,7 @@ internal fun rememberBelowStartMenuPosition(): PopupPositionProvider {
     val density = LocalDensity.current
     return remember(density) {
         with(density) {
-            BelowStartMenuPosition(8.dp.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), SegMenuSpec.ShadowPad.roundToPx())
+            BelowStartMenuPosition(8.dp.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), (SegMenuSpec.ShadowPad + SegMenuSpec.Inset).roundToPx())
         }
     }
 }
@@ -240,7 +268,7 @@ internal fun rememberHoldMenuPosition(card: Rect): PopupPositionProvider {
     val density = LocalDensity.current
     return remember(density, card) {
         with(density) {
-            HoldMenuPosition(card, 12.dp.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), SegMenuSpec.ShadowPad.roundToPx())
+            HoldMenuPosition(card, 12.dp.roundToPx(), SegMenuSpec.ScreenMargin.roundToPx(), (SegMenuSpec.ShadowPad + SegMenuSpec.Inset).roundToPx())
         }
     }
 }

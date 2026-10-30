@@ -1,7 +1,12 @@
 package com.hrips.browser
 
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +43,15 @@ private class SiteRow(
     var allowed by mutableStateOf(allowed)
 
     fun originKey(): String = origin ?: host
+}
+
+/** Значок по названию права. */
+private fun permIcon(label: String) = when {
+    label.contains("Камер", true) -> HripsIcons.Camera
+    label.contains("Микрофон", true) -> HripsIcons.Mic
+    label.contains("Местополож", true) || label.contains("Геопоз", true) -> HripsIcons.Globe
+    label.contains("Уведомл", true) -> HripsIcons.Bell
+    else -> HripsIcons.ShieldCheck
 }
 
 private fun originOf(uri: String): String = runCatching {
@@ -113,16 +127,22 @@ fun SitePermissionsScreen(runtime: GeckoRuntime, sites: SitePermissions, onBack:
                 modifier = Modifier.widthIn(max = HripsLayout.PageMaxWidth).fillMaxWidth(),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    Box(
+                        Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(permIcon(row.label), null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
                     Column(Modifier.weight(1f)) {
-                        Text(row.host, style = MaterialTheme.typography.titleMedium)
+                        Text(row.host, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             row.label + ": " + if (row.allowed) "разрешено" else "запрещено",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (row.allowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     HripsSwitch(checked = row.allowed, onCheckedChange = { v ->

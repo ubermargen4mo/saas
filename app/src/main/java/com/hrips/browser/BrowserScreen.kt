@@ -808,6 +808,7 @@ fun BrowserScreen(browser: Browser) {
             onFullscreen = { immersive = true },
             onTabs = { requestTabs() },
             onExtensions = { showExtManager = true },
+            below = wide,
         )
     }
 

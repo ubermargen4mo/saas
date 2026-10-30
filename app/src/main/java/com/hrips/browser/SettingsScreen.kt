@@ -736,60 +736,25 @@ private fun PermissionsPage(onSitePermissions: () -> Unit, onBack: () -> Unit) {
         }
     }
     val system = buildList {
-        add(Triple("Камера", HripsIcons.Camera, granted(Manifest.permission.CAMERA)))
-        add(Triple("Микрофон", HripsIcons.Mic, granted(Manifest.permission.RECORD_AUDIO)))
-        add(Triple("Местоположение", HripsIcons.Globe, granted(Manifest.permission.ACCESS_FINE_LOCATION) || granted(Manifest.permission.ACCESS_COARSE_LOCATION)))
-        if (Build.VERSION.SDK_INT >= 33) add(Triple("Уведомления", HripsIcons.Bell, granted(Manifest.permission.POST_NOTIFICATIONS)))
+        add(SystemPerm("Камера", HripsIcons.Camera, granted(Manifest.permission.CAMERA)))
+        add(SystemPerm("Микрофон", HripsIcons.Mic, granted(Manifest.permission.RECORD_AUDIO)))
+        add(SystemPerm("Геопозиция", HripsIcons.Globe, granted(Manifest.permission.ACCESS_FINE_LOCATION) || granted(Manifest.permission.ACCESS_COARSE_LOCATION)))
+        if (Build.VERSION.SDK_INT >= 33) add(SystemPerm("Уведомления", HripsIcons.Bell, granted(Manifest.permission.POST_NOTIFICATIONS)))
     }
-    val okCount = system.count { it.third }
 
     PageScaffold("Разрешения", onBack) {
-        // Сводка: слева список прав с отметками, справа крупное число выданных.
-        val cs = MaterialTheme.colorScheme
-        Row(
-            Modifier.fillMaxWidth().clip(HripsShapes.XL).background(cs.surfaceContainerHigh).padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                Modifier.weight(1.4f).clip(HripsShapes.ML).background(cs.surfaceContainerLow).padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                system.forEach { (title, _, ok) ->
-                    Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-                        Box(Modifier.size(20.dp).clip(CircleShape).background(if (ok) StatusOk else StatusWarn), contentAlignment = Alignment.Center) {
-                            Icon(if (ok) HripsIcons.Check else HripsIcons.Alert, null, Modifier.size(12.dp), tint = Color(0xFF14231A))
-                        }
-                    }
-                }
-            }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "$okCount",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = if (okCount == system.size) StatusOk else StatusWarn,
-                )
-                Text("из ${system.size} выдано", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
-            }
-        }
+        // Сводка: ряд колец со значками (зелёное - выдано, жёлтое - нет), нажатие открывает системные настройки.
+        PermissionsSummary(system, onClick = { openApp() })
 
         SectionTitle("Сайты")
         Group(
             { s ->
-                PanelItem(
-                    "Разрешения сайтов", subtitle = "Что вы разрешили или запретили сайтам. Можно отозвать",
+                SettingsRow(
+                    HripsIcons.ShieldCheck, "Разрешения сайтов", "Что вы разрешили или запретили сайтам. Можно отозвать", s,
                     onClick = onSitePermissions,
                     trailing = { Icon(HripsIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    shape = s,
                 )
             },
-        )
-
-        SectionTitle("Права браузера в Android")
-        TwoColumnGrid(system) { item, m -> StatusTile(item.second, item.first, item.third, { openApp() }, m) }
-        Callout(
-            "Без системного права сайт не сможет получить доступ, даже если вы разрешили его здесь. Нажмите на плитку, чтобы изменить.",
-            Modifier.padding(top = 12.dp),
         )
     }
 }
@@ -939,48 +904,6 @@ private fun DownloadsPage(browser: Browser, onBack: () -> Unit, onOpenDownloads:
             "Новые загрузки сохраняются в выбранную папку. Файлы, скачанные раньше, остаются на месте.",
             Modifier.padding(top = 8.dp), icon = HripsIcons.Folder,
         )
-
-        SectionTitle("Индикатор загрузки")
-        val demo by androidx.compose.animation.core.rememberInfiniteTransition(label = "ringDemo").animateFloat(
-            0.08f, 1f,
-            androidx.compose.animation.core.infiniteRepeatable(
-                androidx.compose.animation.core.tween(3600, easing = androidx.compose.animation.core.LinearEasing),
-                androidx.compose.animation.core.RepeatMode.Restart,
-            ),
-            label = "demo",
-        )
-        Box(
-            Modifier.fillMaxWidth().height(150.dp).clip(HripsShapes.XL).background(cs.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            // Настоящий размер кольца (32 dp) с кнопкой загрузок внутри, увеличенный для просмотра.
-            Box(Modifier.size(48.dp).graphicsLayer { scaleX = 2.6f; scaleY = 2.6f }, contentAlignment = Alignment.Center) {
-                DownloadRing(demo, Modifier.size(32.dp))
-                Icon(HripsIcons.Download, null, Modifier.size(24.dp))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        val rows = buildList<@Composable (androidx.compose.ui.graphics.Shape) -> Unit> {
-            add { s ->
-                SliderRow(
-                    "Толщина", "%.1f dp".format(store.dlRingThick), store.dlRingThick, 1.5f..6f, 8, s,
-                ) { store.updateDlRingThick(it) }
-            }
-            if (store.dlRingWavy) {
-                add { s ->
-                    SliderRow(
-                        "Высота волны", "%.1f dp".format(store.dlRingAmp), store.dlRingAmp, 0.5f..3f, 4, s,
-                    ) { store.updateDlRingAmp(it) }
-                }
-            }
-            add { s ->
-                PanelSwitch(
-                    "Волнистое кольцо", "Заполненная часть кольца идёт волной",
-                    store.dlRingWavy, { store.updateDlRingWavy(it) }, shape = s,
-                )
-            }
-        }
-        Group(*rows.toTypedArray())
     }
 }
 

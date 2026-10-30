@@ -200,18 +200,6 @@ class Store(context: Context) {
         prefs.edit().apply { if (uri == null) remove("dl_tree") else putString("dl_tree", uri) }.apply()
     }
 
-    /** Кольцо загрузки: толщина (dp), волнистое ли и высота волны (dp). */
-    var dlRingThick by androidx.compose.runtime.mutableFloatStateOf(prefs.getFloat("dl_ring_w", 2.5f))
-        private set
-    var dlRingWavy by mutableStateOf(prefs.getBoolean("dl_ring_wavy", false))
-        private set
-    var dlRingAmp by androidx.compose.runtime.mutableFloatStateOf(prefs.getFloat("dl_ring_amp", 1.5f))
-        private set
-
-    fun updateDlRingThick(v: Float) { dlRingThick = v; prefs.edit().putFloat("dl_ring_w", v).apply() }
-    fun updateDlRingWavy(on: Boolean) { dlRingWavy = on; prefs.edit().putBoolean("dl_ring_wavy", on).apply() }
-    fun updateDlRingAmp(v: Float) { dlRingAmp = v; prefs.edit().putFloat("dl_ring_amp", v).apply() }
-
     /** Вид вкладок на планшете: [TABS_STYLE_STRIP] - отдельная панель, [TABS_STYLE_INLINE] - в одной строке с адресом (компактно). */
     var tabsStyle by mutableIntStateOf(prefs.getInt("tabs_style", TABS_STYLE_STRIP).coerceIn(TABS_STYLE_STRIP, TABS_STYLE_INLINE))
         private set
