@@ -26,7 +26,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyListState
 
 @Composable
-private fun Modifier.tabHold(env: SwitcherEnv, tab: Tab, holder: CoordsHolder, onMoved: (() -> Unit)?, onClose: (() -> Unit)? = null): Modifier {
+internal fun Modifier.tabHold(env: SwitcherEnv, tab: Tab, holder: CoordsHolder, onMoved: (() -> Unit)?, onClose: (() -> Unit)? = null): Modifier {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val movedNow by rememberUpdatedState(onMoved)

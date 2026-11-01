@@ -126,7 +126,7 @@ internal fun ThemeColorSection(store: Store) {
     }
 
     Spacer(Modifier.height(12.dp))
-    CustomColorCard(store, presets)
+    CustomColorCard(store, ThemePresets)
 }
 
 @Composable

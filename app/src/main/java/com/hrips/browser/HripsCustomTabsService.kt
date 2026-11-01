@@ -12,7 +12,7 @@ class HripsCustomTabsService : CustomTabsService() {
 
     override fun mayLaunchUrl(
         sessionToken: CustomTabsSessionToken,
-        url: Uri,
+        url: Uri?,
         extras: Bundle?,
         otherLikelyBundles: List<Bundle>?,
     ): Boolean = false
