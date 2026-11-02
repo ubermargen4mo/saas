@@ -242,7 +242,7 @@ fun SearchPanel(
                                 headlineContent = { Text(hit.host, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
                                 supportingContent = { Text(hit.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 leadingContent = {
-                                    Favicon(hit.url, 32.dp, fill = true) { Icon(HripsIcons.Link, null, tint = cs.onSurfaceVariant) }
+                                    Favicon(hit.url, 32.dp, fill = true, shape = CircleShape) { Icon(HripsIcons.Link, null, tint = cs.onSurfaceVariant) }
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = cs.onSurface, supportingColor = cs.onSurfaceVariant),
                             )

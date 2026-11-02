@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -220,9 +221,13 @@ fun Favicon(url: String, size: Dp, fill: Boolean = false, shape: Shape? = null, 
     val neutral = MaterialTheme.colorScheme.surfaceContainerHighest
     val b = bitmap
     if (b != null && fill) {
-        val bg = remember(b, neutral) { cornerColor(b) ?: neutral }
-        Box(Modifier.size(size).then(if (shape != null) Modifier.clip(shape) else Modifier).background(bg)) {
-            Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        val backdrop = remember(b, neutral) { backdropFor(b) ?: Backdrop(neutral, false) }
+        Box(Modifier.size(size).then(if (shape != null) Modifier.clip(shape) else Modifier).background(backdrop.color)) {
+            if (backdrop.inset) {
+                Image(b, null, Modifier.fillMaxSize().padding(size * 0.12f), contentScale = ContentScale.Fit)
+            } else {
+                Image(b, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
         }
     } else if (b != null) {
         Image(b, null, Modifier.size(size).clip(shape ?: RoundedCornerShape(size / 5)))
@@ -231,12 +236,39 @@ fun Favicon(url: String, size: Dp, fill: Boolean = false, shape: Shape? = null, 
     }
 }
 
-private fun cornerColor(img: ImageBitmap): Color? = try {
+private class Backdrop(val color: Color, val inset: Boolean)
+
+private fun backdropFor(img: ImageBitmap): Backdrop? = try {
     val bmp = img.asAndroidBitmap()
     val corner = bmp.getPixel(minOf(1, bmp.width - 1), minOf(1, bmp.height - 1))
-    if (AndroidColor.alpha(corner) >= 200) Color(corner) else dominantColor(bmp)
+    when {
+        AndroidColor.alpha(corner) >= 200 -> Backdrop(Color(corner), false)
+        isElongated(bmp) -> Backdrop(Color.White, true)
+        else -> dominantColor(bmp)?.let { Backdrop(it, false) }
+    }
 } catch (e: Exception) {
     null
+}
+
+private fun isElongated(bmp: Bitmap): Boolean {
+    val w = bmp.width
+    val h = bmp.height
+    val px = IntArray(w * h)
+    bmp.getPixels(px, 0, w, 0, 0, w, h)
+    var minX = w
+    var maxX = -1
+    var minY = h
+    var maxY = -1
+    for (y in 0 until h) for (x in 0 until w) {
+        if (AndroidColor.alpha(px[y * w + x]) < 128) continue
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+    }
+    if (maxX < 0) return false
+    val ratio = (maxX - minX + 1).toFloat() / (maxY - minY + 1)
+    return ratio >= 1.3f || ratio <= 0.77f
 }
 
 private fun dominantColor(bmp: Bitmap): Color? {

@@ -181,7 +181,7 @@ internal fun PageOptionsMenu(
         }
     }
 
-    AdaptiveMenu(wide, onDismiss, sheetState) {
+    AdaptiveMenu(wide, onDismiss, sheetState, fromStart = true) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth().toolsIn(0), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
