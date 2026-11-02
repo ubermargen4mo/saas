@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -242,14 +243,22 @@ internal fun SelectCard(
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, motion.fastSpatialSpec<Float>(), label = "selScale")
-    val bg by animateColorAsState(if (selected) cs.primaryContainer else cs.surfaceContainerHigh, motion.fastEffectsSpec<Color>(), label = "selBg")
-    val ring by animateColorAsState(if (selected) cs.primary else Color.Transparent, motion.fastEffectsSpec<Color>(), label = "selRing")
+    // Выбранная карточка: полупрозрачная заливка акцентом, обводка и кружок с галочкой в конце.
+    val bg by animateColorAsState(
+        if (selected) cs.primary.copy(alpha = 0.14f) else cs.surfaceContainerHigh,
+        motion.fastEffectsSpec<Color>(), label = "selBg",
+    )
+    val ring by animateColorAsState(
+        if (selected) cs.primary.copy(alpha = 0.75f) else Color.Transparent,
+        motion.fastEffectsSpec<Color>(), label = "selRing",
+    )
+    val checkScale by animateFloatAsState(if (selected) 1f else 0f, motion.fastSpatialSpec<Float>(), label = "selCheck")
     Row(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(HripsShapes.ML)
             .background(bg)
-            .border(BorderStroke(2.dp, ring), HripsShapes.ML)
+            .border(BorderStroke(1.5.dp, ring), HripsShapes.ML)
             .selectable(
                 selected = selected, interactionSource = source, indication = null, role = Role.RadioButton,
                 onClick = { if (!selected) haptic.performHapticFeedback(HapticFeedbackType.ToggleOn); onClick() },
@@ -257,8 +266,21 @@ internal fun SelectCard(
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        content = content,
-    )
+    ) {
+        content()
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(24.dp)
+                    .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale }
+                    .clip(CircleShape)
+                    .background(cs.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(HripsIcons.Check, null, Modifier.size(16.dp), tint = cs.onPrimary)
+            }
+        }
+    }
 }
 
 @Composable

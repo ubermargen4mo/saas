@@ -238,6 +238,14 @@ class Store(context: Context) {
         prefs.edit().putInt("tabs_style", v).apply()
     }
 
+    var barStyle by mutableIntStateOf(prefs.getInt("bar_style", BAR_STYLE_DEFAULT).coerceIn(BAR_STYLE_DEFAULT, BAR_STYLE_LIQUID))
+        private set
+
+    fun updateBarStyle(v: Int) {
+        barStyle = v.coerceIn(BAR_STYLE_DEFAULT, BAR_STYLE_LIQUID)
+        prefs.edit().putInt("bar_style", barStyle).apply()
+    }
+
     var tabsPos by mutableIntStateOf(prefs.getInt("tabs_pos", TABS_BELOW).coerceIn(TABS_BELOW, TABS_LEFT))
         private set
 

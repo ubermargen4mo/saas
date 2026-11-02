@@ -381,6 +381,12 @@ object TabThumbs {
         })
     }
 
+    /** Сколько превью вкладок лежит на диске: байты и число файлов (без временных). */
+    fun diskUsage(c: Context): Pair<Long, Int> {
+        val files = dir(c.applicationContext).listFiles { f -> f.isFile && !f.name.endsWith(".tmp") } ?: return 0L to 0
+        return files.sumOf { it.length() } to files.size
+    }
+
     fun clear(c: Context) {
         synchronized(prefetchLock) {
             prefetchJobs.indices.forEach { index ->

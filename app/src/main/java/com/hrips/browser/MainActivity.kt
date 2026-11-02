@@ -121,7 +121,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val incognito = browser.tabs.getOrNull(browser.currentIndex)?.isPrivate == true
             HripsTheme(incognito = incognito, seed = hrips.store.themeSeed, mode = hrips.store.themeMode) {
-                Surface(Modifier.fillMaxSize()) { BrowserScreen(browser) }
+                androidx.compose.runtime.CompositionLocalProvider(LocalBarStyle provides hrips.store.barStyle) {
+                    Surface(Modifier.fillMaxSize()) { BrowserScreen(browser) }
+                }
             }
         }
     }

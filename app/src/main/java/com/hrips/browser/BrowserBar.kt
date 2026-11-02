@@ -101,6 +101,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -142,26 +143,43 @@ internal fun BarPill(
     palette: BarPalette,
     modifier: Modifier = Modifier,
     pressHost: Boolean = true,
+    style: Int = LocalBarStyle.current,
     content: @Composable () -> Unit,
 ) {
     val host = remember { PillPress() }
-    Surface(
-        modifier = if (pressHost) {
-            modifier.graphicsLayer {
-                val s = host.scale.value
-                scaleX = s
-                scaleY = s
+    val pressed = if (pressHost) {
+        modifier.graphicsLayer {
+            val s = host.scale.value
+            scaleX = s
+            scaleY = s
+        }
+    } else {
+        modifier
+    }
+    if (style == BAR_STYLE_DEFAULT) {
+        Surface(
+            modifier = pressed,
+            shape = CircleShape,
+            color = palette.container,
+            contentColor = palette.content,
+            shadowElevation = 6.dp,
+            border = BorderStroke(0.5.dp, palette.edge),
+        ) {
+            CompositionLocalProvider(LocalPillPress provides if (pressHost) host else null, content = content)
+        }
+    } else {
+        val dark = palette.content.luminance() > 0.5f
+        Surface(
+            modifier = pressed.glassShadow(style),
+            shape = CircleShape,
+            color = Color.Transparent,
+            contentColor = palette.content,
+            shadowElevation = 0.dp,
+        ) {
+            Box(Modifier.glassFill(style, palette.container, dark)) {
+                CompositionLocalProvider(LocalPillPress provides if (pressHost) host else null, content = content)
             }
-        } else {
-            modifier
-        },
-        shape = CircleShape,
-        color = palette.container,
-        contentColor = palette.content,
-        shadowElevation = 6.dp,
-        border = BorderStroke(0.5.dp, palette.edge),
-    ) {
-        CompositionLocalProvider(LocalPillPress provides if (pressHost) host else null, content = content)
+        }
     }
 }
 

@@ -57,6 +57,7 @@ internal fun TabGridPage(
     barReserve: Dp,
     aspect: Float,
     query: String = "",
+    topReserve: Dp = 0.dp,
 ) {
     val start = (list.indexOfFirst { it.first == current } - 2).coerceAtLeast(0)
     val state = rememberLazyGridState(initialFirstVisibleItemIndex = start)
@@ -79,13 +80,13 @@ internal fun TabGridPage(
     val single = list.size == 1
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val titleH = 34.dp
-        val availH = maxHeight - 8.dp - titleH - barReserve - 16.dp
+        val availH = maxHeight - topReserve - 8.dp - titleH - barReserve - 16.dp
         val singleW = minOf(maxWidth * 0.66f, availH * cardAspect).coerceAtLeast(120.dp)
         val sidePad = if (single) ((maxWidth - singleW) / 2).coerceAtLeast(16.dp) else 16.dp
     LazyVerticalGrid(
         state = state,
         columns = if (single) GridCells.Fixed(1) else if (phone) GridCells.Fixed(2) else GridCells.Adaptive(minSize = 180.dp),
-        contentPadding = PaddingValues(start = sidePad, end = sidePad, top = 8.dp, bottom = barReserve + 16.dp),
+        contentPadding = PaddingValues(start = sidePad, end = sidePad, top = topReserve + 8.dp, bottom = barReserve + 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
@@ -137,6 +138,7 @@ internal fun TabListPage(
     onSettled: () -> Unit,
     barReserve: Dp,
     query: String = "",
+    topReserve: Dp = 0.dp,
 ) {
     val start = (list.indexOfFirst { it.first == current } - 1).coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = start)
@@ -156,7 +158,7 @@ internal fun TabListPage(
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             state = state,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = barReserve + 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topReserve + 8.dp, bottom = barReserve + 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.widthIn(max = 640.dp).fillMaxHeight(),
         ) {
@@ -196,6 +198,7 @@ internal fun TabCardsPage(
     aspect: Float,
     barReserve: Dp,
     query: String = "",
+    topReserve: Dp = 0.dp,
 ) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = list.indexOfFirst { it.first == current }.coerceAtLeast(0))
     val fling = rememberSnapFlingBehavior(state)
@@ -208,7 +211,7 @@ internal fun TabCardsPage(
         snapshotFlow { state.isScrollInProgress }.collect { if (!it) onSettled() }
     }
     val stride = remember { mutableFloatStateOf(1f) }
-    Column(Modifier.fillMaxSize().padding(bottom = barReserve)) {
+    Column(Modifier.fillMaxSize().padding(top = topReserve, bottom = barReserve)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val titleH = 40.dp
             val spacing = 14.dp

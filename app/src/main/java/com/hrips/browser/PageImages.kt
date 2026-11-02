@@ -283,6 +283,12 @@ object PageImages {
         }
     }
 
+    /** Сколько картинок страниц лежит в кэше: байты и число файлов. */
+    fun diskUsage(c: Context): Pair<Long, Int> {
+        val files = dir(c.applicationContext).listFiles { f -> f.isFile } ?: return 0L to 0
+        return files.sumOf { it.length() } to files.size
+    }
+
     fun clear(c: Context) {
         val pending = synchronized(requestLock) {
             generation++

@@ -181,9 +181,12 @@ internal fun <T> TileSwitcher(
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     Column(modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { (value, title) ->
-                Tile(title, value == selected, { onSelect(value) }, Modifier.weight(1f), showCheck = showCheck)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            options.forEachIndexed { i, (value, title) ->
+                Tile(
+                    title, value == selected, { onSelect(value) }, Modifier.weight(1f), showCheck = showCheck,
+                    segIndex = i, segCount = options.size,
+                )
             }
         }
         AnimatedContent(
@@ -218,11 +221,18 @@ internal fun Tile(
     selectedBg: Color = MaterialTheme.colorScheme.primary,
     selectedFg: Color = MaterialTheme.colorScheme.onPrimary,
     height: Dp = 56.dp,
+    segIndex: Int = -1,
+    segCount: Int = 1,
 ) {
     val cs = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
+    // Сегмент в группе: крайние углы круглые, внутренние маленькие; выбранный сегмент целиком пилюля.
+    val grouped = segIndex >= 0 && segCount > 1
+    val full = height / 2
+    val outer = full
+    val inner = if (pressed) 6.dp else 8.dp
     val radius by animateDpAsState(
         when {
             pressed -> 12.dp
@@ -231,6 +241,15 @@ internal fun Tile(
         },
         motion.fastSpatialSpec<Dp>(), label = "tileRadius",
     )
+    val leftR by animateDpAsState(
+        if (!grouped) radius else if (selected) full else if (segIndex == 0) outer else inner,
+        motion.fastSpatialSpec<Dp>(), label = "tileLeftR",
+    )
+    val rightR by animateDpAsState(
+        if (!grouped) radius else if (selected) full else if (segIndex == segCount - 1) outer else inner,
+        motion.fastSpatialSpec<Dp>(), label = "tileRightR",
+    )
+    val tileShape = RoundedCornerShape(topStart = leftR, bottomStart = leftR, topEnd = rightR, bottomEnd = rightR)
     val scale by animateFloatAsState(if (pressed) 0.96f else 1f, motion.fastSpatialSpec<Float>(), label = "tileScale")
     val bg by animateColorAsState(if (selected) selectedBg else cs.surfaceContainerHigh, motion.fastEffectsSpec<Color>(), label = "tileBg")
     val fg by animateColorAsState(if (selected) selectedFg else cs.onSurfaceVariant, motion.fastEffectsSpec<Color>(), label = "tileFg")
@@ -238,7 +257,7 @@ internal fun Tile(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .height(height)
-            .clip(RoundedCornerShape(radius))
+            .clip(tileShape)
             .background(bg)
             .choice(selected, source, role, onClick)
             .padding(horizontal = 8.dp),

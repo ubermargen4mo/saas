@@ -151,6 +151,7 @@ internal fun SettingsRow(
     leading: (@Composable () -> Unit)? = null,
     selected: Boolean = false,
 ) {
+    val cs = MaterialTheme.colorScheme
     val content: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
@@ -161,7 +162,7 @@ internal fun SettingsRow(
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (subtitle != null) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = if (selected) cs.onPrimaryContainer.copy(alpha = 0.75f) else cs.onSurfaceVariant)
                 }
             }
             if (value != null) {
@@ -171,18 +172,17 @@ internal fun SettingsRow(
         }
     }
     val modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f)
-    val cs = MaterialTheme.colorScheme
     val rowShape: Shape = if (selected) HripsShapes.L else shape
     val rowColor by animateColorAsState(
-        if (selected) cs.surfaceContainerLowest else cs.surfaceContainerHigh,
+        if (selected) cs.primaryContainer else cs.surfaceContainerHigh,
         MaterialTheme.motionScheme.fastEffectsSpec<Color>(), label = "rowColor",
     )
     if (onClick != null) {
         PressSurface(
-            onClick = onClick, corners = rowShape.asCorners(), color = rowColor, contentColor = cs.onSurface,
+            onClick = onClick, corners = rowShape.asCorners(), color = rowColor, contentColor = if (selected) cs.onPrimaryContainer else cs.onSurface,
             pressedCorner = 20.dp, pressScale = 0.985f, modifier = modifier, enabled = enabled, content = content,
         )
     } else {
-        Surface(shape = rowShape, color = rowColor, modifier = modifier, content = content)
+        Surface(shape = rowShape, color = rowColor, contentColor = if (selected) cs.onPrimaryContainer else cs.onSurface, modifier = modifier, content = content)
     }
 }

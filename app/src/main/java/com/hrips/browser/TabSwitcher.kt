@@ -37,6 +37,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
@@ -354,9 +355,55 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                 .drawBehind { drawRect(lerp(bgNormal, bgPrivate, progress())) },
         )
 
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        // Шапка лежит поверх списка: пилюля и кнопка плавают над вкладками,
+        // а сам список начинается под ними и прокручивается под шапкой.
+        val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        var headerH by remember { mutableStateOf(SWITCHER_TOP_H + 12.dp) }
+        val topReserve = statusTop + headerH
+
+        Box(Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = mode,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = stage(reveal(), 0.12f, 0.6f)
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
+                    .clipToBounds()
+                    .nestedScroll(modeSwipe)
+                    .pointerInput(mode) {
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragEnd = {
+                                if (total < -56.dp.toPx() && mode == 0) mode = 1
+                                else if (total > 56.dp.toPx() && mode == 1) mode = 0
+                            },
+                            onHorizontalDrag = { _, dx -> total += dx },
+                        )
+                    },
+                transitionSpec = {
+                    fadeIn(tween(FADE_IN_MS)) togetherWith fadeOut(tween(FADE_OUT_MS)) using
+                        SizeTransform(clip = false) { _, _ -> snap() }
+                },
+                label = "tabsMode",
+            ) { m ->
+                val list = if (m == 1) privList else normalList
+                if (list.isEmpty()) {
+                    EmptyTabs(m == 1, searching = q.isNotEmpty(), onNew = { onNew(m == 1) }, modifier = Modifier.fillMaxSize().padding(top = topReserve, bottom = 104.dp))
+                } else when (view) {
+                    1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, aspect = aspect, query = q, topReserve = topReserve)
+                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, aspect = aspect, barReserve = barReserve, query = q, topReserve = topReserve)
+                    else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, query = q, topReserve = topReserve)
+                }
+            }
+
             Box(
-                Modifier.graphicsLayer {
+                Modifier
+                    .statusBarsPadding()
+                    .onSizeChanged { headerH = with(density) { it.height.toDp() } }
+                    .graphicsLayer {
                     val r = stage(reveal(), 0.08f, 0.55f)
                     alpha = r
                     translationY = -(1f - r) * 14.dp.toPx()
@@ -397,44 +444,6 @@ fun TabSwitcher(browser: Browser, onClose: () -> Unit, onHistory: () -> Unit) {
                     onClosed = { showClosed = true },
                     onCloseAll = closeAll,
                 )
-            }
-
-            AnimatedContent(
-                targetState = mode,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        alpha = stage(reveal(), 0.12f, 0.6f)
-                        compositingStrategy = CompositingStrategy.ModulateAlpha
-                    }
-                    .clipToBounds()
-                    .nestedScroll(modeSwipe)
-                    .pointerInput(mode) {
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { total = 0f },
-                            onDragEnd = {
-                                if (total < -56.dp.toPx() && mode == 0) mode = 1
-                                else if (total > 56.dp.toPx() && mode == 1) mode = 0
-                            },
-                            onHorizontalDrag = { _, dx -> total += dx },
-                        )
-                    },
-                transitionSpec = {
-                    fadeIn(tween(FADE_IN_MS)) togetherWith fadeOut(tween(FADE_OUT_MS)) using
-                        SizeTransform(clip = false) { _, _ -> snap() }
-                },
-                label = "tabsMode",
-            ) { m ->
-                val list = if (m == 1) privList else normalList
-                if (list.isEmpty()) {
-                    EmptyTabs(m == 1, searching = q.isNotEmpty(), onNew = { onNew(m == 1) })
-                } else when (view) {
-                    1 -> TabGridPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, aspect = aspect, query = q)
-                    2 -> TabCardsPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, aspect = aspect, barReserve = barReserve, query = q)
-                    else -> TabListPage(list, current, env, onOpen, onCloseTab, onSettled = reportRect, barReserve = barReserve, query = q)
-                }
             }
         }
 

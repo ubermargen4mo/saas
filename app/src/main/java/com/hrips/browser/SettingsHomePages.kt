@@ -130,6 +130,18 @@ internal fun HomePage(app: HripsApp, onBack: () -> Unit) {
                 },
             )
         }
+        if (!isWideWindow()) {
+            val st = app.store
+            SectionTitle("Нижняя панель")
+            PreviewChoiceRow(
+                options = listOf(BAR_STYLE_DEFAULT, BAR_STYLE_SOFT, BAR_STYLE_LIQUID),
+                isSelected = { st.barStyle == it },
+                label = { when (it) { BAR_STYLE_SOFT -> "Мягкое стекло"; BAR_STYLE_LIQUID -> "Жидкое стекло"; else -> "Обычная" } },
+                supporting = { when (it) { BAR_STYLE_SOFT -> "Матовая, спокойная"; BAR_STYLE_LIQUID -> "Прозрачная, с бликами"; else -> "Сплошная, как раньше" } },
+                onSelect = { st.updateBarStyle(it) },
+            ) { v -> BarStylePreview(v) }
+        }
+
         SectionTitle("Иконка приложения")
         AppIconPicker()
 
