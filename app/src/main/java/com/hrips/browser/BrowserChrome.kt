@@ -118,8 +118,8 @@ internal fun AddressBar(
         }
     }
 
-    val audioOn = tab.audible && !tab.home
-    val sidePad = (if (inline) (if (withPicker) 112.dp else 72.dp) else (if (withPicker) 76.dp else 44.dp)) + (if (audioOn) 26.dp else 0.dp)
+    val audioPad by animateDpAsState(if (tab.soundShown) 36.dp else 0.dp, tween(200), label = "audioPad")
+    val sidePad = (if (inline) (if (withPicker) 112.dp else 72.dp) else (if (withPicker) 76.dp else 44.dp)) + audioPad
     val density = LocalDensity.current
     val swipePx = with(density) { 36.dp.toPx() }
     val swipeSidePx = with(density) { 72.dp.toPx() }
@@ -208,7 +208,7 @@ internal fun AddressBar(
                     homeExtras?.invoke()
                     Spacer(Modifier.width(4.dp))
                 } else {
-                    if (audioOn) Icon(HripsIcons.Volume, "Во вкладке играет звук", Modifier.size(22.dp))
+                    SoundSlot(tab, 24.dp, touch = 36.dp)
                     BarButton(modifier = Modifier.size(40.dp), onClick = { tab.reloadOrStop() }, enabled = !tab.home) { ReloadGlyph(tab) }
                 }
             }
@@ -391,7 +391,7 @@ internal fun TabStrip(browser: Browser, above: Boolean = false) {
                         },
                 ) {
                     Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TabGlyph(t, size = 18.dp, siteSize = 16.dp, audioSize = 16.dp)
+                        TabGlyph(t, size = 18.dp, siteSize = 16.dp)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             t.label(),
@@ -578,7 +578,7 @@ internal fun InlineTabsRow(browser: Browser, showTabs: Boolean, modifier: Modifi
                                     },
                             ) {
                                 Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    TabGlyph(t, size = 18.dp, audioSize = 16.dp, audioGap = 4.dp)
+                                    TabGlyph(t, size = 18.dp, audioGap = 4.dp)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         t.label(),

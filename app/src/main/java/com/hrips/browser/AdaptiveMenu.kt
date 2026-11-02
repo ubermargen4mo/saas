@@ -37,18 +37,18 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
 private val MenuWidth = 380.dp
-private val MenuTop = 100.dp
+private val MenuTop = 56.dp
 private val MenuMargin = 12.dp
 private val MenuShadowPad = 12.dp
 
-private class CornerMenuPosition(private val top: Int, private val inset: Int) : PopupPositionProvider {
+private class CornerMenuPosition(private val top: Int, private val inset: Int, private val fromStart: Boolean) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
         windowSize: IntSize,
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
-        val x = (windowSize.width - popupContentSize.width - inset).coerceAtLeast(0)
+        val x = if (fromStart) inset.coerceAtLeast(0) else (windowSize.width - popupContentSize.width - inset).coerceAtLeast(0)
         val y = top.coerceAtMost((windowSize.height - popupContentSize.height).coerceAtLeast(0))
         return IntOffset(x, y)
     }
@@ -59,6 +59,7 @@ internal fun AdaptiveMenu(
     wide: Boolean,
     onDismiss: () -> Unit,
     sheetState: SheetState,
+    fromStart: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -74,14 +75,19 @@ internal fun AdaptiveMenu(
     }
     val density = LocalDensity.current
     val statusTop = WindowInsets.statusBars.getTop(density)
-    val position = remember(density, statusTop) {
+    val position = remember(density, statusTop, fromStart) {
         with(density) {
-            CornerMenuPosition(statusTop + MenuTop.roundToPx() - MenuShadowPad.roundToPx(), (MenuMargin - MenuShadowPad).roundToPx())
+            CornerMenuPosition(
+                statusTop + MenuTop.roundToPx() - MenuShadowPad.roundToPx(),
+                (MenuMargin - MenuShadowPad).roundToPx(),
+                fromStart,
+            )
         }
     }
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) { progress.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 900f)) }
-    val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - MenuTop - 48.dp).coerceAtLeast(240.dp)
+    val statusDp = with(density) { statusTop.toDp() }
+    val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - statusDp - MenuTop - 24.dp).coerceAtLeast(240.dp)
     Popup(
         popupPositionProvider = position,
         onDismissRequest = onDismiss,
@@ -92,7 +98,7 @@ internal fun AdaptiveMenu(
                 .padding(MenuShadowPad)
                 .graphicsLayer {
                     val p = progress.value
-                    transformOrigin = TransformOrigin(1f, 0f)
+                    transformOrigin = TransformOrigin(if (fromStart) 0f else 1f, 0f)
                     val sc = 0.85f + 0.15f * p
                     scaleX = sc
                     scaleY = sc

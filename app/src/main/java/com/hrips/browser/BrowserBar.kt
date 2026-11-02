@@ -263,10 +263,7 @@ internal fun ReloadGlyph(tab: Tab) {
 @Composable
 internal fun TabGlyph(t: Tab, size: Dp, siteSize: Dp = size, audioSize: Dp = size, audioGap: Dp = 6.dp) {
     val cs = MaterialTheme.colorScheme
-    if (t.audible) {
-        Icon(HripsIcons.Volume, "Играет звук", Modifier.size(audioSize), tint = cs.primary)
-        Spacer(Modifier.width(audioGap))
-    }
+    SoundSlot(t, audioSize, tint = cs.primary, gap = audioGap, touch = audioSize + 6.dp)
     when {
         t.isPrivate -> Icon(HripsIcons.Mask, null, Modifier.size(size), tint = cs.primary)
         t.home -> Icon(HripsIcons.Home, null, Modifier.size(size), tint = cs.onSurfaceVariant)
@@ -668,14 +665,14 @@ internal fun BottomBar(
                                     }
                                 }
 
-                                val audioW by animateDpAsState(if (tab.audible && !tab.home) 66.dp else 40.dp, tween(200), label = "barAudioW")
+                                val audioW by animateDpAsState(if (tab.soundShown) 66.dp else 40.dp, tween(200), label = "barAudioW")
                                 Box(
                                     Modifier.shrinkWidth(t).width(audioW).fillMaxHeight(),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     if (!tab.home) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (tab.audible) Icon(HripsIcons.Volume, "Во вкладке играет звук", Modifier.size(22.dp))
+                                            SoundSlot(tab, 24.dp, touch = 30.dp)
                                             BarButton(onClick = { tab.reloadOrStop() }, inert = collapsed, modifier = Modifier.size(36.dp)) {
                                                 ReloadGlyph(tab)
                                             }

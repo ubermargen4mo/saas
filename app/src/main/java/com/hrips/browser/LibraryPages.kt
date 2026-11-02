@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +58,7 @@ internal fun ListPage(
     actions: @Composable RowScope.() -> Unit = {},
     header: (@Composable () -> Unit)? = null,
     listModifier: Modifier = Modifier,
+    side: (@Composable () -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -65,17 +70,22 @@ internal fun ListPage(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = { PageTopBar(title, onBack, scroll, actions) },
     ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
-            header?.let {
-                Box(Modifier.fillMaxWidth().padding(horizontal = HripsLayout.PageGutter), contentAlignment = Alignment.TopCenter) { it() }
+        Row(Modifier.fillMaxSize().padding(pad)) {
+            if (side != null) {
+                Box(Modifier.width(SIDE_PANE_WIDTH).fillMaxHeight().padding(start = HripsLayout.PageGutter)) { side() }
             }
-            LazyColumn(
-                Modifier.weight(1f).fillMaxWidth().then(listModifier),
-                contentPadding = PaddingValues(start = HripsLayout.PageGutter, end = HripsLayout.PageGutter, bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                content = content,
-            )
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                header?.let {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = HripsLayout.PageGutter), contentAlignment = Alignment.TopCenter) { it() }
+                }
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxWidth().then(listModifier),
+                    contentPadding = PaddingValues(start = HripsLayout.PageGutter, end = HripsLayout.PageGutter, bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -160,6 +170,7 @@ private fun EntryRow(e: Entry, shape: RoundedCornerShape, showTime: Boolean, onO
 }
 
 private const val DAY_MS = 24L * 60L * 60L * 1000L
+private val SIDE_PANE_WIDTH = 280.dp
 
 private fun startOfDay(time: Long): Long = Calendar.getInstance().run {
     timeInMillis = time
@@ -170,14 +181,65 @@ private fun startOfDay(time: Long): Long = Calendar.getInstance().run {
     timeInMillis
 }
 
-private fun dayTitle(context: Context, day: Long, today: Long): String {
+private fun dayTitle(context: Context, day: Long, today: Long, short: Boolean = false): String {
     return when {
         day == today -> "Сегодня"
         today - day in 1..(DAY_MS + 3_600_000L) -> "Вчера"
+        short -> {
+            val sameYear = Calendar.getInstance().apply { timeInMillis = day }.get(Calendar.YEAR) ==
+                Calendar.getInstance().apply { timeInMillis = today }.get(Calendar.YEAR)
+            DateUtils.formatDateTime(
+                context, day,
+                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY or
+                    (if (sameYear) DateUtils.FORMAT_NO_YEAR else DateUtils.FORMAT_SHOW_YEAR),
+            )
+        }
         else -> DateUtils.formatDateTime(
             context, day,
             DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_YEAR,
         )
+    }
+}
+
+@Composable
+private fun DayRow(title: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        shape = HripsShapes.L,
+        color = if (selected) cs.primaryContainer else Color.Transparent,
+        contentColor = if (selected) cs.onPrimaryContainer else cs.onSurface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) cs.onPrimaryContainer.copy(alpha = 0.75f) else cs.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryDays(
+    groups: List<Pair<Long, List<Entry>>>,
+    total: Int,
+    selected: Long?,
+    today: Long,
+    onSelect: (Long?) -> Unit,
+) {
+    val context = LocalContext.current
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 8.dp, end = 8.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        item(key = "all") { DayRow("Все дни", total, selected == null) { onSelect(null) } }
+        items(groups, key = { it.first }) { (day, list) ->
+            DayRow(dayTitle(context, day, today, short = true), list.size, selected == day) { onSelect(day) }
+        }
     }
 }
 
@@ -216,6 +278,10 @@ fun HistoryScreen(store: Store, onOpen: (String) -> Unit, onBack: () -> Unit) {
         val d = startOfDay(e.time)
         if (groups.lastOrNull()?.first == d) groups.last().second.add(e) else groups.add(d to mutableListOf(e))
     }
+    val wide = isWideWindow()
+    var pickedDay by remember { mutableStateOf<Long?>(null) }
+    val selectedDay = pickedDay?.takeIf { d -> groups.any { it.first == d } }
+    val visibleGroups = if (wide && selectedDay != null) groups.filter { it.first == selectedDay } else groups
 
     ListPage(
         title = "История",
@@ -225,6 +291,7 @@ fun HistoryScreen(store: Store, onOpen: (String) -> Unit, onBack: () -> Unit) {
                 IconButton(onClick = { confirmClear = true }) { Icon(HripsIcons.Trash, "Очистить историю") }
             }
         },
+        side = if (wide && groups.isNotEmpty()) ({ HistoryDays(groups, shown.size, selectedDay, today) { pickedDay = it } }) else null,
     ) {
         searchItem(all.isNotEmpty(), "Поиск в истории", query, 4.dp) { query = it }
         emptyItems(all.isEmpty(), shown.isEmpty()) {
@@ -234,7 +301,7 @@ fun HistoryScreen(store: Store, onOpen: (String) -> Unit, onBack: () -> Unit) {
                 Modifier.padding(top = 56.dp), badge = Badge.CLOVER,
             )
         }
-        for ((day, list) in groups) {
+        for ((day, list) in visibleGroups) {
             item(key = "day$day") { PageHeaderText(dayTitle(context, day, today)) }
             itemsIndexed(list, key = { _, e -> e.url }) { i, e ->
                 EntryRow(e, segShape(i, list.size), showTime = true, onOpen = { onOpen(e.url) }, onRemove = { store.removeHistory(e) })

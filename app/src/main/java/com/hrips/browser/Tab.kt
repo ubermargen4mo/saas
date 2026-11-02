@@ -168,6 +168,13 @@ class Tab(
     var canGoForward by mutableStateOf(false)
     var fullscreen by mutableStateOf(false)
     var audible by mutableStateOf(false)
+    var muted by mutableStateOf(false)
+        private set
+
+    fun toggleMuted() {
+        muted = !muted
+        media.setMuted(session, muted)
+    }
 
     var translateLang by mutableStateOf<String?>(null)
     var translateTo by mutableStateOf<String?>(null)
@@ -556,6 +563,7 @@ class Tab(
             }
         }
         media.attach(s, isPrivate, { title }) { audible = it }
+        if (muted) media.setMuted(s, true)
         return s
     }
 

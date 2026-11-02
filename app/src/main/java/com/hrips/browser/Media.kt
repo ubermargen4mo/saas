@@ -36,6 +36,7 @@ class MediaHub(private val app: Application) {
         var position = -1.0
         var rate = 1.0
         var positionAt = 0L
+        var muted = false
     }
 
     private val tracks = LinkedHashMap<GeckoSession, Track>()
@@ -54,6 +55,7 @@ class MediaHub(private val app: Application) {
         session.setMediaSessionDelegate(object : GeckoMediaSession.Delegate {
             override fun onActivated(session: GeckoSession, mediaSession: GeckoMediaSession) {
                 t.media = mediaSession
+                if (t.muted) mediaSession.muteAudio(true)
                 t.active = true
                 changed(t)
             }
@@ -93,6 +95,7 @@ class MediaHub(private val app: Application) {
 
             override fun onPlay(session: GeckoSession, mediaSession: GeckoMediaSession) {
                 t.media = mediaSession
+                if (t.muted) mediaSession.muteAudio(true)
                 t.active = true
                 t.playing = true
                 current = t
@@ -110,6 +113,12 @@ class MediaHub(private val app: Application) {
                 changed(t)
             }
         })
+    }
+
+    fun setMuted(session: GeckoSession, muted: Boolean) {
+        val t = tracks[session] ?: return
+        t.muted = muted
+        t.media?.muteAudio(muted)
     }
 
     fun forget(session: GeckoSession) {
