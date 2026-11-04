@@ -1,12 +1,20 @@
 # Hrips
 Браузер на GeckoView + Jetpack Compose (Material 3 Expressive).
 
-Сборка: push в GitHub -> Actions -> Artifacts -> `hrips-apk`.
-Локально: Android Studio (нужны SDK Platform 37.1, JDK 17, Gradle 9.6+).
+Сборка запускается вручную: GitHub -> Actions -> Build APK -> Run workflow. APK лежит в Artifacts (`hrips-apk`), а при включённой галочке «Опубликовать релиз» ещё и в Releases.
+Локально: Android Studio (нужны SDK Platform 37.2, JDK 17, Gradle 9.6+).
+
+## CI и обновления
+- `ci.yml`: на каждый push в main и PR — debug-сборка, unit-тесты, lint (отчёты во вложениях запуска).
+- `geckoview-update.yml`: каждый день сверяет `geckoVersion` со свежей стабильной GeckoView на maven.mozilla.org.
+  Если вышла новая, `scripts/geckoview_update.py` поднимает версию (и compileSdk, если AAR его требует),
+  workflow собирает и тестирует проект и открывает/обновляет PR из ветки `geckoview-update`. Сборка упала — PR черновиком с логом.
+  Нужно разрешить Actions создавать PR: Settings → Actions → General → «Allow GitHub Actions to create and approve pull requests».
+- `dependabot.yml`: остальные библиотеки и actions раз в неделю (GeckoView исключён, его ведёт workflow выше).
 
 ## Версии
-- Движок: `geckoVersion` в `app/build.gradle.kts` (стабильные 157.0.*; список на maven.mozilla.org).
-- GeckoView 157 требует compileSdk 37.1 и Kotlin 2.4.x, поэтому AGP 9.4.1 + Gradle 9.6.0.
+- Движок: `geckoVersion` в `app/build.gradle.kts` (стабильные 159.0.*; список на maven.mozilla.org).
+- GeckoView 159 требует compileSdk 37.2 (157 — 37.1) и Kotlin 2.4.x, поэтому AGP 9.4.1 + Gradle 9.6.0.
 - Android 12+ (minSdk 31), проверяется на Android 12 и 16.
 
 ## Шрифт
@@ -22,8 +30,25 @@
 Видео на весь экран при выходе на главный экран уходит в «картинку в картинке».
 
 ## Уведомления сайтов
-`SiteNotifications.kt`. Это не push: приходят, пока браузер запущен (открыт, играет медиа или идёт загрузка).
-Сайт сначала спрашивает разрешение (диалог в браузере), показ делает система.
+`SiteNotifications.kt`. Сайт сначала спрашивает разрешение (диалог в браузере), показ делает система.
+Без push уведомления приходят, только пока браузер запущен (открыт, играет медиа или идёт загрузка).
+
+Настройки → Разрешения → «Уведомления сайтов» выключает всё сразу: запросы разрешения отклоняются без диалога,
+уведомления не показываются, новые push-подписки не создаются.
+
+### Push (Web Push)
+`WebPush.kt`. Настройки → Разрешения → «Push, когда браузер закрыт» (включено по умолчанию). Доставка через
+UnifiedPush-connector, дистрибьютор выбирается так:
+- **Google (FCM)**, по умолчанию, если есть сервисы Google Play: встроенный дистрибьютор
+  `org.unifiedpush.android:embedded-fcm-distributor` общается с Google Play напрямую (c2dm), Firebase-проект,
+  `google-services.json` и сторонние приложения не нужны. С VAPID-ключом сайта адрес подписки
+  `https://fcm.googleapis.com/fcm/send/…`, как у Chrome; без VAPID через шлюз UnifiedPush.
+- **Приложение UnifiedPush** (ntfy, Sunup, NextPush и др.), если оно установлено: выбирается в «Способ доставки».
+
+Когда сайт вызывает `PushManager.subscribe`, браузер регистрирует отдельный instance и отдаёт сайту адрес и ключи
+шифрования (RFC 8291). Сообщение расшифровывает connector (Google/дистрибьютор видят только шифротекст), движок будит
+service worker сайта, и тот показывает уведомление. В приватных вкладках push недоступен. Смена способа доставки
+и удаление cookies и данных сайтов снимают push-подписки (сайты получают `pushsubscriptionchange`).
 
 ## Разрешения сайтов
 Камера и микрофон: диалог с галочкой «Запомнить для этого сайта» (`SitePermissions.kt`, в приватных вкладках не запоминается).
