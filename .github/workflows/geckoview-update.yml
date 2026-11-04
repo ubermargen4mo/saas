@@ -1,0 +1,89 @@
+name: GeckoView update
+
+# Каждый день проверяет новую стабильную GeckoView (как у Firefox). Если она вышла:
+# обновляет geckoVersion (и compileSdk, если новой версии нужен SDK новее), собирает,
+# гоняет тесты и lint и открывает/обновляет один PR в ветке geckoview-update.
+# Если сборка упала, PR создаётся черновиком с хвостом лога — видно, что сломалось в API.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: geckoview-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a new GeckoView
+        id: gv
+        run: python3 scripts/geckoview_update.py
+
+      - if: steps.gv.outputs.updated == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - if: steps.gv.outputs.updated == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.6.0
+
+      - if: steps.gv.outputs.updated == 'true'
+        name: Android SDK platform
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;${{ steps.gv.outputs.compile_sdk }}" "build-tools;36.0.0"
+
+      - if: steps.gv.outputs.updated == 'true'
+        name: Build, unit tests, lint
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleDebug testDebugUnitTest lintDebug --stacktrace 2>&1 | tee build.log
+
+      - if: steps.gv.outputs.updated == 'true'
+        name: PR description
+        shell: bash
+        run: |
+          {
+            echo "GeckoView **${{ steps.gv.outputs.old }}** → **${{ steps.gv.outputs.new }}**, compileSdk: \`${{ steps.gv.outputs.compile_sdk }}\`."
+            echo
+            if [ "${{ steps.build.outcome }}" = "success" ]; then
+              echo "✅ Сборка, unit-тесты и lint прошли. Перед слиянием проверьте на устройстве: вкладки, видео, расширения, вход по паролю."
+            else
+              echo "❌ Сборка или тесты упали — скорее всего, в GeckoView изменился API. Хвост лога:"
+              echo
+              echo '```'
+              grep -E "^e: |error:|FAILED|What went wrong" -A3 build.log | tail -60
+              echo '```'
+            fi
+            echo
+            echo "Заметки к выпуску: https://firefox-source-docs.mozilla.org/mobile/android/geckoview/consumer/geckoview-changelog.html"
+          } > pr-body.md
+          rm -f build.log
+
+      - if: steps.gv.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: geckoview-update
+          delete-branch: true
+          commit-message: "GeckoView ${{ steps.gv.outputs.new }}"
+          title: "GeckoView ${{ steps.gv.outputs.new }}"
+          body-path: pr-body.md
+          add-paths: |
+            app/build.gradle.kts
+            .github/workflows/*.yml
+          draft: ${{ steps.build.outcome != 'success' }}
