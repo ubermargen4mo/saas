@@ -76,7 +76,7 @@ jobs:
           rm -f build.log
 
       - if: steps.gv.outputs.updated == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: geckoview-update
           delete-branch: true
