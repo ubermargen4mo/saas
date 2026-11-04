@@ -139,7 +139,7 @@ MediaPlayer + TextureView). Работает для прямых http(s)-фай�
 ## Соединение и приватность
 `PrivacyEngine.kt` применяет к движку четыре настройки из `Store`: HTTPS-only (выкл / только приватные / все вкладки),
 защищённый DNS (DoH: выкл / автоматически / строго, провайдеры Cloudflare, Quad9, AdGuard, Google или свой сервер),
-Global Privacy Control (включён по умолчанию) и удаление известных tracking-параметров из URL (включено по умолчанию). Вызывается при создании
+Global Privacy Control (включён по умолчанию) и удаление известных меток отслеживания (utm_, fbclid и др.) из URL (включено по умолчанию). Вызывается при создании
 движка и из `Browser.applyPrivacy()` после каждого изменения в Настройки -> Конфиденциальность (`PrivacyUi.kt`).
 Новые значения действуют на следующие загрузки. Свой DoH-адрес сохраняется только после проверки: сервер должен ответить
 на тестовый запрос типом `application/dns-message`. Все вызовы GeckoView собраны в `PrivacyEngine`, по одному на настройку.
@@ -151,6 +151,14 @@ Global Privacy Control (включён по умолчанию) и удален�
 
 ## Сборка и тесты
 Release-сборка идёт через R8 (`app/proguard-rules.pro`), baseline profile лежит в `app/src/main/baseline-prof.txt`. Unit-тесты: `gradle testDebugUnitTest`.
+
+### Скриншоты интерфейса
+`gradle testDebugUnitTest -Pscreenshots` снимает 41 экран на телефоне (411×914 dp) и планшете (1280×800 dp)
+через Robolectric + Roborazzi, без эмулятора: старт, поиск, меню, вкладки (сетка, список, карточки), приватный режим,
+меню сайта, контекстные меню, загрузки, диалог разрешений, библиотека, все страницы настроек, светлая и тёмная тема.
+Тесты лежат в `app/src/test/java/com/hrips/browser/screens/`, картинки появляются в `screenshots/phone` и `screenshots/tablet`,
+рядом в `trees/` дерево семантики каждого экрана. Движок в этих тестах заглушён, поэтому содержимое страниц пустое.
+Без `-Pscreenshots` эти тесты пропускаются.
 
 ## Загрузки
 `Downloads.kt` (логика), `DownloadService.kt` (foreground-сервис и уведомления), `DownloadsScreen.kt` (страница).
