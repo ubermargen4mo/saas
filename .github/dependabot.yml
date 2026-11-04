@@ -1,0 +1,30 @@
+version: 2
+
+# GeckoView обновляет отдельный workflow geckoview-update.yml (ему нужен ещё и compileSdk),
+# поэтому здесь он исключён. Остальные библиотеки и actions — раз в неделю, одним PR на группу.
+registries:
+  mozilla:
+    type: maven-repository
+    url: https://maven.mozilla.org/maven2/
+
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    registries:
+      - mozilla
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "org.mozilla.geckoview:*"
+    groups:
+      androidx:
+        patterns: ["androidx.*"]
+      other:
+        patterns: ["*"]
+        exclude-patterns: ["androidx.*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
