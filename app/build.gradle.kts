@@ -82,7 +82,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.browser:browser:1.8.0")
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
     // Веб-push без Google: дистрибьютор UnifiedPush (ntfy, Sunup, NextPush), расшифровка RFC 8291 внутри библиотеки.
     implementation("org.unifiedpush.android:connector:3.3.5")
     // Встроенный дистрибьютор FCM: push через сервисы Google Play без Firebase-проекта и без сторонних приложений.
@@ -98,10 +98,10 @@ dependencies {
 
     // Скриншоты интерфейса на JVM (Robolectric + Roborazzi), без устройства: ./gradlew testDebugUnitTest -Pscreenshots
     testImplementation("org.robolectric:robolectric:4.17")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.77.0")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.77.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.78.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.78.0")
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("io.mockk:mockk:1.14.12")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
