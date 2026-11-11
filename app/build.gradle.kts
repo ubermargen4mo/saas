@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val geckoVersion = "159.0.20261102144711"
+val geckoVersion = "160.0.20261104181552"
 
 // Номер сборки GitHub Actions: 196 -> 1.1.96, 213 -> 1.2.13, 375 -> 1.3.75
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
