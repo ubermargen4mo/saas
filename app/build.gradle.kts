@@ -84,7 +84,7 @@ dependencies {
     implementation("androidx.browser:browser:1.8.0")
     implementation("com.google.zxing:core:3.5.4")
     // Веб-push без Google: дистрибьютор UnifiedPush (ntfy, Sunup, NextPush), расшифровка RFC 8291 внутри библиотеки.
-    implementation("org.unifiedpush.android:connector:3.3.5")
+    implementation("org.unifiedpush.android:connector:3.3.6")
     // Встроенный дистрибьютор FCM: push через сервисы Google Play без Firebase-проекта и без сторонних приложений.
     implementation("org.unifiedpush.android:embedded-fcm-distributor:3.1.0")
     val cameraxVersion = "1.5.1"
@@ -97,7 +97,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     // Скриншоты интерфейса на JVM (Robolectric + Roborazzi), без устройства: ./gradlew testDebugUnitTest -Pscreenshots
-    testImplementation("org.robolectric:robolectric:4.18")
+    testImplementation("org.robolectric:robolectric:4.18.1")
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.79.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.79.0")
     testImplementation("androidx.compose.ui:ui-test-junit4")
